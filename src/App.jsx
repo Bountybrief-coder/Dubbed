@@ -9,6 +9,7 @@ import { AuthModal } from "./components/AuthModal";
 import { AuthGate } from "./components/AuthGate";
 import { Skeleton } from "./components/Skeleton";
 import { ConnectionBanner } from "./components/ConnectionBanner";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { getNotifications, subscribeToNotifications } from "./services/notificationService";
 import { checkBanExpiry } from "./services/banService";
 import { useWebVitals } from "./hooks/useWebVitals";
@@ -192,6 +193,7 @@ export function App() {
             </div>
           )}
 
+          <ErrorBoundary key={pageKey.current}>
           <Suspense fallback={<PageSkeleton />}>
           {route.name === "home" && <HomePage onNavigate={navigate} onLogin={() => setAuthOpen(true)} />}
           {route.name === "matchfinder" && <MatchfinderPage onLogin={() => setAuthOpen(true)} onOpenMatch={(id) => navigate("match", id)} onNavigate={navigate} />}
@@ -217,6 +219,7 @@ export function App() {
           {route.name === "notifications" && requireAuth(<NotificationsPage onNavigate={navigate} />)}
           {route.name === "profile" && <ProfilePage username={route.param || profile?.username} />}
           </Suspense>
+          </ErrorBoundary>
           </div>
         </div>
 
