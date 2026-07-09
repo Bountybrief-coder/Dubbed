@@ -170,3 +170,39 @@ join fails, the button reverts and a toast shows the error.
 A global `@media(prefers-reduced-motion: reduce)` rule in `theme.css` kills
 all CSS animations and transitions (duration forced to 0.01ms, scroll-behavior
 to auto). Users with accessibility settings get zero jank by default.
+
+## Eligibility Gate — `can_play`
+
+Server-authoritative function `can_play(user, game, platform, type)` blocks
+match/tournament entry when a user lacks the right team or linked account.
+
+### Per-Game / Platform Rule Table
+
+| Game | Required Account | Platform Rule |
+|------|-----------------|---------------|
+| Black Ops 7 | Activision ID (`^\S+#\d{4,10}$`) | Any (PC/Console/Mixed) |
+| Warzone | Activision ID | Any |
+| Black Ops Royale | Activision ID | Any |
+| MW4 | Activision ID | Any |
+| WWII | PSN **or** Xbox (per team platform) | Split: PSN-only or Xbox-only |
+
+### WWII Split Ladders (PSN vs Xbox)
+
+WWII teams must declare `platform = 'PlayStation Only'` or `'Xbox Only'` at
+creation. Matches inherit the creator's team platform. Joining requires a
+team on the same platform. Standings are independent per platform.
+
+### Team Records (Separate Tournament W/L)
+
+Teams track `wins`, `losses`, `earnings`, `xp` for ladder matches and
+`tourney_wins`, `tourney_losses` separately for tournaments. Both are
+updated in `settle_match` based on whether the match belongs to a
+tournament bracket. `team_match_history` stores per-match records.
+
+### Active Matches on Team Page
+
+The team detail page shows all matches with status `open|live|reported|
+disputed` involving team members. Each card shows full setup (game, mode,
+format, platform, region, entry, players, status) with a "Go to match"
+button. Updates via Supabase realtime + `useVisibilityRefresh` fallback.
+This guarantees a player never loses track of a live match.

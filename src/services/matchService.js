@@ -19,7 +19,7 @@ export async function listOpenMatches({ kind, game } = {}) {
 export async function getMatch(matchId) {
   const { data, error } = await supabase
     .from("matches")
-    .select(`${MATCH_SELECT}, match_players(user_id, region, team_name, profiles(username, avatar_url, wagr_member, xp, wins, losses, earnings, psn, xbox, activision_id, twitter, youtube, twitch_username))`)
+    .select(`${MATCH_SELECT}, match_players(user_id, region, team_id, team_name, profiles(username, avatar_url, wagr_member, xp, wins, losses, earnings, psn, xbox, activision_id, twitter, youtube, twitch_username))`)
     .eq("id", matchId)
     .maybeSingle();
   return { data, error: error?.message };
@@ -40,7 +40,7 @@ export async function getMyMatches(userId) {
 export async function createMatch({
   game, mode, format, region, entry, kind,
   platform = "PC + Console Mixed", skillTier = "Open", series = "Best of 1",
-  weaponRestriction = null, hostRule = "auto", teamName = null, map = null,
+  weaponRestriction = null, hostRule = "auto", teamId = null, map = null,
   vetoBan = null, mapPool = null
 }) {
   const params = {
@@ -56,7 +56,7 @@ export async function createMatch({
     p_weapon_restriction: weaponRestriction,
     p_host_rule: hostRule
   };
-  if (teamName) params.p_team_name = teamName;
+  if (teamId) params.p_team_id = teamId;
   if (map) params.p_map = map;
   if (vetoBan) params.p_veto_ban = vetoBan;
   if (mapPool) params.p_map_pool = mapPool;

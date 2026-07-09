@@ -1385,3 +1385,26 @@ html{scroll-behavior:smooth}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;scroll-behavior:auto!important}
 }
+
+/* ── Team Detail ── */
+.teamStatRow{display:flex;gap:12px;font-size:13px;color:var(--muted);padding-top:4px}
+.teamRecordSlab .teamStatGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.formStreak{display:flex;gap:4px}
+.formStreak .formW,.formStreak .formL{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:4px;font-size:11px;font-weight:700}
+.formStreak .formW{background:var(--green);color:#000}
+.formStreak .formL{background:var(--danger);color:#fff}
+.activeMatchList{display:flex;flex-direction:column;gap:8px}
+.activeMatchCard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:6px}
+.activeMatchTop{display:flex;justify-content:space-between;align-items:center}
+.matchStatusBadge{font-size:11px;font-weight:700;text-transform:uppercase;padding:2px 8px;border-radius:4px;background:var(--surface2);color:var(--muted)}
+.matchStatusBadge.live{background:var(--green);color:#000}
+.matchStatusBadge.warn{background:var(--gold);color:#000}
+.activeMatchMeta b{display:block;font-size:14px}.activeMatchMeta small{display:block;color:var(--muted);font-size:12px}
+.activeMatchPlayers{display:flex;gap:4px;flex-wrap:wrap}
+.activeMatchEntry{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.teamHistoryList{display:flex;flex-direction:column;gap:4px}
+.historyRow{display:flex;align-items:center;gap:10px;padding:6px 0;font-size:13px;border-bottom:1px solid var(--border)}
+.historyResult{font-weight:700;width:20px;text-align:center}
+.historyResult.win{color:var(--green)}.historyResult.loss{color:var(--danger)}
+.historyOpp{flex:1;color:var(--text2)}.historyXp{color:var(--muted);font-size:12px}
+.backLink{display:inline-flex;align-items:center;gap:4px;background:none;border:none;color:var(--gold);cursor:pointer;font-size:13px;padding:0;margin-bottom:12px}

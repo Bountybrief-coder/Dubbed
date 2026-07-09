@@ -25,11 +25,10 @@ export async function getTournament(id) {
   return { data, error: error?.message };
 }
 
-export async function joinTournament(tournamentId, entrantName) {
-  const { error } = await supabase.rpc("join_tournament", {
-    p_tournament: tournamentId,
-    p_entrant: entrantName
-  });
+export async function joinTournament(tournamentId, entrantName, teamId = null) {
+  const params = { p_tournament: tournamentId, p_entrant: entrantName };
+  if (teamId) params.p_team_id = teamId;
+  const { error } = await supabase.rpc("join_tournament", params);
   return { error: error?.message };
 }
 

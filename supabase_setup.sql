@@ -249,6 +249,16 @@ create table if not exists public.teams (
   owner_id   uuid not null default auth.uid() references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now()
 );
+-- Team columns added for records, platform, and sizing.
+alter table public.teams add column if not exists platform text;
+alter table public.teams add column if not exists size integer not null default 1;
+alter table public.teams add column if not exists wins integer not null default 0;
+alter table public.teams add column if not exists losses integer not null default 0;
+alter table public.teams add column if not exists earnings numeric(12,2) not null default 0;
+alter table public.teams add column if not exists xp integer not null default 0;
+alter table public.teams add column if not exists tourney_wins integer not null default 0;
+alter table public.teams add column if not exists tourney_losses integer not null default 0;
+
 create table if not exists public.team_members (
   team_id uuid not null references public.teams(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -312,6 +322,9 @@ create table if not exists public.match_players (
 -- Snapshot the player's region at join time — the host rule is decided off
 -- who's actually in the lobby, not off whatever region they change to later.
 alter table public.match_players add column if not exists region text not null default 'NA';
+-- Which team the player entered with (for team record attribution on settle).
+alter table public.match_players add column if not exists team_id uuid references public.teams(id) on delete set null;
+alter table public.match_players add column if not exists team_name text;
 
 create table if not exists public.match_reports (
   id           uuid primary key default gen_random_uuid(),
@@ -402,6 +415,9 @@ create table if not exists public.tournament_entries (
   joined_at     timestamptz not null default now(),
   primary key (tournament_id, entrant_name)
 );
+
+-- Which team the entrant registered with (for tournament record attribution).
+alter table public.tournament_entries add column if not exists team_id uuid references public.teams(id) on delete set null;
 
 -- Bracket rounds + matches for single-elimination tournaments.
 create table if not exists public.tournament_rounds (
@@ -1785,47 +1801,88 @@ end $$;
 -- ---------- migration: activision_id column ----------
 alter table public.profiles add column if not exists activision_id text default '';
 
--- ---------- can_play_game gate ----------
--- Returns NULL when the user is eligible, or a human reason when blocked.
--- Games requiring Activision ID: BO7, Warzone, BOR, MW4 (current-gen CoD).
--- WWII requires PSN or Xbox (old-gen console-only title).
-create or replace function public.can_play_game(p_user uuid, p_game text)
-returns text language plpgsql stable security definer set search_path = public as $$
+-- ---------- can_play gate ----------
+-- Full eligibility check: team + linked account + platform (WWII split).
+-- p_platform / p_type are optional — when NULL, checks for ANY matching team.
+-- Returns NULL when eligible, or a human reason string when blocked.
+create or replace function public.can_play(
+  p_user uuid, p_game text,
+  p_platform text default null, p_type text default null
+) returns text language plpgsql stable security definer set search_path = public as $$
 declare
   v_act text; v_psn text; v_xbox text;
   v_needs_activision boolean;
-  v_needs_console boolean;
+  v_is_wwii boolean;
+  v_team_platform text;
 begin
-  -- 1. Team check
-  if not exists (
-    select 1 from public.team_members tm
-    join public.teams t on t.id = tm.team_id
-    where tm.user_id = p_user and t.game = p_game
-  ) then
-    return 'Create a team for ' || p_game || ' first';
-  end if;
-
-  -- 2. Linked-account check (game-dependent)
+  v_is_wwii := p_game = 'Call of Duty: WWII';
   v_needs_activision := p_game in (
     'Call of Duty: Black Ops 7', 'Warzone', 'Black Ops Royale',
     'Call of Duty: Modern Warfare 4'
   );
-  v_needs_console := p_game = 'Call of Duty: WWII';
 
-  if v_needs_activision then
-    select coalesce(activision_id, '') into v_act from public.profiles where id = p_user;
-    if v_act = '' or v_act !~ '^\S+#\d{4,10}$' then
-      return 'Link your Activision ID to play ' || p_game;
+  -- 1. Team check (game + type + platform for WWII)
+  if v_is_wwii then
+    if not exists (
+      select 1 from public.team_members tm
+      join public.teams t on t.id = tm.team_id
+      where tm.user_id = p_user and t.game = p_game
+        and (p_type is null or t.type::text = p_type)
+        and (p_platform is null or t.platform = p_platform)
+    ) then
+      if p_platform is not null then
+        return 'Create a ' || p_platform || ' team for WWII first';
+      end if;
+      return 'Create a team for ' || p_game || ' first';
     end if;
-  elsif v_needs_console then
+
+    -- For WWII, get the team's platform to check the right linked account
+    select t.platform into v_team_platform
+    from public.team_members tm
+    join public.teams t on t.id = tm.team_id
+    where tm.user_id = p_user and t.game = p_game
+      and (p_type is null or t.type::text = p_type)
+      and (p_platform is null or t.platform = p_platform)
+    limit 1;
+
     select coalesce(psn, ''), coalesce(xbox, '') into v_psn, v_xbox
     from public.profiles where id = p_user;
-    if v_psn = '' and v_xbox = '' then
+
+    if v_team_platform = 'PlayStation Only' and v_psn = '' then
+      return 'Link your PSN account to play WWII on PlayStation';
+    elsif v_team_platform = 'Xbox Only' and v_xbox = '' then
+      return 'Link your Xbox account to play WWII on Xbox';
+    elsif v_psn = '' and v_xbox = '' then
       return 'Link an Xbox or PSN account to play ' || p_game;
+    end if;
+  else
+    -- Non-WWII: just game + type
+    if not exists (
+      select 1 from public.team_members tm
+      join public.teams t on t.id = tm.team_id
+      where tm.user_id = p_user and t.game = p_game
+        and (p_type is null or t.type::text = p_type)
+    ) then
+      return 'Create a team for ' || p_game || ' first';
+    end if;
+
+    -- Activision ID check for current-gen titles
+    if v_needs_activision then
+      select coalesce(activision_id, '') into v_act from public.profiles where id = p_user;
+      if v_act = '' or v_act !~ '^\S+#\d{4,10}$' then
+        return 'Link your Activision ID to play ' || p_game;
+      end if;
     end if;
   end if;
 
   return null; -- eligible
+end $$;
+
+-- Backward-compat wrapper: existing calls use can_play_game(user, game).
+create or replace function public.can_play_game(p_user uuid, p_game text)
+returns text language plpgsql stable security definer set search_path = public as $$
+begin
+  return public.can_play(p_user, p_game);
 end $$;
 
 -- ---------- chat: purge + rate-limited send ----------
@@ -1868,15 +1925,34 @@ create or replace function public.create_match(
   p_game text, p_mode text, p_format text, p_region text, p_entry numeric, p_kind match_kind,
   p_platform text default 'PC + Console Mixed', p_skill_tier text default 'Open',
   p_series text default 'Best of 1', p_weapon_restriction text default null,
-  p_host_rule text default 'auto'
+  p_host_rule text default 'auto', p_team_id uuid default null
 ) returns matches language plpgsql security definer set search_path = public as $$
 declare v_code text; v_match public.matches; v_bal numeric; v_xp int; v_region text; v_gate text;
+        v_team public.teams; v_team_name text;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
   perform public.check_not_banned();
-  perform public.check_rate_limit('create_match', 5, 60);  -- 5 per minute
-  v_gate := public.can_play_game(auth.uid(), p_game);
+  perform public.check_rate_limit('create_match', 5, 60);
+
+  -- Resolve team: if not passed, pick the user's first matching team
+  if p_team_id is not null then
+    select * into v_team from public.teams where id = p_team_id;
+    if not found then raise exception 'team not found'; end if;
+    if not exists (select 1 from public.team_members where team_id = p_team_id and user_id = auth.uid()) then
+      raise exception 'you are not on this team';
+    end if;
+  else
+    select t.* into v_team from public.team_members tm
+    join public.teams t on t.id = tm.team_id
+    where tm.user_id = auth.uid() and t.game = p_game
+      and t.type::text = p_kind::text
+    limit 1;
+  end if;
+
+  -- Full eligibility gate (team + linked account + platform for WWII)
+  v_gate := public.can_play(auth.uid(), p_game, p_platform, p_kind::text);
   if v_gate is not null then raise exception '%', v_gate; end if;
+
   if not public.format_allowed(p_game, p_format) then
     raise exception '% only supports 1v1/2v2 lobbies', p_game;
   end if;
@@ -1884,6 +1960,14 @@ begin
     select xp into v_xp from public.profiles where id = auth.uid();
     if coalesce(v_xp,0) >= 25000 then raise exception 'Rookie Only lobbies require Rookie rank (under 25,000 XP)'; end if;
   end if;
+
+  -- WWII: force platform from team
+  if p_game = 'Call of Duty: WWII' and v_team.id is not null then
+    p_platform := v_team.platform;
+  end if;
+
+  v_team_name := v_team.name;
+
   loop
     v_code := 'DUB-' || upper(substr(replace(gen_random_uuid()::text,'-',''),1,6));
     exit when not exists (select 1 from public.matches where code = v_code);
@@ -1902,21 +1986,43 @@ begin
             p_platform, p_skill_tier, p_series, nullif(p_weapon_restriction,'None'), coalesce(p_host_rule,'auto'))
     returning * into v_match;
   select region into v_region from public.profiles where id = auth.uid();
-  insert into public.match_players(match_id, user_id, region) values (v_match.id, auth.uid(), coalesce(v_region,'NA'));
+  insert into public.match_players(match_id, user_id, region, team_id, team_name)
+    values (v_match.id, auth.uid(), coalesce(v_region,'NA'), v_team.id, v_team_name);
   return v_match;
 end $$;
 
-create or replace function public.join_match(p_match uuid)
+create or replace function public.join_match(p_match uuid, p_team_id uuid default null)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_m public.matches; v_bal numeric; v_xp int; v_region text; v_players int; v_needed int; v_pool jsonb; v_gate text;
+declare v_m public.matches; v_bal numeric; v_xp int; v_region text; v_players int; v_needed int;
+        v_pool jsonb; v_gate text; v_team public.teams; v_team_name text;
 begin
   perform public.check_not_banned();
-  perform public.check_rate_limit('join_match', 10, 60);  -- 10 per minute
+  perform public.check_rate_limit('join_match', 10, 60);
   select * into v_m from public.matches where id = p_match for update;
   if not found then raise exception 'match not found'; end if;
   if v_m.status <> 'open' then raise exception 'match is not open'; end if;
-  v_gate := public.can_play_game(auth.uid(), v_m.game);
+
+  -- Resolve team
+  if p_team_id is not null then
+    select * into v_team from public.teams where id = p_team_id;
+    if not found then raise exception 'team not found'; end if;
+  else
+    select t.* into v_team from public.team_members tm
+    join public.teams t on t.id = tm.team_id
+    where tm.user_id = auth.uid() and t.game = v_m.game
+      and t.type::text = v_m.kind::text
+    limit 1;
+  end if;
+
+  v_gate := public.can_play(auth.uid(), v_m.game, v_m.platform, v_m.kind::text);
   if v_gate is not null then raise exception '%', v_gate; end if;
+
+  -- WWII platform must match the match
+  if v_m.game = 'Call of Duty: WWII' and v_team.id is not null
+     and v_team.platform <> v_m.platform then
+    raise exception 'Your team is % but this match is %', v_team.platform, v_m.platform;
+  end if;
+
   if exists (select 1 from public.match_players where match_id=p_match and user_id=auth.uid())
     then raise exception 'already joined'; end if;
   if v_m.skill_tier = 'Rookie Only' then
@@ -1929,8 +2035,10 @@ begin
     update public.profiles set balance = balance - v_m.entry where id = auth.uid();
     insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (auth.uid(), -v_m.entry, 'match_entry', p_match);
   end if;
+  v_team_name := v_team.name;
   select region into v_region from public.profiles where id = auth.uid();
-  insert into public.match_players(match_id, user_id, region) values (p_match, auth.uid(), coalesce(v_region,'NA'));
+  insert into public.match_players(match_id, user_id, region, team_id, team_name)
+    values (p_match, auth.uid(), coalesce(v_region,'NA'), v_team.id, v_team_name);
 
   select count(*) into v_players from public.match_players where match_id = p_match;
   v_needed := public.team_size(v_m.format) * 2;
@@ -2007,12 +2115,12 @@ end $$;
 create or replace function public.settle_match(p_match uuid, p_winner uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare v_m public.matches; v_players int; v_pot numeric; v_rake numeric; v_payout numeric; v_member boolean;
+        v_mp record; v_is_tourney boolean; v_opp_team uuid;
 begin
   select * into v_m from public.matches where id = p_match for update;
   if v_m.status = 'settled' then return; end if;
   select count(*) into v_players from public.match_players where match_id = p_match;
   if v_m.kind = 'cash' then
-    -- WAGR members get no-fee wagers: the winning member pays 0 rake.
     select wagr_member into v_member from public.profiles where id = p_winner;
     v_pot := v_m.entry * v_players;
     v_rake := case when coalesce(v_member,false) then 0 else round(v_pot * 0.10, 2) end;
@@ -2027,9 +2135,48 @@ begin
     streak = case when p.id = p_winner then streak + 1 else 0 end
   from public.match_players mp where mp.match_id = p_match and mp.user_id = p.id;
   update public.matches set status='settled', winner_id=p_winner where id=p_match;
-  -- Auto-settle any side bets linked to this match.
+
+  -- Check if this is a tournament match
+  v_is_tourney := exists (select 1 from public.tournament_matches where match_id = p_match);
+
+  -- Credit team records
+  for v_mp in select mp.user_id, mp.team_id from public.match_players mp where mp.match_id = p_match and mp.team_id is not null loop
+    -- Find opponent team
+    select mp2.team_id into v_opp_team from public.match_players mp2
+    where mp2.match_id = p_match and mp2.user_id <> v_mp.user_id and mp2.team_id is not null limit 1;
+
+    if v_mp.user_id = p_winner then
+      if v_is_tourney then
+        update public.teams set tourney_wins = tourney_wins + 1,
+          xp = xp + 100,
+          earnings = earnings + coalesce(v_payout, 0)
+        where id = v_mp.team_id;
+      else
+        update public.teams set wins = wins + 1,
+          xp = xp + 100,
+          earnings = earnings + coalesce(v_payout, 0)
+        where id = v_mp.team_id;
+      end if;
+      insert into public.team_match_history(team_id, match_id, result, earnings, xp_earned, opponent_team_id,
+        tournament_id)
+        values (v_mp.team_id, p_match, 'win', coalesce(v_payout, 0), 100, v_opp_team,
+          (select tournament_id from public.tournament_matches where match_id = p_match limit 1));
+    else
+      if v_is_tourney then
+        update public.teams set tourney_losses = tourney_losses + 1, xp = xp + 25
+        where id = v_mp.team_id;
+      else
+        update public.teams set losses = losses + 1, xp = xp + 25
+        where id = v_mp.team_id;
+      end if;
+      insert into public.team_match_history(team_id, match_id, result, earnings, xp_earned, opponent_team_id,
+        tournament_id)
+        values (v_mp.team_id, p_match, 'loss', 0, 25, v_opp_team,
+          (select tournament_id from public.tournament_matches where match_id = p_match limit 1));
+    end if;
+  end loop;
+
   perform public.settle_match_bets(p_match, p_winner);
-  -- If this match belongs to a tournament bracket, advance the winner.
   declare v_tm_id uuid; begin
     select id into v_tm_id from public.tournament_matches where match_id=p_match limit 1;
     if v_tm_id is not null then perform public.advance_bracket(v_tm_id); end if;
@@ -2126,14 +2273,40 @@ end $$;
 
 -- ---------- tournaments ----------
 -- Join: pot is built from who actually joins (entry x entries). Holds entry.
-create or replace function public.join_tournament(p_tournament uuid, p_entrant text)
+create or replace function public.join_tournament(p_tournament uuid, p_entrant text, p_team_id uuid default null)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_t public.tournaments; v_bal numeric; v_count int;
+declare v_t public.tournaments; v_bal numeric; v_count int; v_gate text;
+        v_team public.teams;
 begin
   perform public.check_not_banned();
   select * into v_t from public.tournaments where id = p_tournament for update;
   if not found then raise exception 'tournament not found'; end if;
   if v_t.status <> 'upcoming' then raise exception 'tournament is not open'; end if;
+
+  -- Resolve + validate team
+  if p_team_id is not null then
+    select * into v_team from public.teams where id = p_team_id;
+    if not found then raise exception 'team not found'; end if;
+    if not exists (select 1 from public.team_members where team_id = p_team_id and user_id = auth.uid()) then
+      raise exception 'you are not on this team';
+    end if;
+  else
+    select t.* into v_team from public.team_members tm
+    join public.teams t on t.id = tm.team_id
+    where tm.user_id = auth.uid() and t.game = v_t.game
+    limit 1;
+  end if;
+
+  -- Eligibility gate
+  v_gate := public.can_play(auth.uid(), v_t.game, v_t.platform, null);
+  if v_gate is not null then raise exception '%', v_gate; end if;
+
+  -- WWII platform match
+  if v_t.game = 'Call of Duty: WWII' and v_team.id is not null
+     and v_team.platform <> v_t.platform then
+    raise exception 'Your team is % but this tournament is %', v_team.platform, v_t.platform;
+  end if;
+
   -- Region enforcement
   if v_t.region = 'NA' and coalesce((select region from public.profiles where id=auth.uid()),'NA') <> 'NA' then
     raise exception 'This tournament is NA Only. Set your profile region to NA.';
@@ -2149,8 +2322,8 @@ begin
   if v_bal < v_t.entry then raise exception 'insufficient balance'; end if;
   update public.profiles set balance = balance - v_t.entry where id = auth.uid();
   insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (auth.uid(), -v_t.entry, 'tournament_entry', p_tournament);
-  insert into public.tournament_entries(tournament_id, entrant_name, user_id, paid)
-    values (p_tournament, p_entrant, auth.uid(), v_t.entry);
+  insert into public.tournament_entries(tournament_id, entrant_name, user_id, paid, team_id)
+    values (p_tournament, p_entrant, auth.uid(), v_t.entry, v_team.id);
 end $$;
 
 -- Settle a tournament: pot = entry * teams joined. Pays 1st 80%, 2nd 15%, 3rd 5%
@@ -2645,6 +2818,31 @@ drop policy if exists "weekly_stats read own" on public.weekly_stats;
 create policy "weekly_stats read own" on public.weekly_stats for select using (true);
 drop policy if exists "weekly_rewards read own" on public.weekly_rewards;
 create policy "weekly_rewards read own" on public.weekly_rewards for select using (true);
+
+-- ============================================================================
+-- TEAM MATCH HISTORY (per-team per-settled-match record)
+-- ============================================================================
+create table if not exists public.team_match_history (
+  id         uuid primary key default gen_random_uuid(),
+  team_id    uuid not null references public.teams(id) on delete cascade,
+  match_id   uuid references public.matches(id) on delete set null,
+  tournament_id uuid references public.tournaments(id) on delete set null,
+  result     text not null check (result in ('win','loss')),
+  earnings   numeric(12,2) not null default 0,
+  xp_earned  integer not null default 0,
+  opponent_team_id uuid references public.teams(id) on delete set null,
+  settled_at timestamptz not null default now()
+);
+create index if not exists tmh_team_idx on public.team_match_history(team_id, settled_at desc);
+
+alter table public.team_match_history enable row level security;
+drop policy if exists "team_match_history read" on public.team_match_history;
+create policy "team_match_history read" on public.team_match_history for select using (true);
+
+do $$ begin
+  execute 'alter publication supabase_realtime add table public.team_match_history';
+exception when duplicate_object then null; when others then null;
+end $$;
 
 -- ============================================================================
 -- DONE. After running:

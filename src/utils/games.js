@@ -51,7 +51,7 @@ export const GAMES = [
     category: "current",
     description: "Boots-on-the-ground classic. Search & Destroy and Hardpoint on CWL maps. PSN and Xbox only — no PC.",
     formats: ["1v1", "2v2", "3v3", "4v4"],
-    platforms: ["Console Only"],
+    platforms: ["PlayStation Only", "Xbox Only"],
     modes: ["Search & Destroy", "Hardpoint", "Variant"]
   },
 ];
@@ -346,10 +346,19 @@ export function requiredAccountForGame(game) {
   return null;
 }
 
-export function checkGameEligibility(game, profile, teams) {
+export const isConsoleOnlyGame = (game) => CONSOLE_ONLY_GAMES.has(game);
+export const WWII_PLATFORMS = ["PlayStation Only", "Xbox Only"];
+
+export function checkGameEligibility(game, profile, teams, { platform, type } = {}) {
   if (!profile) return { eligible: false, reason: "Log in to play", cta: "login" };
 
-  const hasTeam = (teams || []).some((t) => t.game === game);
+  const teamList = teams || [];
+  let hasTeam;
+  if (isConsoleOnlyGame(game) && platform) {
+    hasTeam = teamList.some((t) => t.game === game && t.platform === platform && (!type || t.type === type));
+  } else {
+    hasTeam = teamList.some((t) => t.game === game && (!type || t.type === type));
+  }
   if (!hasTeam) return { eligible: false, reason: `Create a team for ${shortForGame(game) || game} first`, cta: "team", game };
 
   const req = requiredAccountForGame(game);
@@ -358,9 +367,24 @@ export function checkGameEligibility(game, profile, teams) {
     if (!id || !ACTIVISION_RE.test(id))
       return { eligible: false, reason: "Link your Activision ID to play", cta: "account" };
   } else if (req === "console") {
-    if (!(profile.psn || "").trim() && !(profile.xbox || "").trim())
-      return { eligible: false, reason: "Link an Xbox or PSN account to play", cta: "account" };
+    if (isConsoleOnlyGame(game) && platform) {
+      if (platform === "PlayStation Only" && !(profile.psn || "").trim())
+        return { eligible: false, reason: "Link your PSN account to play WWII on PlayStation", cta: "account" };
+      if (platform === "Xbox Only" && !(profile.xbox || "").trim())
+        return { eligible: false, reason: "Link your Xbox account to play WWII on Xbox", cta: "account" };
+    } else {
+      if (!(profile.psn || "").trim() && !(profile.xbox || "").trim())
+        return { eligible: false, reason: "Link an Xbox or PSN account to play", cta: "account" };
+    }
   }
 
   return { eligible: true, reason: null, cta: null };
+}
+
+export function getEligibleTeam(game, teams, { platform, type } = {}) {
+  const list = teams || [];
+  if (isConsoleOnlyGame(game) && platform) {
+    return list.find((t) => t.game === game && t.platform === platform && (!type || t.type === type));
+  }
+  return list.find((t) => t.game === game && (!type || t.type === type));
 }

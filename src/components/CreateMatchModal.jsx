@@ -12,7 +12,8 @@ import {
   SERIES_OPTIONS, WEAPON_RESTRICTIONS, FORMAT_LABELS,
   formatsForGameMode, modesForGame, modeRule, seriesRule, shortForGame, formatLabel,
   usesMapVeto, isSingleMapMode, isBattleRoyaleGame, isKillRaceMode, isRookieEligible,
-  calculateRake, calculatePayout, RAKE_CONFIG, mapsForGameMode, checkGameEligibility
+  calculateRake, calculatePayout, RAKE_CONFIG, mapsForGameMode, checkGameEligibility,
+  isConsoleOnlyGame, WWII_PLATFORMS, getEligibleTeam
 } from "../utils/games";
 import { validateEntry } from "../utils/validation";
 import { money } from "../utils/format";
@@ -38,7 +39,7 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
   const [series, setSeries] = useState(SERIES_OPTIONS[0]);
   const [weapon, setWeapon] = useState(WEAPON_RESTRICTIONS[0]);
   const [entry, setEntry] = useState(5);
-  const [teamName, setTeamName] = useState("");
+  const [selectedTeamId, setSelectedTeamId] = useState("");
   const [selectedMap, setSelectedMap] = useState("");
   const [bannedMap, setBannedMap] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,8 +65,11 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
   const showWeaponToggle = game === "Call of Duty: Black Ops 7";
   const rookieBlocked = skillTier === "Rookie Only" && profile && !isRookieEligible(profile.xp);
   const isWagr = profile?.wagr_member;
-  const elig = checkGameEligibility(game, profile, myTeams);
+  const wwii = isConsoleOnlyGame(game);
+  const matchPlatform = wwii ? (WWII_PLATFORMS.includes(platform) ? platform : WWII_PLATFORMS[0]) : platform;
+  const elig = checkGameEligibility(game, profile, myTeams, { platform: wwii ? matchPlatform : undefined, type: kind || undefined });
   const gateBlocked = !elig.eligible && elig.cta !== "login";
+  const eligibleTeam = getEligibleTeam(game, myTeams, { platform: wwii ? matchPlatform : undefined, type: kind || undefined });
 
   const pot = kind === "cash" ? Number(entry) * (parseInt(format) || 1) * 2 : 0;
   const rake = pot > 0 ? calculateRake(pot, isWagr) : 0;
@@ -100,10 +104,11 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
     const finalMap = singleMap ? availableMaps[0] : null;
     const res = await createMatch({
       game, mode, format, region, entry: kind === "cash" ? entry : 0, kind,
-      platform, skillTier, series: "Best of 1",
+      platform: wwii ? matchPlatform : platform,
+      skillTier, series: "Best of 1",
       weaponRestriction: showWeaponToggle && weapon !== "None" ? weapon : null,
       hostRule: "auto",
-      teamName: teamName.trim() || null,
+      teamId: eligibleTeam?.id || null,
       map: finalMap,
       vetoBan: bannedMap || null,
       mapPool: bannedMap ? availableMaps : null
@@ -190,11 +195,17 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
         <small className="subtle">{isKillRaceMode(mode) ? "Kill Race" : game} is capped at Duos (2v2).</small>
       )}
 
-      {format !== "1v1" && (
+      {wwii && (
         <>
-          <label className="fieldLbl">Team Name <small className="lblHint">(optional)</small></label>
-          <input className="field" value={teamName} maxLength={20} onChange={(e) => setTeamName(e.target.value)} placeholder="e.g. Night Owls" />
+          <label className="fieldLbl">WWII Platform</label>
+          <div className="segRow">{WWII_PLATFORMS.map((p) => (
+            <button key={p} className={matchPlatform === p ? "on" : ""} onClick={() => setPlatform(p)}>{p === "PlayStation Only" ? "PSN" : "Xbox"}</button>
+          ))}</div>
         </>
+      )}
+
+      {eligibleTeam && (
+        <p className="modalNote">Playing as <b>{eligibleTeam.name}</b> [{eligibleTeam.tag}]</p>
       )}
 
       {singleMap && <small className="subtle">Single-map mode. {availableMaps[0]} is locked in automatically.</small>}

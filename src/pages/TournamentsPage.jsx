@@ -113,13 +113,15 @@ function JoinModal({ t, onClose, onDone, onLogin }) {
   const toast = useToast();
   const { profile, refreshProfile } = useAuth();
   const { data: teams } = useAsync(() => getMyTeams(profile.id), [profile.id]);
-  const cashTeams = (teams || []).filter((x) => x.type === "cash");
-  const [entrant, setEntrant] = useState("");
+  const eligibleTeams = (teams || []).filter((x) => x.game === t.game);
+  const [selectedTeamId, setSelectedTeamId] = useState("");
   const [busy, setBusy] = useState(false);
   const potNow = pooledPrize(t.entry, t.entries_count);
   const potAfter = pooledPrize(t.entry, t.entries_count + 1);
-  const needsTeam = t.format !== "1v1" && cashTeams.length === 0;
-  const entrantName = t.format === "1v1" ? profile.username : (entrant || cashTeams[0]?.name || "");
+  const needsTeam = eligibleTeams.length === 0;
+
+  const selectedTeam = eligibleTeams.find((x) => x.id === selectedTeamId) || eligibleTeams[0];
+  const entrantName = t.format === "1v1" ? profile.username : (selectedTeam?.name || "");
 
   return (
     <Modal open onClose={onClose} eyebrow="JOIN TOURNAMENT" title={t.name} size="sm">
@@ -149,18 +151,21 @@ function JoinModal({ t, onClose, onDone, onLogin }) {
       <small className="subtle">Platform takes 2% of the pot. {t.entries_count + 1 < 8 ? "3rd place pays out at 8+ teams." : ""}</small>
       <p className="modalNote">Winner also earns a permanent gold trophy with the tournament title on their profile.</p>
       {needsTeam ? (
-        <div className="errBanner">You need a cash team for {t.format}. Create one on the Teams page first.</div>
-      ) : t.format !== "1v1" && (
+        <div className="errBanner">You need a {t.game} team to enter. Create one on the Teams page first.</div>
+      ) : eligibleTeams.length > 1 && (
         <>
           <label className="fieldLbl">Enter as team</label>
-          <select className="field" value={entrantName} onChange={(e) => setEntrant(e.target.value)}>
-            {cashTeams.map((x) => <option key={x.id} value={x.name}>{x.name}</option>)}
+          <select className="field" value={selectedTeam?.id || ""} onChange={(e) => setSelectedTeamId(e.target.value)}>
+            {eligibleTeams.map((x) => <option key={x.id} value={x.id}>{x.name} ({x.type}{x.platform ? ` · ${x.platform}` : ""})</option>)}
           </select>
         </>
       )}
+      {!needsTeam && eligibleTeams.length === 1 && (
+        <p className="modalNote">Entering as <b>{selectedTeam?.name}</b></p>
+      )}
       <Button variant="primary" className="wide" disabled={needsTeam || profile.balance < t.entry} loading={busy} onClick={async () => {
         setBusy(true);
-        const res = await joinTournament(t.id, entrantName);
+        const res = await joinTournament(t.id, entrantName, selectedTeam?.id);
         setBusy(false);
         if (res.error) return toast.error(res.error);
         toast.success("Entered. Good luck.");

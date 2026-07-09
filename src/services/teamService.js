@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabase";
 export async function getMyTeams(userId) {
   const { data, error } = await supabase
     .from("team_members")
-    .select("team_id, role, teams(id, name, tag, type, game, owner_id, created_at, team_members(user_id, role, profiles(username)))")
+    .select("team_id, role, teams(id, name, tag, type, game, platform, size, owner_id, created_at, wins, losses, earnings, xp, tourney_wins, tourney_losses, team_members(user_id, role, profiles(username, avatar_url)))")
     .eq("user_id", userId);
   const teams = (data || []).map(d => ({ ...d.teams, myRole: d.role }));
   return { data: teams, error: error?.message };
@@ -18,11 +18,12 @@ export async function getTeam(teamId) {
   return { data, error: error?.message };
 }
 
-export async function createTeam({ name, tag, type, game }) {
-  // Insert the team, then the owner membership. RLS allows both as the owner.
+export async function createTeam({ name, tag, type, game, platform = null, size = 1 }) {
+  const row = { name, tag: (tag || name.slice(0, 3)).toUpperCase(), type, game, size };
+  if (platform) row.platform = platform;
   const { data: team, error } = await supabase
     .from("teams")
-    .insert({ name, tag: (tag || name.slice(0, 3)).toUpperCase(), type, game })
+    .insert(row)
     .select()
     .maybeSingle();
   if (error) return { error: error.message };
@@ -89,4 +90,40 @@ export async function disbandTeam(teamId) {
     .delete()
     .eq("id", teamId);
   return { error: error?.message };
+}
+
+export async function getTeamActiveMatches(teamId) {
+  const { data: members } = await supabase
+    .from("team_members")
+    .select("user_id")
+    .eq("team_id", teamId);
+  if (!members || members.length === 0) return { data: [] };
+  const userIds = members.map((m) => m.user_id);
+  const { data, error } = await supabase
+    .from("matches")
+    .select("id, code, game, mode, format, region, entry, kind, status, created_by, platform, skill_tier, series, host_region, host_rule, veto_status, veto, match_players(user_id, region, team_name, profiles(username, avatar_url))")
+    .in("status", ["open", "live", "reported", "disputed"])
+    .order("created_at", { ascending: false });
+  const active = (data || []).filter((m) =>
+    m.match_players?.some((mp) => userIds.includes(mp.user_id))
+  );
+  return { data: active, error: error?.message };
+}
+
+export async function getTeamMatchHistory(teamId, limit = 10) {
+  const { data, error } = await supabase
+    .from("team_match_history")
+    .select("id, match_id, tournament_id, result, earnings, xp_earned, settled_at, opponent_team_id, opponent:opponent_team_id(name, tag)")
+    .eq("team_id", teamId)
+    .order("settled_at", { ascending: false })
+    .limit(limit);
+  return { data: data || [], error: error?.message };
+}
+
+export function subscribeToTeamMatches(teamId, onChange) {
+  const channel = supabase
+    .channel(`team-matches:${teamId}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "team_match_history", filter: `team_id=eq.${teamId}` }, onChange)
+    .subscribe();
+  return () => supabase.removeChannel(channel);
 }

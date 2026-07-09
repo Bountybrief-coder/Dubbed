@@ -207,7 +207,7 @@ export function App() {
           {route.name === "match" && requireAuth(<MatchRoomPage matchId={route.param} onBack={() => navigate("matchfinder")} onNavigate={navigate} />)}
           {route.name === "game" && <GamePage slug={route.param} onNavigate={navigate} onLogin={() => setAuthOpen(true)} onOpenMatch={(id) => navigate("match", id)} />}
           {route.name === "tournaments" && <TournamentsPage onLogin={() => setAuthOpen(true)} onNavigate={navigate} />}
-          {route.name === "teams" && requireAuth(<TeamsPage />)}
+          {route.name === "teams" && requireAuth(<TeamsPage onNavigate={navigate} />)}
           {route.name === "leaderboard" && <LeaderboardPage onOpenProfile={(u) => navigate("profile", u)} />}
           {route.name === "wallet" && requireAuth(<WalletPage />)}
           {route.name === "shop" && <ShopPage onLogin={() => setAuthOpen(true)} onNavigate={navigate} />}
