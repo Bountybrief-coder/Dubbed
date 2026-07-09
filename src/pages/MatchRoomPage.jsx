@@ -529,22 +529,22 @@ function PlayerCard({ player, isWinner, settled, clanTag, onNavigate }) {
           {player.teamName && <small className="mrPcTeam">{player.teamName}</small>}
           <small className="mrPcRank" style={{ color: rank.glow }}>{rank.name}</small>
         </div>
-        <RankStar rank={rank} size={38} />
+        <RankStar rank={rank} size={48} />
       </div>
 
       {(hasTrophies || player.wagr) && (
         <div className="mrPcTrophyRow">
           {player.wagr && (
-            <div className="mrPcTrophyItem wagr" title="WAGR Member"><TrophyIcon tone="wagr" size={22} /><span>WAGR</span></div>
+            <div className="mrPcTrophyItem wagr" title="WAGR Member"><TrophyIcon tone="wagr" size={28} /><span>WAGR</span></div>
           )}
           {tc.gold > 0 && (
-            <div className="mrPcTrophyItem" title={`${tc.gold} Gold`}><TrophyIcon tone="gold" size={22} /><span>{tc.gold}</span></div>
+            <div className="mrPcTrophyItem" title={`${tc.gold} Gold`}><TrophyIcon tone="gold" size={28} /><span>{tc.gold}</span></div>
           )}
           {tc.silver > 0 && (
-            <div className="mrPcTrophyItem" title={`${tc.silver} Silver`}><TrophyIcon tone="silver" size={22} /><span>{tc.silver}</span></div>
+            <div className="mrPcTrophyItem" title={`${tc.silver} Silver`}><TrophyIcon tone="silver" size={28} /><span>{tc.silver}</span></div>
           )}
           {tc.bronze > 0 && (
-            <div className="mrPcTrophyItem" title={`${tc.bronze} Bronze`}><TrophyIcon tone="bronze" size={22} /><span>{tc.bronze}</span></div>
+            <div className="mrPcTrophyItem" title={`${tc.bronze} Bronze`}><TrophyIcon tone="bronze" size={28} /><span>{tc.bronze}</span></div>
           )}
         </div>
       )}

@@ -23,7 +23,7 @@ export function PlayerCard({ profile, variant = "full", onClick }) {
       <div className="pcProgress">
         <div className="pcProgressLabels">
           <div className="pcRankCurrent">
-            <RankStar rank={rank} size={20} />
+            <RankStar rank={rank} size={28} />
             <span className="pcRankName">{rank.name}</span>
           </div>
           <span className="pcRankNext">

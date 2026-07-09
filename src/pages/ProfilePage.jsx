@@ -65,8 +65,8 @@ export function ProfilePage({ username }) {
           {isMe && <label className="avatarUp"><ImagePlus size={13} /> Change<input type="file" accept="image/*" onChange={onAvatar} /></label>}
         </div>
         <div className="phInfo">
-          <div className="phTierRow">
-            <RankStar rank={rank} size={30} />
+          <div className="phTierRow" style={{ "--rank-glow": rank.glow }}>
+            <RankStar rank={rank} size={42} />
             <span className="phTierName" style={{ color: rank.glow }}>{rank.name.toUpperCase()}</span>
             <span className="phTierSub">MEMBER</span>
           </div>
@@ -110,8 +110,8 @@ function PlayerStatCard({ profile, rank, total }) {
 
   return (
     <section className="pscCard">
-      <div className="pscStar">
-        <RankStar rank={rank} size={92} />
+      <div className="pscStar" style={{ "--rank-glow": rank.glow }}>
+        <RankStar rank={rank} size={110} />
       </div>
       <div className="pscCol">
         <small>RANK</small>
@@ -149,20 +149,20 @@ function PlayerStatCard({ profile, rank, total }) {
       <div className="pscTrophies">
         {profile.wagr_member && (
           <div className="pscTrophy" title="WAGR Member">
-            <TrophyIcon tone="wagr" size={44} />
+            <TrophyIcon tone="wagr" size={56} />
             <span className="pscTrophyN" style={{ color: "#7c5cff" }}>WAGR</span>
           </div>
         )}
         <div className={`pscTrophy ${tc.gold === 0 ? "empty" : ""}`} title={`${tc.gold} Gold`}>
-          <TrophyIcon tone="gold" size={44} />
+          <TrophyIcon tone="gold" size={56} />
           <span className="pscTrophyN">{tc.gold}</span>
         </div>
         <div className={`pscTrophy ${tc.silver === 0 ? "empty" : ""}`} title={`${tc.silver} Silver`}>
-          <TrophyIcon tone="silver" size={44} />
+          <TrophyIcon tone="silver" size={56} />
           <span className="pscTrophyN">{tc.silver}</span>
         </div>
         <div className={`pscTrophy ${tc.bronze === 0 ? "empty" : ""}`} title={`${tc.bronze} Bronze`}>
-          <TrophyIcon tone="bronze" size={44} />
+          <TrophyIcon tone="bronze" size={56} />
           <span className="pscTrophyN">{tc.bronze}</span>
         </div>
       </div>

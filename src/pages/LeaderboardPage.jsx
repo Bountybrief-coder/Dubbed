@@ -230,8 +230,8 @@ export function LeaderboardPage({ onOpenProfile }) {
                     </div>
                     <b>{p.username}{p.wagr_member && <WagrBadge size={14} />}</b>
                   </span>
-                  <span className="lbTier" style={{ color: rank.glow }}>
-                    <RankStar rank={rank} size={18} />
+                  <span className="lbTier" style={{ color: rank.glow, "--rank-glow": rank.glow }}>
+                    <RankStar rank={rank} size={24} />
                     {rank.name}
                   </span>
                   <span className="lbRec">{p.wins}-{p.losses}</span>
@@ -298,7 +298,7 @@ function Podium({ players, metric, onOpenProfile }) {
               {p.avatar_url ? <img src={p.avatar_url} alt="" /> : <span>{(p.username || "?").slice(0, 2)}</span>}
             </div>
             <b className="lbPodiumName">{p.username}{p.wagr_member && <WagrBadge size={14} />}</b>
-            <div className="lbPodiumRank"><RankStar rank={rank} size={22} /> <span style={{ color: rank.glow }}>{rank.name}</span></div>
+            <div className="lbPodiumRank" style={{ "--rank-glow": rank.glow }}><RankStar rank={rank} size={28} /> <span style={{ color: rank.glow }}>{rank.name}</span></div>
             <span className="lbPodiumMetric">{metricValue(p, metric)}</span>
             <span className="lbPodiumRec">{p.wins}W-{p.losses}L · {winPct}%</span>
             {(p.earnings || 0) > 0 && metric !== "earnings" && (
