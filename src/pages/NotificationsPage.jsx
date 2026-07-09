@@ -10,7 +10,7 @@ import { timeAgo } from "../utils/format";
 
 export function NotificationsPage({ onNavigate }) {
   const { user } = useAuth();
-  const { data, loading, reload } = useAsync(() => getNotifications(user.id), [user.id]);
+  const { data, loading, error, reload } = useAsync(() => getNotifications(user.id), [user.id]);
 
   // Notifications are plain text; route the wallet-related ones to the Wallet
   // page so the "each notification links to Wallet" requirement is met without
@@ -30,6 +30,8 @@ export function NotificationsPage({ onNavigate }) {
 
       {loading ? (
         <SkeletonRows rows={5} height={54} />
+      ) : error ? (
+        <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : !data?.length ? (
         <EmptyState icon={Bell} title="You're all caught up">Team invites and match updates land here.</EmptyState>
       ) : (

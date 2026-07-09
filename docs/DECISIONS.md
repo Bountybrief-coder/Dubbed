@@ -119,3 +119,54 @@ participants of that match, not to spectators or the public profile.
 Pattern: `^\S+#\d{4,10}$` — non-whitespace username followed by `#` and
 4-10 digits. This is a format check only. Live verification against Activision
 servers is a future integration (see `/docs/TODO.md`).
+
+## Rate Limits
+
+Server-side rate limits enforced in SQL via the `rate_limits` table and
+`check_rate_limit(action, max_hits, window_seconds)` helper. Returns a
+friendly "Slow down" error to the client — never a crash.
+
+| Action | Max | Window | Notes |
+|--------|-----|--------|-------|
+| `create_match` | 5 | 60s | Prevents match spam |
+| `join_match` | 10 | 60s | Generous — joining is quick |
+| `place_bet` | 10 | 60s | Prevents bet spam on events |
+| `withdrawal` | 3 | 300s (5min) | Financial action, tight limit |
+| `send_chat_message` | 5 | 10s | Inline in the RPC (not via `rate_limits` table) |
+
+### Implementation
+
+- `rate_limits` table: `(user_id, action, hit_at)` composite PK with a
+  descending index on `hit_at` for fast lookups.
+- Each `check_rate_limit` call counts recent hits within the window, raises
+  if over the max, and inserts a new row on success.
+- Cleanup: old rows (>10 min) are purged probabilistically (2% of calls)
+  via `purge_old_rate_limits()`. Can also be called from a cron.
+- The table has RLS `using (false)` — no direct client access, only via
+  SECURITY DEFINER functions.
+- Limits are constants in SQL. To change, update the `check_rate_limit`
+  call in the respective RPC and re-run the SQL.
+
+## Smoothness Extras (Section 5)
+
+### Offline Banner
+`ConnectionBanner` component listens for `online`/`offline` browser events.
+When the connection drops, a fixed-top red banner shows "You're offline —
+reconnecting…" with a `WifiOff` icon. Disappears automatically when the
+connection returns. Rendered at the top of `App` so it covers all pages.
+
+### Web Vitals
+`useWebVitals` hook uses `PerformanceObserver` to capture LCP, CLS, and INP.
+Values are logged as `performance.mark("dubbed:lcp" | "dubbed:cls" | "dubbed:inp")`
+for DevTools inspection. No external analytics dependency — marks are
+inspectable in the Performance timeline and can be forwarded to a backend later.
+
+### Optimistic UI
+The Matchfinder "Accept" button shows an immediate "Joining…" state with a
+loading spinner (`joiningId` local state) before the RPC round-trips. If the
+join fails, the button reverts and a toast shows the error.
+
+### Reduced Motion
+A global `@media(prefers-reduced-motion: reduce)` rule in `theme.css` kills
+all CSS animations and transitions (duration forced to 0.01ms, scroll-behavior
+to auto). Users with accessibility settings get zero jank by default.

@@ -33,7 +33,7 @@ export function WalletPage() {
 
   // Profile can be null briefly after auth — guard everything downstream.
   const profileId = profile?.id;
-  const { data: ledger, loading, reload } = useAsync(
+  const { data: ledger, loading, error, reload } = useAsync(
     () => profileId ? getLedger(profileId) : Promise.resolve({ data: [] }),
     [profileId]
   );
@@ -193,6 +193,8 @@ export function WalletPage() {
         <h2><Receipt size={16} /> Transaction history</h2>
         {loading ? (
           <SkeletonRows rows={5} height={48} />
+        ) : error ? (
+          <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
         ) : ledger.length === 0 ? (
           <EmptyState>No transactions yet. Deposits, entries and payouts show up here.</EmptyState>
         ) : (

@@ -42,13 +42,17 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    // Initial session
-    auth.getSession().then(async (s) => {
+    const SESSION_TIMEOUT = 10000;
+    const sessionPromise = auth.getSession();
+    const timeout = new Promise((r) => setTimeout(() => r(null), SESSION_TIMEOUT));
+
+    Promise.race([sessionPromise, timeout]).then(async (s) => {
       setSession(s);
-      await loadProfile(s?.user?.id);
+      if (s?.user?.id) {
+        try { await Promise.race([loadProfile(s.user.id), new Promise((_, rej) => setTimeout(() => rej(), SESSION_TIMEOUT))]); } catch {}
+      }
       setLoading(false);
     });
-    // Live updates
     const unsub = auth.onAuthChange(async (s) => {
       setSession(s);
       await loadProfile(s?.user?.id);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, Suspense, lazy } from "react";
 import { supabaseConfigured } from "./lib/supabase";
 import { useAuth } from "./hooks/useAuth.jsx";
 import { TopNav } from "./components/TopNav";
@@ -7,32 +7,44 @@ import { MobileNav } from "./components/MobileNav";
 import { ChatDock } from "./components/ChatDock";
 import { AuthModal } from "./components/AuthModal";
 import { AuthGate } from "./components/AuthGate";
+import { Skeleton } from "./components/Skeleton";
+import { ConnectionBanner } from "./components/ConnectionBanner";
 import { getNotifications, subscribeToNotifications } from "./services/notificationService";
 import { checkBanExpiry } from "./services/banService";
+import { useWebVitals } from "./hooks/useWebVitals";
 
+// Eager: homepage (first paint)
 import { HomePage } from "./pages/HomePage";
-import { MatchfinderPage } from "./pages/MatchfinderPage";
-import { MatchRoomPage } from "./pages/MatchRoomPage";
-import { GamePage } from "./pages/GamePage";
-import { TournamentsPage } from "./pages/TournamentsPage";
-import { TeamsPage } from "./pages/TeamsPage";
-import { ProfilePage } from "./pages/ProfilePage";
-import { LeaderboardPage } from "./pages/LeaderboardPage";
-import { WalletPage } from "./pages/WalletPage";
-import { ShopPage } from "./pages/ShopPage";
-import { RulesPage } from "./pages/RulesPage";
-import { PrivacyPage } from "./pages/PrivacyPage";
-import { SupportPage } from "./pages/SupportPage";
-import { AdminWithdrawalsPage } from "./pages/AdminWithdrawalsPage";
-import { AdminShopPage } from "./pages/AdminShopPage";
-import { AdminBansPage } from "./pages/AdminBansPage";
-import { AdminDisputesPage } from "./pages/AdminDisputesPage";
-import { AdminTournamentsPage } from "./pages/AdminTournamentsPage";
-import { AdminSideBetsPage } from "./pages/AdminSideBetsPage";
-import { AdminMatchSupportPage } from "./pages/AdminMatchSupportPage";
-import { AdminRevenuePage } from "./pages/AdminRevenuePage";
-import { NotificationsPage } from "./pages/NotificationsPage";
-import { LivePage } from "./pages/LivePage";
+
+// Lazy: everything else — split into chunks on demand
+const MatchfinderPage = lazy(() => import("./pages/MatchfinderPage").then(m => ({ default: m.MatchfinderPage })));
+const MatchRoomPage = lazy(() => import("./pages/MatchRoomPage").then(m => ({ default: m.MatchRoomPage })));
+const GamePage = lazy(() => import("./pages/GamePage").then(m => ({ default: m.GamePage })));
+const TournamentsPage = lazy(() => import("./pages/TournamentsPage").then(m => ({ default: m.TournamentsPage })));
+const TeamsPage = lazy(() => import("./pages/TeamsPage").then(m => ({ default: m.TeamsPage })));
+const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ default: m.ProfilePage })));
+const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage").then(m => ({ default: m.LeaderboardPage })));
+const WalletPage = lazy(() => import("./pages/WalletPage").then(m => ({ default: m.WalletPage })));
+const ShopPage = lazy(() => import("./pages/ShopPage").then(m => ({ default: m.ShopPage })));
+const RulesPage = lazy(() => import("./pages/RulesPage").then(m => ({ default: m.RulesPage })));
+const PrivacyPage = lazy(() => import("./pages/PrivacyPage").then(m => ({ default: m.PrivacyPage })));
+const SupportPage = lazy(() => import("./pages/SupportPage").then(m => ({ default: m.SupportPage })));
+const NotificationsPage = lazy(() => import("./pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
+const LivePage = lazy(() => import("./pages/LivePage").then(m => ({ default: m.LivePage })));
+
+// Admin pages — most users never hit these
+const AdminWithdrawalsPage = lazy(() => import("./pages/AdminWithdrawalsPage").then(m => ({ default: m.AdminWithdrawalsPage })));
+const AdminShopPage = lazy(() => import("./pages/AdminShopPage").then(m => ({ default: m.AdminShopPage })));
+const AdminBansPage = lazy(() => import("./pages/AdminBansPage").then(m => ({ default: m.AdminBansPage })));
+const AdminDisputesPage = lazy(() => import("./pages/AdminDisputesPage").then(m => ({ default: m.AdminDisputesPage })));
+const AdminTournamentsPage = lazy(() => import("./pages/AdminTournamentsPage").then(m => ({ default: m.AdminTournamentsPage })));
+const AdminSideBetsPage = lazy(() => import("./pages/AdminSideBetsPage").then(m => ({ default: m.AdminSideBetsPage })));
+const AdminMatchSupportPage = lazy(() => import("./pages/AdminMatchSupportPage").then(m => ({ default: m.AdminMatchSupportPage })));
+const AdminRevenuePage = lazy(() => import("./pages/AdminRevenuePage").then(m => ({ default: m.AdminRevenuePage })));
+
+function PageSkeleton() {
+  return <main className="page"><Skeleton w="40%" h={28} /><div style={{ height: 16 }} /><Skeleton h={200} r={14} /></main>;
+}
 
 const ROUTE_PATHS = {
   home: "/", matchfinder: "/matches", tournaments: "/tournaments", teams: "/teams",
@@ -43,6 +55,27 @@ const ROUTE_PATHS = {
   "admin-tournaments": "/admin/tournaments", "admin-sidebets": "/admin/sidebets",
   "admin-support": "/admin/support", "admin-revenue": "/admin/revenue",
 };
+
+// Prefetch map: route name → dynamic import thunk
+const PREFETCH_MAP = {
+  matchfinder: () => import("./pages/MatchfinderPage"),
+  match: () => import("./pages/MatchRoomPage"),
+  game: () => import("./pages/GamePage"),
+  tournaments: () => import("./pages/TournamentsPage"),
+  teams: () => import("./pages/TeamsPage"),
+  profile: () => import("./pages/ProfilePage"),
+  leaderboard: () => import("./pages/LeaderboardPage"),
+  wallet: () => import("./pages/WalletPage"),
+  shop: () => import("./pages/ShopPage"),
+  live: () => import("./pages/LivePage"),
+  notifications: () => import("./pages/NotificationsPage"),
+};
+const prefetched = new Set();
+function prefetchRoute(name) {
+  if (prefetched.has(name) || !PREFETCH_MAP[name]) return;
+  prefetched.add(name);
+  PREFETCH_MAP[name]();
+}
 
 function routeToPath(name, param) {
   if (name === "match") return `/match/${param}`;
@@ -91,6 +124,7 @@ export function App() {
   }, []);
 
   useEffect(() => { if (user) checkBanExpiry(); }, [user]);
+  useWebVitals();
 
   const requireAuth = (node) => (user ? node : <AuthGate onLogin={() => setAuthOpen(true)} />);
 
@@ -101,6 +135,25 @@ export function App() {
     return unsub;
   }, [user]);
 
+  // Prefetch likely-next routes after idle
+  useEffect(() => {
+    const id = requestIdleCallback(() => {
+      prefetchRoute("matchfinder");
+      prefetchRoute("game");
+      prefetchRoute("profile");
+    }, { timeout: 3000 });
+    return () => cancelIdleCallback(id);
+  }, []);
+
+  useEffect(() => {
+    if (!loading) return;
+    const bail = setTimeout(() => {
+      const el = document.querySelector(".bootScreen");
+      if (el) window.location.reload();
+    }, 15000);
+    return () => clearTimeout(bail);
+  }, [loading]);
+
   if (loading) {
     return <div className="bootScreen"><div className="bootLogo">dubbed</div><span className="spinner" /></div>;
   }
@@ -109,6 +162,7 @@ export function App() {
 
   return (
     <div className={`appShell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
+      <ConnectionBanner />
       {!supabaseConfigured && (
         <div className="configBanner">
           Supabase isn't configured. Copy <code>.env.example</code> to <code>.env</code> and add your project URL + anon key.
@@ -120,6 +174,7 @@ export function App() {
         onNavigate={navigate}
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed((c) => !c)}
+        onHoverRoute={prefetchRoute}
       />
 
       <div className="appMain">
@@ -146,6 +201,7 @@ export function App() {
             </div>
           )}
 
+          <Suspense fallback={<PageSkeleton />}>
           {route.name === "home" && <HomePage onNavigate={navigate} onLogin={() => setAuthOpen(true)} />}
           {route.name === "matchfinder" && <MatchfinderPage onLogin={() => setAuthOpen(true)} onOpenMatch={(id) => navigate("match", id)} onNavigate={navigate} />}
           {route.name === "match" && requireAuth(<MatchRoomPage matchId={route.param} onBack={() => navigate("matchfinder")} onNavigate={navigate} />)}
@@ -169,6 +225,7 @@ export function App() {
           {route.name === "admin-revenue" && requireAuth(<AdminRevenuePage />)}
           {route.name === "notifications" && requireAuth(<NotificationsPage onNavigate={navigate} />)}
           {route.name === "profile" && <ProfilePage username={route.param || profile?.username} />}
+          </Suspense>
           </div>
         </div>
 
@@ -176,22 +233,22 @@ export function App() {
           <div className="footerInner">
             <div className="footerCol">
               <b>Play</b>
-              <button onClick={() => navigate("matchfinder")}>Matchfinder</button>
-              <button onClick={() => navigate("tournaments")}>Tournaments</button>
-              <button onClick={() => navigate("teams")}>Teams</button>
-              <button onClick={() => navigate("leaderboard")}>Leaderboard</button>
+              <button onClick={() => navigate("matchfinder")} onMouseEnter={() => prefetchRoute("matchfinder")}>Matchfinder</button>
+              <button onClick={() => navigate("tournaments")} onMouseEnter={() => prefetchRoute("tournaments")}>Tournaments</button>
+              <button onClick={() => navigate("teams")} onMouseEnter={() => prefetchRoute("teams")}>Teams</button>
+              <button onClick={() => navigate("leaderboard")} onMouseEnter={() => prefetchRoute("leaderboard")}>Leaderboard</button>
             </div>
             <div className="footerCol">
               <b>Games</b>
-              <button onClick={() => navigate("game", "bo7")}>Black Ops 7</button>
-              <button onClick={() => navigate("game", "warzone")}>Warzone</button>
-              <button onClick={() => navigate("game", "mw4")}>MW4</button>
-              <button onClick={() => navigate("game", "bor")}>BO Royale</button>
+              <button onClick={() => navigate("game", "bo7")} onMouseEnter={() => prefetchRoute("game")}>Black Ops 7</button>
+              <button onClick={() => navigate("game", "warzone")} onMouseEnter={() => prefetchRoute("game")}>Warzone</button>
+              <button onClick={() => navigate("game", "mw4")} onMouseEnter={() => prefetchRoute("game")}>MW4</button>
+              <button onClick={() => navigate("game", "bor")} onMouseEnter={() => prefetchRoute("game")}>BO Royale</button>
             </div>
             <div className="footerCol">
               <b>Account</b>
-              <button onClick={() => navigate("wallet")}>Wallet</button>
-              <button onClick={() => navigate("shop")}>Shop</button>
+              <button onClick={() => navigate("wallet")} onMouseEnter={() => prefetchRoute("wallet")}>Wallet</button>
+              <button onClick={() => navigate("shop")} onMouseEnter={() => prefetchRoute("shop")}>Shop</button>
               <button onClick={() => navigate("rules")}>Rules</button>
             </div>
             <div className="footerCol">

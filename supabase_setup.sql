@@ -16,6 +16,7 @@ do $$ begin create type tournament_status as enum ('upcoming','live','completed'
 do $$ begin create type chat_channel as enum ('global','lfg','betting','support'); exception when duplicate_object then null; end $$;
 do $$ begin create type bet_market as enum ('streamer','cdl'); exception when duplicate_object then null; end $$;
 do $$ begin create type bet_status as enum ('open','won','lost','void'); exception when duplicate_object then null; end $$;
+do $$ begin create type bet_event_status as enum ('open','locked','settled','void'); exception when duplicate_object then null; end $$;
 do $$ begin create type withdrawal_status as enum ('pending','processing','approved','rejected','paid'); exception when duplicate_object then null; end $$;
 -- If the enum already existed from an older run without 'processing', add it.
 -- (Runs in its own statement; on a fresh DB the create above already has it.)
@@ -26,6 +27,53 @@ do $$ begin create type cancel_status as enum ('pending','accepted','declined');
 -- ADD VALUE can't be used later in the same transaction it's created in, and
 -- this whole file is typically run as one paste. The veto phase is tracked
 -- with its own `veto_status` column instead (see matches table below).
+
+-- ============================================================================
+-- RATE LIMITS — lightweight per-user action throttle
+-- ============================================================================
+create table if not exists public.rate_limits (
+  user_id    uuid not null references auth.users(id) on delete cascade,
+  action     text not null,
+  hit_at     timestamptz not null default now(),
+  primary key (user_id, action, hit_at)
+);
+create index if not exists idx_rate_limits_lookup on public.rate_limits (user_id, action, hit_at desc);
+
+-- Purge rate-limit rows older than 10 minutes (keep table small).
+create or replace function public.purge_old_rate_limits()
+returns void language sql security definer set search_path = public as $$
+  delete from public.rate_limits where hit_at < now() - interval '10 minutes';
+$$;
+
+-- check_rate_limit(action, max_hits, window_seconds) → raises if over limit.
+-- Records a hit on success. Cheap: single index scan + insert.
+create or replace function public.check_rate_limit(p_action text, p_max int, p_window int)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_uid uuid; v_count int;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then raise exception 'not authenticated'; end if;
+
+  select count(*) into v_count from public.rate_limits
+  where user_id = v_uid and action = p_action
+    and hit_at > now() - (p_window || ' seconds')::interval;
+
+  if v_count >= p_max then
+    raise exception 'Slow down — too many requests. Try again shortly.';
+  end if;
+
+  insert into public.rate_limits(user_id, action) values (v_uid, p_action);
+
+  -- Opportunistic cleanup (1-in-50 calls)
+  if random() < 0.02 then
+    perform public.purge_old_rate_limits();
+  end if;
+end $$;
+
+-- No direct client access to the table.
+alter table public.rate_limits enable row level security;
+drop policy if exists "rate_limits_deny_all" on public.rate_limits;
+create policy "rate_limits_deny_all" on public.rate_limits for all using (false);
 
 -- ============================================================================
 -- PROFILES  (1:1 with auth.users)
@@ -419,6 +467,40 @@ create table if not exists public.bets (
   created_at timestamptz not null default now()
 );
 
+-- ============================================================================
+-- BET EVENTS + SIDE BETS (event-based betting with admin settlement)
+-- ============================================================================
+create table if not exists public.bet_events (
+  id            uuid primary key default gen_random_uuid(),
+  title         text not null,
+  description   text default '',
+  market        bet_market not null default 'cdl',
+  options       jsonb not null default '[]'::jsonb,
+  odds          numeric(6,2) not null default 2.0,
+  status        bet_event_status not null default 'open',
+  winner_option text,
+  created_by    uuid not null default auth.uid() references public.profiles(id),
+  locks_at      timestamptz,
+  settled_at    timestamptz,
+  created_at    timestamptz not null default now()
+);
+
+create table if not exists public.side_bets (
+  id         uuid primary key default gen_random_uuid(),
+  event_id   uuid not null references public.bet_events(id) on delete cascade,
+  user_id    uuid not null default auth.uid() references public.profiles(id) on delete cascade,
+  selection  text not null,
+  stake      numeric(12,2) not null check (stake > 0),
+  odds       numeric(6,2) not null default 2.0,
+  status     bet_status not null default 'open',
+  payout     numeric(12,2),
+  rake       numeric(12,2),
+  settled_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists side_bets_event_idx on public.side_bets(event_id);
+create index if not exists side_bets_user_idx on public.side_bets(user_id);
+
 create table if not exists public.notifications (
   id        uuid primary key default gen_random_uuid(),
   user_id   uuid not null references public.profiles(id) on delete cascade,
@@ -601,6 +683,8 @@ alter table public.user_bans           enable row level security;
 alter table public.tournament_rounds   enable row level security;
 alter table public.tournament_matches  enable row level security;
 alter table public.app_admins          enable row level security;
+alter table public.bet_events          enable row level security;
+alter table public.side_bets           enable row level security;
 
 -- Helper to (re)create a policy idempotently
 -- profiles: world-readable (public profiles), self-update for safe columns only
@@ -671,12 +755,26 @@ drop policy if exists "entries read" on public.tournament_entries;
 create policy "entries read" on public.tournament_entries for select using (true);
 
 drop policy if exists "chat read" on public.chat_messages;
-create policy "chat read" on public.chat_messages for select using (true);
+create policy "chat read" on public.chat_messages for select
+  using (auth.uid() is not null and not exists (select 1 from public.profiles p where p.id = auth.uid() and p.banned));
 drop policy if exists "chat insert" on public.chat_messages;
-create policy "chat insert" on public.chat_messages for insert with check (auth.uid() = user_id);
+create policy "chat insert" on public.chat_messages for insert
+  with check (auth.uid() = user_id and not exists (select 1 from public.profiles p where p.id = auth.uid() and p.banned));
 
 drop policy if exists "bets read own" on public.bets;
 create policy "bets read own" on public.bets for select using (auth.uid() = user_id);
+
+-- bet_events: anyone authed can read; only admins create/update
+drop policy if exists "bet_events read" on public.bet_events;
+create policy "bet_events read" on public.bet_events for select using (auth.uid() is not null);
+drop policy if exists "bet_events admin insert" on public.bet_events;
+create policy "bet_events admin insert" on public.bet_events for insert with check (public.is_admin());
+drop policy if exists "bet_events admin update" on public.bet_events;
+create policy "bet_events admin update" on public.bet_events for update using (public.is_admin());
+
+-- side_bets: users read own + all on settled events (transparency); insert via RPC only
+drop policy if exists "side_bets read" on public.side_bets;
+create policy "side_bets read" on public.side_bets for select using (auth.uid() = user_id or public.is_admin());
 
 drop policy if exists "notif read own" on public.notifications;
 create policy "notif read own" on public.notifications for select using (auth.uid() = user_id);
@@ -992,6 +1090,7 @@ returns uuid language plpgsql security definer set search_path = public as $$
 declare v_bal numeric; v_id uuid; v_block text; v_tx text;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
+  perform public.check_rate_limit('withdrawal', 3, 300);  -- 3 per 5 minutes
   if p_amount is null or p_amount < 10 then raise exception 'minimum withdrawal is $10'; end if;
 
   v_block := public.withdrawal_block_reason(auth.uid());
@@ -1729,6 +1828,41 @@ begin
   return null; -- eligible
 end $$;
 
+-- ---------- chat: purge + rate-limited send ----------
+-- Purge global-channel messages older than 3 hours.
+-- Schedule via pg_cron: SELECT cron.schedule('purge-chat','0 */1 * * *','select public.purge_old_chat()');
+create or replace function public.purge_old_chat()
+returns void language sql security definer set search_path = public as $$
+  delete from public.chat_messages
+  where channel in ('global','lfg','betting')
+    and created_at < now() - interval '3 hours';
+$$;
+
+-- Rate-limited chat send: max 5 messages per 10s per user.
+create or replace function public.send_chat_message(p_channel chat_channel, p_text text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_uid uuid; v_name text; v_clean text; v_count int; v_id uuid;
+begin
+  v_uid := auth.uid();
+  if v_uid is null then raise exception 'not authenticated'; end if;
+  perform public.check_not_banned();
+
+  -- rate limit: 5 messages in 10 seconds
+  select count(*) into v_count from public.chat_messages
+  where user_id = v_uid and created_at > now() - interval '10 seconds';
+  if v_count >= 5 then raise exception 'Slow down — wait a few seconds'; end if;
+
+  -- sanitize + length cap (400 chars)
+  v_clean := trim(left(regexp_replace(p_text, '[\x00-\x08\x0B\x0C\x0E-\x1F]', '', 'g'), 400));
+  if v_clean = '' then raise exception 'Message is empty'; end if;
+
+  select username into v_name from public.profiles where id = v_uid;
+  insert into public.chat_messages(channel, user_id, username, text, kind)
+    values (p_channel, v_uid, v_name, v_clean, 'msg')
+    returning id into v_id;
+  return v_id;
+end $$;
+
 -- ---------- matches ----------
 create or replace function public.create_match(
   p_game text, p_mode text, p_format text, p_region text, p_entry numeric, p_kind match_kind,
@@ -1740,6 +1874,7 @@ declare v_code text; v_match public.matches; v_bal numeric; v_xp int; v_region t
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
   perform public.check_not_banned();
+  perform public.check_rate_limit('create_match', 5, 60);  -- 5 per minute
   v_gate := public.can_play_game(auth.uid(), p_game);
   if v_gate is not null then raise exception '%', v_gate; end if;
   if not public.format_allowed(p_game, p_format) then
@@ -1776,6 +1911,7 @@ returns void language plpgsql security definer set search_path = public as $$
 declare v_m public.matches; v_bal numeric; v_xp int; v_region text; v_players int; v_needed int; v_pool jsonb; v_gate text;
 begin
   perform public.check_not_banned();
+  perform public.check_rate_limit('join_match', 10, 60);  -- 10 per minute
   select * into v_m from public.matches where id = p_match for update;
   if not found then raise exception 'match not found'; end if;
   if v_m.status <> 'open' then raise exception 'match is not open'; end if;
@@ -2179,6 +2315,139 @@ end $$;
 do $$ begin
   execute 'alter publication supabase_realtime add table public.bets';
 exception when duplicate_object then null; when others then null;
+end $$;
+
+-- Add bet_events + side_bets to realtime publication.
+do $$ begin
+  execute 'alter publication supabase_realtime add table public.bet_events';
+exception when duplicate_object then null; when others then null;
+end $$;
+do $$ begin
+  execute 'alter publication supabase_realtime add table public.side_bets';
+exception when duplicate_object then null; when others then null;
+end $$;
+
+-- ============================================================================
+-- SIDE BET EVENT RPCs
+-- ============================================================================
+
+-- Admin: create a bet event
+create or replace function public.create_bet_event(
+  p_title text, p_description text, p_market bet_market,
+  p_options jsonb, p_odds numeric, p_locks_at timestamptz default null
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare v_id uuid;
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  insert into public.bet_events(title, description, market, options, odds, locks_at, created_by)
+    values (p_title, p_description, p_market, p_options, p_odds, p_locks_at, auth.uid())
+    returning id into v_id;
+  return v_id;
+end $$;
+
+-- Admin: lock an event (no more bets)
+create or replace function public.lock_bet_event(p_event uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  update public.bet_events set status = 'locked' where id = p_event and status = 'open';
+  if not found then raise exception 'event not found or not open'; end if;
+end $$;
+
+-- Admin: settle an event — pay winners, mark losers
+create or replace function public.settle_bet_event(p_event uuid, p_winner_option text)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_ev public.bet_events; v_sb record;
+  v_gross numeric; v_profit numeric; v_rake numeric; v_net numeric; v_member boolean;
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+
+  select * into v_ev from public.bet_events where id = p_event for update;
+  if not found then raise exception 'event not found'; end if;
+  if v_ev.status = 'settled' then return; end if;
+  if v_ev.status = 'void' then raise exception 'event is voided'; end if;
+
+  -- Lock first if still open
+  if v_ev.status = 'open' then
+    update public.bet_events set status = 'locked' where id = p_event;
+  end if;
+
+  for v_sb in select * from public.side_bets where event_id = p_event and status = 'open' for update
+  loop
+    if v_sb.selection = p_winner_option then
+      -- Winner: gross = stake * odds, profit = gross - stake, rake = 5% of profit (WAGR = 0%)
+      v_gross := round(v_sb.stake * v_sb.odds, 2);
+      v_profit := v_gross - v_sb.stake;
+      select wagr_member into v_member from public.profiles where id = v_sb.user_id;
+      v_rake := case when coalesce(v_member, false) then 0 else round(greatest(v_profit, 0) * 0.05, 2) end;
+      v_net := v_gross - v_rake;
+
+      update public.profiles set balance = balance + v_net, earnings = earnings + (v_profit - v_rake) where id = v_sb.user_id;
+      insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_sb.user_id, v_net, 'side_bet_payout', v_sb.id);
+      if v_rake > 0 then
+        insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_sb.user_id, -v_rake, 'side_bet_rake', v_sb.id);
+      end if;
+
+      update public.side_bets set status = 'won', payout = v_net, rake = v_rake, settled_at = now() where id = v_sb.id;
+    else
+      -- Loser: stake already debited
+      update public.side_bets set status = 'lost', payout = 0, rake = 0, settled_at = now() where id = v_sb.id;
+    end if;
+  end loop;
+
+  update public.bet_events set status = 'settled', winner_option = p_winner_option, settled_at = now() where id = p_event;
+
+  -- Post settlement announcement to betting chat
+  insert into public.chat_messages(channel, user_id, username, text, kind)
+    values ('betting'::chat_channel, auth.uid(), 'System',
+            '🏆 "' || v_ev.title || '" settled — winner: ' || p_winner_option || '!', 'system');
+end $$;
+
+-- Admin: void an event — refund all stakes
+create or replace function public.void_bet_event(p_event uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_ev public.bet_events; v_sb record;
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  select * into v_ev from public.bet_events where id = p_event for update;
+  if not found then raise exception 'event not found'; end if;
+  if v_ev.status in ('settled','void') then return; end if;
+
+  for v_sb in select * from public.side_bets where event_id = p_event and status = 'open' for update
+  loop
+    update public.profiles set balance = balance + v_sb.stake where id = v_sb.user_id;
+    insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_sb.user_id, v_sb.stake, 'side_bet_refund', v_sb.id);
+    update public.side_bets set status = 'void', payout = v_sb.stake, rake = 0, settled_at = now() where id = v_sb.id;
+  end loop;
+
+  update public.bet_events set status = 'void', settled_at = now() where id = p_event;
+end $$;
+
+-- User: place a side bet on an event option
+create or replace function public.place_side_bet(p_event uuid, p_selection text, p_stake numeric)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_ev public.bet_events; v_bal numeric; v_id uuid;
+begin
+  perform public.check_not_banned();
+  perform public.check_rate_limit('place_bet', 10, 60);  -- 10 per minute
+  select * into v_ev from public.bet_events where id = p_event;
+  if not found then raise exception 'event not found'; end if;
+  if v_ev.status <> 'open' then raise exception 'betting is closed for this event'; end if;
+  if v_ev.locks_at is not null and now() >= v_ev.locks_at then raise exception 'betting is closed for this event'; end if;
+  if not v_ev.options @> to_jsonb(p_selection) then raise exception 'invalid selection'; end if;
+  if p_stake <= 0 then raise exception 'stake must be positive'; end if;
+  if p_stake > 100 then raise exception 'max bet is $100'; end if;
+
+  select balance into v_bal from public.profiles where id = auth.uid() for update;
+  if v_bal < p_stake then raise exception 'insufficient balance'; end if;
+
+  update public.profiles set balance = balance - p_stake where id = auth.uid();
+  insert into public.wallet_ledger(user_id, delta, reason) values (auth.uid(), -p_stake, 'side_bet');
+
+  insert into public.side_bets(event_id, user_id, selection, stake, odds)
+    values (p_event, auth.uid(), p_selection, p_stake, v_ev.odds)
+    returning id into v_id;
+  return v_id;
 end $$;
 
 -- ============================================================================

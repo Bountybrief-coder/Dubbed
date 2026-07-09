@@ -1,17 +1,38 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { countdownParts } from "../utils/format";
 
-// useAsync(fetcher, deps) → { data, loading, error, reload }
+function raceTimeout(promise, ms) {
+  if (!ms || ms <= 0) return promise;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Request timed out")), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
+}
+
+// useAsync(fetcher, deps, opts) → { data, loading, error, reload, setData }
 // fetcher returns { data, error } (our service convention).
-export function useAsync(fetcher, deps = [], { immediate = true } = {}) {
+// opts.timeout: ms before auto-fail (default 12000). opts.keepStale: show previous data while re-fetching.
+export function useAsync(fetcher, deps = [], { immediate = true, timeout = 12000, keepStale = false } = {}) {
   const [state, setState] = useState({ data: null, loading: immediate, error: null });
   const mounted = useRef(true);
 
   const run = useCallback(async () => {
-    setState((s) => ({ ...s, loading: true, error: null }));
-    const res = await fetcher();
-    if (!mounted.current) return;
-    setState({ data: res?.data ?? null, loading: false, error: res?.error ?? null });
+    setState((s) => ({
+      data: keepStale ? s.data : null,
+      loading: true,
+      error: null,
+    }));
+    try {
+      const res = await raceTimeout(fetcher(), timeout);
+      if (!mounted.current) return;
+      setState({ data: res?.data ?? null, loading: false, error: res?.error ?? null });
+    } catch (err) {
+      if (!mounted.current) return;
+      setState((s) => ({ data: keepStale ? s.data : null, loading: false, error: err.message || "Something went wrong" }));
+    }
   }, deps); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

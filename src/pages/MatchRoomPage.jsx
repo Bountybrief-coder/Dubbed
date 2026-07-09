@@ -36,6 +36,7 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
   const toast = useToast();
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [tournamentCtx, setTournamentCtx] = useState(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
@@ -44,22 +45,29 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
   const [trophyCounts, setTrophyCounts] = useState({});
 
   async function load() {
-    const { data } = await getMatch(matchId);
-    setMatch(data);
-    setLoading(false);
-    if (data?.match_players) {
-      const ids = data.match_players.map((p) => p.user_id);
-      const { data: trophies } = await supabase
-        .from("trophies")
-        .select("user_id, tone, place")
-        .in("user_id", ids);
-      const counts = {};
-      for (const id of ids) counts[id] = { gold: 0, silver: 0, bronze: 0 };
-      for (const t of trophies || []) {
-        const tone = t.tone || (t.place === 1 ? "gold" : t.place === 2 ? "silver" : t.place === 3 ? "bronze" : null);
-        if (tone && counts[t.user_id]?.[tone] != null) counts[t.user_id][tone] += 1;
+    try {
+      setError(null);
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("Request timed out")), 12000));
+      const { data } = await Promise.race([getMatch(matchId), timeout]);
+      setMatch(data);
+      setLoading(false);
+      if (data?.match_players) {
+        const ids = data.match_players.map((p) => p.user_id);
+        const { data: trophies } = await supabase
+          .from("trophies")
+          .select("user_id, tone, place")
+          .in("user_id", ids);
+        const counts = {};
+        for (const id of ids) counts[id] = { gold: 0, silver: 0, bronze: 0 };
+        for (const t of trophies || []) {
+          const tone = t.tone || (t.place === 1 ? "gold" : t.place === 2 ? "silver" : t.place === 3 ? "bronze" : null);
+          if (tone && counts[t.user_id]?.[tone] != null) counts[t.user_id][tone] += 1;
+        }
+        setTrophyCounts(counts);
       }
-      setTrophyCounts(counts);
+    } catch (err) {
+      setError(err.message || "Failed to load match");
+      setLoading(false);
     }
   }
   async function loadCancel() {
@@ -76,6 +84,7 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
   useEffect(() => subscribeToCancelRequests(matchId, loadCancel), [matchId]); // eslint-disable-line
 
   if (loading) return <main className="page"><Skeleton w="40%" h={28} /><div style={{ height: 16 }} /><Skeleton h={180} r={14} /></main>;
+  if (error) return <main className="page"><div className="errorState"><AlertTriangle size={22} /><p>{error}</p><button className="btn btn-ghost sm" onClick={load}><span>Retry</span></button></div></main>;
   if (!match) return <main className="page"><p className="sub">Match not found.</p></main>;
 
   const players = (match.match_players || []).map((p) => ({

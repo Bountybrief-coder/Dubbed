@@ -92,7 +92,7 @@ export function ShopPage({ onLogin, onNavigate }) {
       <section className="shopMemberGrid">
         <div className={`shopMemberCard ${isMember ? "owned" : ""}`}>
           <div className="shopMemberTop">
-            <img src={wagrEmblem} alt="WAGR" className="shopMemberEmblem" />
+            <img src={wagrEmblem} alt="WAGR" className="shopMemberEmblem" loading="lazy" />
             <div>
               <b>{wagr.name}</b>
               <small>{wagr.tagline}</small>

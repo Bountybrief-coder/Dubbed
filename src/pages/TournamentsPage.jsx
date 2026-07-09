@@ -25,7 +25,7 @@ const cover = (g) => GAME_COVERS[g] || bo7;
 
 export function TournamentsPage({ onLogin, onNavigate }) {
   const { profile, isAdmin } = useAuth();
-  const { data, loading, reload } = useAsync(() => listTournaments(), []);
+  const { data, loading, error, reload } = useAsync(() => listTournaments(), []);
   const [joinT, setJoinT] = useState(null);
   const [regionFilter, setRegionFilter] = useState("All");
   const [detailId, setDetailId] = useState(null);
@@ -63,6 +63,8 @@ export function TournamentsPage({ onLogin, onNavigate }) {
 
       {loading ? (
         <SkeletonRows rows={4} height={72} />
+      ) : error ? (
+        <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : filtered.length === 0 ? (
         <EmptyState icon={Trophy} title="No tournaments scheduled">Check back soon. Hosted brackets appear here.</EmptyState>
       ) : (
@@ -74,7 +76,7 @@ export function TournamentsPage({ onLogin, onNavigate }) {
             const done = t.status === "completed";
             return (
               <div className="tourTile" key={t.id} onClick={() => setDetailId(t.id)} role="button" style={{ cursor: "pointer" }}>
-                <img className="tourCover" src={cover(t.game)} alt="" />
+                <img className="tourCover" src={cover(t.game)} alt="" loading="lazy" />
                 <div className="tourMeta">
                   <b>{t.name}</b>
                   <small>{shortForGame(t.game)} · {t.format} {t.mode} · {t.series} · {t.region}</small>
@@ -221,7 +223,7 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
 
       {/* ── Hero ── */}
       <section className="tourHero">
-        <img className="tourHeroCover" src={cover(t.game)} alt="" />
+        <img className="tourHeroCover" src={cover(t.game)} alt="" loading="lazy" />
         <div className="tourHeroInfo">
           <div className="eyebrow">{shortForGame(t.game)} · {t.format} · {t.mode}</div>
           <h1>{t.name}</h1>

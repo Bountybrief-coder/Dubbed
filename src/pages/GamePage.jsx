@@ -37,7 +37,7 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
   const [selectedMode, setSelectedMode] = useState(null);
   const [activeCat, setActiveCat] = useState("all");
 
-  const { data, loading, reload } = useAsync(
+  const { data, loading, error, reload } = useAsync(
     () => game ? listOpenMatches({ game: game.name }) : Promise.resolve([]),
     [slug]
   );
@@ -151,6 +151,8 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
 
         {loading ? (
           <SkeletonRows rows={4} />
+        ) : error ? (
+          <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
         ) : matches.length === 0 ? (
           <EmptyState icon={() => <Crosshair size={26} />} title={`No open ${game.short} matches`} action={
             <Button variant="primary" onClick={() => profile ? setCreateOpen(true) : onLogin()}>Create the first one</Button>
@@ -161,7 +163,7 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
           <div className="matchList">
             {matches.map((m) => (
               <div className="matchTile" key={m.id}>
-                <img className="matchCover" src={COVERS[game.slug]} alt="" />
+                <img className="matchCover" src={COVERS[game.slug]} alt="" loading="lazy" />
                 <div className="matchMeta">
                   <b>{m.mode}</b>
                   <small>{m.format} {formatLabel(m.format)} · {m.series || "BO1"} · {m.region}</small>

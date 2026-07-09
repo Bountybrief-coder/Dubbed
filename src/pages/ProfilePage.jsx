@@ -30,9 +30,10 @@ import { money } from "../utils/format";
 export function ProfilePage({ username }) {
   const { user, profile: me, refreshProfile } = useAuth();
   const toast = useToast();
-  const { data: profile, loading, reload } = useAsync(() => getProfileByUsername(username), [username]);
+  const { data: profile, loading, error, reload } = useAsync(() => getProfileByUsername(username), [username]);
 
   if (loading) return <main className="page"><Skeleton h={160} r={14} /></main>;
+  if (error) return <main className="page"><div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div></main>;
   if (!profile) return <main className="page"><EmptyState title="Player not found" /></main>;
 
   const isMe = user?.id === profile.id;
@@ -484,7 +485,7 @@ function RecordsPanel({ userId }) {
           return (
             <div className="gbCard" key={game}>
               <div className="gbCover">
-                {cover ? <img src={cover} alt={short} /> : <span className="gbCoverFallback">{short}</span>}
+                {cover ? <img src={cover} alt={short} loading="lazy" /> : <span className="gbCoverFallback">{short}</span>}
               </div>
               <div className="gbBody">
                 <div className="gbStatRow">

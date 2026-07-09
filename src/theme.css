@@ -585,6 +585,8 @@ select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .chatTabs button.on{background:var(--neon-dim);border-color:#1d4a63;color:var(--neon)}
 .chatDockBody{flex:1;overflow:auto;padding:14px}
 .chatDockEmpty{color:var(--muted);text-align:center;padding:36px 16px;font-size:14px;line-height:1.6}
+.chatDockGate{display:flex;flex-direction:column;align-items:center;gap:10px;padding:48px 16px;color:var(--muted);text-align:center}
+.chatDockGate b{color:#fff;font-size:14px}
 .chatLine{margin-bottom:12px}
 .chatLineTop{display:flex;align-items:baseline;gap:8px}
 .chatLineTop b{font-size:13px;color:var(--neon)}
@@ -596,40 +598,51 @@ select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .chatDockInput input{flex:1;background:#080b0f;border:1px solid var(--line);border-radius:9px;padding:11px 13px;color:#fff;outline:0}
 .chatDockInput input:focus{border-color:var(--neon)}
 .chatDockInput button{background:linear-gradient(135deg,var(--neon),var(--neon-deep));border:0;color:#04141c;border-radius:9px;padding:0 14px}
-.betToggle{background:var(--gold)!important;color:#000!important;border-radius:9px;padding:0 10px;flex-shrink:0}
-
-/* bet cards */
-.betCards{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
-.betCard{background:#0d1218;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px}
-.betCard.matched{border-color:var(--gold);background:rgba(241,196,15,.04)}
-.betCardHead{display:flex;align-items:center;gap:8px}
-.betStatus{font-size:10px;font-weight:800;letter-spacing:.04em;padding:2px 6px;border-radius:4px;text-transform:uppercase}
-.betStatus.open{background:var(--neon-dim);color:var(--neon)}
-.betStatus.matched{background:rgba(241,196,15,.15);color:var(--gold)}
-.betStatus.settled{background:rgba(100,100,100,.2);color:var(--muted)}
-.betMarket{color:var(--muted);font-size:11px}
-.betStake{margin-left:auto;color:var(--gold);font-size:15px}
-.betCardBody{display:flex;align-items:center;gap:8px;margin-top:8px}
-.betPlayer{display:flex;flex-direction:column;gap:1px;flex:1}
-.betPlayer small{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
-.betPlayer b{font-size:13px}
-.betPick{color:var(--neon);font-size:12px;font-weight:600}
-.betVs{font-weight:900;color:var(--gold);font-size:12px;letter-spacing:.05em}
-.betAccept{display:flex;gap:6px;margin-top:8px}
-.betAccept .field{flex:1;font-size:12px;padding:7px 9px}
-.betCancel{margin-top:6px;font-size:12px}
-.betFooter{margin-top:6px;font-size:11px;color:var(--muted);text-align:center;font-style:italic}
-
-/* bet form */
-.betForm{border-top:1px solid var(--line);padding:12px;background:#080b0f;display:flex;flex-direction:column;gap:10px}
-.betFormHead{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--gold)}
-.betFormHead .btn{margin-left:auto}
-.betFormRow{display:flex;flex-direction:column;gap:4px}
-.betFormRow label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:600}
-.betFormRow select,.betFormRow input{font-size:13px}
-.betMarketToggle{display:flex;gap:4px}
-.betMarketToggle button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:6px;font-size:12px;font-weight:600}
-.betMarketToggle button.on{background:var(--neon-dim);border-color:#1d4a63;color:var(--neon)}
+/* bet event panel */
+.betPanel{display:flex;flex-direction:column;gap:10px}
+.betSummary{display:flex;gap:6px;padding:0 4px;margin-bottom:2px}
+.betSumChip{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;padding:3px 8px;border-radius:5px;letter-spacing:.03em}
+.betSumChip.open{background:var(--neon-dim);color:var(--neon)}
+.betSumChip.won{background:rgba(46,204,113,.12);color:#2ecc71}
+.betSumChip.lost{background:rgba(231,76,60,.12);color:#e74c3c}
+.betChatSection{border-top:1px solid var(--line);padding-top:10px;margin-top:6px}
+.betChatLabel{display:block;color:var(--muted);font-size:10px;font-weight:700;letter-spacing:.06em;margin-bottom:6px;padding:0 4px}
+.betEventCards{display:flex;flex-direction:column;gap:10px}
+.betEventCard{background:#0d1218;border:1px solid var(--line);border-radius:10px;padding:12px;font-size:13px}
+.betEventCard.settled{border-color:rgba(46,204,113,.3);background:rgba(46,204,113,.03)}
+.betEventCard.locked{border-color:rgba(241,196,15,.3);background:rgba(241,196,15,.03)}
+.betEventCard.open{border-color:rgba(34,197,251,.2)}
+.betEvHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.betEvTitle{display:flex;align-items:center;gap:6px;font-size:14px}
+.betEvStatus{font-size:10px;font-weight:800;letter-spacing:.04em;padding:2px 8px;border-radius:4px;text-transform:uppercase}
+.betEvStatus.open{background:var(--neon-dim);color:var(--neon)}
+.betEvStatus.locked{background:rgba(241,196,15,.15);color:var(--gold)}
+.betEvStatus.settled{background:rgba(46,204,113,.12);color:#2ecc71}
+.betEvStatus.void{background:rgba(100,100,100,.2);color:var(--muted)}
+.betEvDesc{color:var(--muted);font-size:12px;margin:0 0 6px;line-height:1.4}
+.betEvOdds{color:var(--gold);font-size:11px;font-weight:700;display:flex;align-items:center;gap:4px;margin-bottom:4px}
+.betEvTimer{color:var(--muted);font-size:11px;display:flex;align-items:center;gap:4px;margin-bottom:6px}
+.betEvOptions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+.betEvOpt{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;color:#fff;cursor:pointer;transition:border-color .15s,background .15s;display:flex;align-items:center;gap:4px}
+.betEvOpt:hover:not(:disabled){border-color:var(--neon)}
+.betEvOpt.selected{background:var(--neon-dim);border-color:var(--neon);color:var(--neon)}
+.betEvOpt.winner{background:rgba(46,204,113,.12);border-color:#2ecc71;color:#2ecc71}
+.betEvOpt:disabled{opacity:.6;cursor:default}
+.betEvPlace{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.betEvStakeRow{display:flex;align-items:center;gap:6px}
+.betEvStakeRow .field{flex:1;font-size:12px;padding:7px 9px}
+.betEvPayout{font-size:11px;color:var(--muted);line-height:1.4}
+.betEvPayout small{opacity:.7}
+.betEvPayout small.wagr{color:var(--gold);opacity:1}
+.betEvSubmit{align-self:stretch}
+.betEvMyBet{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;padding:8px 10px;border-radius:8px;font-size:12px;background:rgba(255,255,255,.03);border:1px solid var(--line)}
+.betEvMyBet.won{border-color:rgba(46,204,113,.3);background:rgba(46,204,113,.06)}
+.betEvMyBet.lost{border-color:rgba(231,76,60,.2);background:rgba(231,76,60,.04)}
+.betEvMyStatus{display:flex;align-items:center;gap:3px;font-weight:700;font-size:11px}
+.betEvMyStatus.won{color:#2ecc71}
+.betEvMyStatus.lost{color:#e74c3c}
+.betEvMyStatus.void{color:var(--muted)}
+.betEvWinner{text-align:center;font-size:14px;font-weight:800;color:#2ecc71;margin-top:8px;padding:6px;border-radius:8px;background:rgba(46,204,113,.06)}
 
 /* auth gate */
 .authGate{max-width:440px;margin:70px auto;text-align:center;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:44px 28px}
@@ -1351,4 +1364,24 @@ html{scroll-behavior:smooth}
   .mrHostGrid th,.mrHostGrid td{padding:6px 8px}
   .mrChatActions{flex-direction:column}
   .mrScoreInput{width:44px}
+}
+
+/* ── Error Boundary ── */
+.errorBoundary{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:14px;text-align:center;color:var(--muted);padding:32px}
+.errorBoundary h2{color:var(--ink);font-size:22px;margin:0}
+.errorBoundary p{max-width:360px;line-height:1.5}
+.errorBoundary svg{color:var(--gold)}
+
+/* ── Inline Error State ── */
+.errorState{display:flex;flex-direction:column;align-items:center;gap:10px;padding:40px 20px;text-align:center;color:var(--muted)}
+.errorState p{margin:0;max-width:340px}
+.errorState svg{color:var(--gold)}
+
+/* ── Connection Banner ── */
+.connectionBanner{position:fixed;top:0;left:0;right:0;z-index:100;display:flex;align-items:center;justify-content:center;gap:8px;padding:8px 16px;background:var(--danger);color:#fff;font-size:13px;font-weight:700;text-align:center}
+.connectionBanner svg{flex-shrink:0}
+
+/* ── Global prefers-reduced-motion ── */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:0.01ms!important;animation-iteration-count:1!important;transition-duration:0.01ms!important;scroll-behavior:auto!important}
 }

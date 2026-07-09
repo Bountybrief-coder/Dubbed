@@ -40,7 +40,7 @@ const ADMIN_NAV = [
   { key: "admin-support", label: "Support", icon: Gavel },
 ];
 
-export function Sidebar({ view, onNavigate, collapsed, onToggle }) {
+export function Sidebar({ view, onNavigate, collapsed, onToggle, onHoverRoute }) {
   const { isAdmin } = useAuth();
 
   function NavItem({ item, active }) {
@@ -49,6 +49,7 @@ export function Sidebar({ view, onNavigate, collapsed, onToggle }) {
       <button
         className={`sideItem${active ? " active" : ""}`}
         onClick={() => onNavigate(item.key)}
+        onMouseEnter={() => onHoverRoute?.(item.key)}
         title={collapsed ? item.label : undefined}
       >
         <Icon size={18} />

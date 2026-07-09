@@ -10,7 +10,7 @@ import { rankForXp } from "../utils/ranks";
 import { money } from "../utils/format";
 
 export function LivePage({ onOpenProfile }) {
-  const { data: streamers, loading } = useAsync(() => getStreamers(), []);
+  const { data: streamers, loading, error, reload } = useAsync(() => getStreamers(), []);
   const [active, setActive] = useState(null);
 
   return (
@@ -23,6 +23,8 @@ export function LivePage({ onOpenProfile }) {
 
       {loading ? (
         <SkeletonRows rows={4} height={80} />
+      ) : error ? (
+        <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : !streamers.length ? (
         <EmptyState icon={Tv} title="No streamers yet">Be the first. Add your Twitch username in your profile settings.</EmptyState>
       ) : (

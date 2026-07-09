@@ -30,7 +30,8 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
   const [kind, setKind] = useState("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [vetoMatch, setVetoMatch] = useState(null);
-  const { data, loading, reload } = useAsync(
+  const [joiningId, setJoiningId] = useState(null);
+  const { data, loading, error, reload } = useAsync(
     () => listOpenMatches(kind === "all" ? {} : { kind }),
     [kind]
   );
@@ -51,7 +52,9 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
   }
 
   async function doJoin(matchId, vetoBan) {
+    setJoiningId(matchId);
     const res = await joinMatch(matchId, vetoBan);
+    setJoiningId(null);
     if (res.error) return toast.error(res.error);
     toast.success("Joined. Match is live.");
     refreshProfile();
@@ -82,6 +85,8 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
 
       {loading ? (
         <SkeletonRows rows={5} />
+      ) : error ? (
+        <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : !data || data.length === 0 ? (
         <EmptyState icon={() => <WagerIcon size={26} />} title="No open matches" action={
           <Button variant="primary" onClick={() => (profile ? setCreateOpen(true) : onLogin())}>Create the first one</Button>
@@ -95,7 +100,7 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
             const mElig = profile ? checkGameEligibility(m.game, profile, myTeams) : { eligible: true };
             return (
             <div className="matchTile" key={m.id} onClick={() => onOpenMatch?.(m.id)} style={{ cursor: "pointer" }}>
-              <img className="matchCover" src={cover(m.game)} alt="" />
+              <img className="matchCover" src={cover(m.game)} alt="" loading="lazy" />
               <div className="matchMeta">
                 <b>{m.game}</b>
                 <small>{shortForGame(m.game)} · {m.format} {formatLabel(m.format)} · {m.mode} · {m.region}</small>
@@ -115,7 +120,7 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
                 ? <Button variant="ghost" onClick={(e) => { e.stopPropagation(); onOpenMatch?.(m.id); }}>View</Button>
                 : !mElig.eligible
                   ? <span className="matchGateHint" title={mElig.reason}><AlertTriangle size={14} /> {mElig.cta === "account" ? "Link acct" : "Need team"}</span>
-                  : <Button variant="primary" onClick={(e) => { e.stopPropagation(); handleAccept(m); }}>Accept</Button>
+                  : <Button variant="primary" loading={joiningId === m.id} onClick={(e) => { e.stopPropagation(); handleAccept(m); }}>{joiningId === m.id ? "Joining…" : "Accept"}</Button>
               }
             </div>
             );

@@ -13,7 +13,7 @@ import { GAME_NAMES } from "../utils/games";
 export function TeamsPage() {
   const { user, profile } = useAuth();
   const toast = useToast();
-  const { data: teams, loading, reload } = useAsync(() => getMyTeams(user.id), [user.id]);
+  const { data: teams, loading, error, reload } = useAsync(() => getMyTeams(user.id), [user.id]);
   const { data: invites, reload: reloadInv } = useAsync(() => getMyInvites(user.id), [user.id]);
   const [createOpen, setCreateOpen] = useState(false);
   const [inviteFor, setInviteFor] = useState(null);
@@ -44,6 +44,8 @@ export function TeamsPage() {
 
       {loading ? (
         <SkeletonRows rows={3} height={90} />
+      ) : error ? (
+        <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : !teams || teams.length === 0 ? (
         <EmptyState icon={Users} title="No teams yet">Create a team and invite teammates to run duos, trios or squads.</EmptyState>
       ) : (

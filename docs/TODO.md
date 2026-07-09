@@ -57,6 +57,18 @@
 - [ ] Live PSN / Xbox gamertag verification via Sony/Microsoft APIs
 - [ ] Periodic re-validation of linked accounts (detect renamed/deleted tags)
 
+## Asset Weight
+
+Oversized images in `src/assets/` — compress or replace with WebP:
+- `wagr-emblem.png` — **1,636 KB** (should be <200 KB, convert to WebP or SVG)
+- `warzone.png` — 562 KB
+- `mw4.png` — 356 KB
+- `dubbed-logo.png` — 292 KB
+- `black-ops-7.png` — 276 KB
+- `wwii.png` — 232 KB
+
+These are bundled into the build output. The wagr emblem alone is 1.6 MB.
+
 ## SQL Migration Notes
 - Re-run `supabase_setup.sql` to apply: `activision_id` column addition,
   `can_play_game` function, and updated `create_match`/`join_match` gates.

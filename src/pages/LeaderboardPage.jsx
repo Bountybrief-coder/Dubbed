@@ -73,7 +73,7 @@ export function LeaderboardPage({ onOpenProfile }) {
     () => getLeaderboard(metric, filters),
     [metric, region, platform]
   );
-  const { data, loading, reload } = useAsync(fetchBoard, [metric, region, platform]);
+  const { data, loading, error, reload } = useAsync(fetchBoard, [metric, region, platform]);
 
   const fetchMyRank = useCallback(
     () => me ? getMyRank(metric, filters) : Promise.resolve({ data: null }),
@@ -186,6 +186,8 @@ export function LeaderboardPage({ onOpenProfile }) {
         </EmptyState>
       ) : loading ? (
         <SkeletonRows rows={8} />
+      ) : error ? (
+        <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : rows.length === 0 ? (
         <EmptyState icon={Trophy} title={metric === "winpct" ? "No players with 10+ matches yet" : "No ranked players yet"}>
           {metric === "winpct"

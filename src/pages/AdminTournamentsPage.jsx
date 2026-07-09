@@ -15,7 +15,7 @@ import { money, shortDate } from "../utils/format";
 export function AdminTournamentsPage() {
   const { isAdmin } = useAuth();
   const toast = useToast();
-  const { data, loading, reload } = useAsync(() => listTournaments(), []);
+  const { data, loading, error, reload } = useAsync(() => listTournaments(), []);
   const [createOpen, setCreateOpen] = useState(false);
 
   if (!isAdmin) return <main className="page"><EmptyState icon={ShieldCheck} title="Admins only" /></main>;
@@ -56,7 +56,9 @@ export function AdminTournamentsPage() {
         <Button variant="ghost" onClick={scheduleDailyRotation}><Calendar size={14} /> Schedule tomorrow's rotation</Button>
       </div>
 
-      {loading ? <SkeletonRows rows={4} height={56} /> : (data || []).length === 0 ? <EmptyState title="No tournaments" /> : (
+      {loading ? <SkeletonRows rows={4} height={56} /> : error ? (
+        <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
+      ) : (data || []).length === 0 ? <EmptyState title="No tournaments" /> : (
         <div className="adminWdList">
           {(data || []).map((t) => (
             <div className="adminWdRow" key={t.id}>
