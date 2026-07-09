@@ -1,9 +1,22 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../lib/supabase";
 import * as auth from "../services/authService";
 import { getProfile } from "../services/profileService";
 
 const AuthContext = createContext(null);
+
+const BOOT_TIMEOUT = 8000;
+const FAILSAFE_TIMEOUT = 9000;
+
+function withTimeout(promise, ms, label) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
+}
 
 function detectRegion() {
   try {
@@ -20,10 +33,21 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [bootError, setBootError] = useState(null);
+  const cancelled = useRef(false);
 
   const loadProfile = useCallback(async (userId) => {
     if (!userId) { setProfile(null); setIsAdmin(false); return; }
-    const { data } = await getProfile(userId);
+
+    // getProfile — non-fatal
+    let data = null;
+    try {
+      const res = await withTimeout(getProfile(userId), BOOT_TIMEOUT, "getProfile");
+      data = res?.data ?? null;
+    } catch (err) {
+      console.error("[dubbed] getProfile failed:", err.message);
+    }
+
     if (data?.banned) {
       await auth.signOut();
       setSession(null);
@@ -31,33 +55,75 @@ export function AuthProvider({ children }) {
       setIsAdmin(false);
       return;
     }
+
     if (data && !data.region) {
       const region = detectRegion();
-      await supabase.from("profiles").update({ region }).eq("id", userId);
+      try { await supabase.from("profiles").update({ region }).eq("id", userId); } catch {}
       data.region = region;
     }
-    setProfile(data || null);
-    const { data: admin } = await supabase.rpc("is_admin");
-    setIsAdmin(Boolean(admin));
+
+    if (!cancelled.current) setProfile(data);
+
+    // is_admin — non-fatal, defaults to false
+    try {
+      const { data: admin } = await withTimeout(supabase.rpc("is_admin"), BOOT_TIMEOUT, "is_admin");
+      if (!cancelled.current) setIsAdmin(Boolean(admin));
+    } catch (err) {
+      console.error("[dubbed] is_admin failed:", err.message);
+      if (!cancelled.current) setIsAdmin(false);
+    }
   }, []);
 
   useEffect(() => {
-    const SESSION_TIMEOUT = 10000;
-    const sessionPromise = auth.getSession();
-    const timeout = new Promise((r) => setTimeout(() => r(null), SESSION_TIMEOUT));
+    cancelled.current = false;
 
-    Promise.race([sessionPromise, timeout]).then(async (s) => {
-      setSession(s);
-      if (s?.user?.id) {
-        try { await Promise.race([loadProfile(s.user.id), new Promise((_, rej) => setTimeout(() => rej(), SESSION_TIMEOUT))]); } catch {}
+    // Absolute failsafe: no matter what, stop loading
+    const failsafe = setTimeout(() => {
+      if (!cancelled.current) {
+        console.error("[dubbed] Boot failsafe triggered — forcing load complete");
+        setLoading(false);
+        setBootError("Boot timed out. Some features may be unavailable.");
       }
-      setLoading(false);
-    });
+    }, FAILSAFE_TIMEOUT);
+
+    (async () => {
+      try {
+        let s = null;
+        try {
+          s = await withTimeout(auth.getSession(), BOOT_TIMEOUT, "getSession");
+        } catch (err) {
+          console.error("[dubbed] getSession failed:", err.message);
+        }
+
+        if (cancelled.current) return;
+        setSession(s);
+
+        if (s?.user?.id) {
+          try {
+            await loadProfile(s.user.id);
+          } catch (err) {
+            console.error("[dubbed] loadProfile failed:", err.message);
+            if (!cancelled.current) setBootError("Profile load failed. Some features may be unavailable.");
+          }
+        }
+      } finally {
+        clearTimeout(failsafe);
+        if (!cancelled.current) setLoading(false);
+      }
+    })();
+
     const unsub = auth.onAuthChange(async (s) => {
       setSession(s);
-      await loadProfile(s?.user?.id);
+      try { await loadProfile(s?.user?.id); } catch (err) {
+        console.error("[dubbed] onAuthChange loadProfile failed:", err.message);
+      }
     });
-    return unsub;
+
+    return () => {
+      cancelled.current = true;
+      clearTimeout(failsafe);
+      unsub();
+    };
   }, [loadProfile]);
 
   // Keep the profile fresh when balance/xp change elsewhere (realtime).
@@ -90,6 +156,7 @@ export function AuthProvider({ children }) {
     profile,
     isAdmin,
     loading,
+    bootError,
     refreshProfile: () => loadProfile(session?.user?.id),
     signIn: auth.signIn,
     signUp: auth.signUp,

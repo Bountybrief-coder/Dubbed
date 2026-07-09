@@ -96,7 +96,7 @@ function pathToRoute(pathname) {
 }
 
 export function App() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading, bootError } = useAuth();
   const [route, setRoute] = useState(() => pathToRoute(window.location.pathname));
   const [authOpen, setAuthOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -144,15 +144,6 @@ export function App() {
     }, { timeout: 3000 });
     return () => cancelIdleCallback(id);
   }, []);
-
-  useEffect(() => {
-    if (!loading) return;
-    const bail = setTimeout(() => {
-      const el = document.querySelector(".bootScreen");
-      if (el) window.location.reload();
-    }, 15000);
-    return () => clearTimeout(bail);
-  }, [loading]);
 
   if (loading) {
     return <div className="bootScreen"><div className="bootLogo">dubbed</div><span className="spinner" /></div>;
