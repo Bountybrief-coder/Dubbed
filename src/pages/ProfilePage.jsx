@@ -74,7 +74,7 @@ export function ProfilePage({ username }) {
         {/* ── Rank Medallion (top-right) ── */}
         <div className={`phMedallion ${isMaxed ? "phMedallion--max" : ""}`}>
           <div className="phMedHalo" />
-          <RankStar rank={rank} size={80} />
+          <RankStar rank={rank} size={130} />
           <span className="phMedTier">{rank.name.toUpperCase()}</span>
           {isMaxed
             ? <span className="phMedMax">MAX</span>
@@ -116,15 +116,6 @@ function PlayerStatCard({ profile, rank, total }) {
 
   return (
     <section className="pscCard">
-      <div className="pscStar" style={{ "--rank-glow": rank.glow }}>
-        <RankStar rank={rank} size={110} />
-      </div>
-      <div className="pscCol">
-        <small>RANK</small>
-        <b className="pscBig" style={{ color: rank.glow }}>{rank.name}</b>
-        <span className="pscSub">{profile.xp.toLocaleString()} XP</span>
-      </div>
-      <div className="pscDivider" />
       <div className="pscCol">
         <small>EARNINGS</small>
         <b className="pscBig cash">{money(profile.earnings)}</b>
