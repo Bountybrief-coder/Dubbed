@@ -15,6 +15,11 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS favorite_mode text;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS platform text DEFAULT 'PC + Console';
 ```
 
+## 1b. Profile update grant (expand to include new columns)
+```sql
+GRANT UPDATE (avatar_url, activision_id, psn, xbox, region, twitter, youtube, twitch_username, platform, favorite_game, favorite_mode) ON public.profiles TO authenticated;
+```
+
 ## 2. Match columns (team_name, map, match_number)
 ```sql
 ALTER TABLE public.matches ADD COLUMN IF NOT EXISTS team_name text;

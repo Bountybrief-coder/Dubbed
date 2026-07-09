@@ -718,7 +718,7 @@ create policy "profiles self update" on public.profiles for update using (auth.u
 
 -- Lock the money/stat columns: revoke direct UPDATE so only RPCs can change them
 revoke update on public.profiles from authenticated;
-grant update (avatar_url, activision_id, psn, xbox, region) on public.profiles to authenticated;
+grant update (avatar_url, activision_id, psn, xbox, region, twitter, youtube, twitch_username, platform, favorite_game, favorite_mode) on public.profiles to authenticated;
 
 drop policy if exists "trophies read" on public.trophies;
 create policy "trophies read" on public.trophies for select using (true);
