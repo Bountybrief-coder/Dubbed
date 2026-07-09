@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ImagePlus, Trophy, Check, Crosshair, Gamepad2, Monitor, ExternalLink, Award, Swords, Flame, Shield, Target, Crown, Star, DollarSign, Wallet, Users, Zap, Settings, Mail, Lock, AtSign } from "lucide-react";
 import { TwitchIcon, TwitterIcon, YouTubeIcon, PSNIcon, XboxIcon, ActivisionIcon } from "../components/PlatformIcons";
 import { WagerIcon } from "../components/WagerIcon";
@@ -7,7 +7,7 @@ import { TrophyIcon } from "../components/TrophyIcon";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useAsync } from "../hooks/useAsync";
 import { useToast } from "../hooks/useToast.jsx";
-import { getProfileByUsername, getRecords, getTrophies, getTrophyCounts, getRecentMatches, updateProfile, changeUsername, isUsernameTaken } from "../services/profileService";
+import { getProfileByUsername, getRecords, getTrophies, getTrophyCounts, getRecentMatches, subscribeToTrophies, updateProfile, changeUsername, isUsernameTaken } from "../services/profileService";
 import { supabase } from "../lib/supabase";
 import { getAchievements } from "../services/achievementService";
 import { uploadAvatar } from "../utils/storage";
@@ -97,8 +97,13 @@ export function ProfilePage({ username }) {
 }
 
 function PlayerStatCard({ profile, rank, total }) {
-  const { data: counts } = useAsync(() => getTrophyCounts(profile.id), [profile.id]);
+  const { data: counts, reload: reloadCounts } = useAsync(() => getTrophyCounts(profile.id), [profile.id]);
   const { data: recent } = useAsync(() => getRecentMatches(profile.id), [profile.id]);
+
+  useEffect(() => {
+    return subscribeToTrophies(profile.id, () => reloadCounts());
+  }, [profile.id, reloadCounts]);
+
   const winRate = total ? Math.round((profile.wins / total) * 100) : 0;
   const tc = counts || { gold: 0, silver: 0, bronze: 0 };
   const rows = recent || [];

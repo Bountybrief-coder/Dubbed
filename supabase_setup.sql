@@ -2041,7 +2041,7 @@ begin
     'profiles','matches','match_reports','match_disputes','chat_messages',
     'notifications','tournaments','tournament_entries','wallet_ledger',
     'match_messages','match_cancel_requests','withdrawal_requests','shop_purchases','user_bans',
-    'tournament_rounds','tournament_matches'
+    'tournament_rounds','tournament_matches','trophies'
   ] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);

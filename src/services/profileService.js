@@ -105,6 +105,18 @@ export async function getTrophyCounts(userId) {
   return { data: counts, error: error?.message };
 }
 
+export function subscribeToTrophies(userId, onChange) {
+  const channel = supabase
+    .channel(`trophies:${userId}`)
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "trophies", filter: `user_id=eq.${userId}` },
+      onChange
+    )
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}
+
 export async function getRecentMatches(userId, limit = 5) {
   const { data, error } = await supabase
     .from("match_players")

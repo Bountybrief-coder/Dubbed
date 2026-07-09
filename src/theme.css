@@ -539,7 +539,7 @@ select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .pscTrophies{display:flex;gap:16px;align-items:center;padding-left:20px;border-left:1px solid var(--line);align-self:stretch;position:relative;z-index:1}
 .pscTrophy{position:relative;display:flex;flex-direction:column;align-items:center;gap:2px;transition:transform .15s}
 .pscTrophy:hover{transform:scale(1.08)}
-.pscTrophy.empty svg{opacity:.25;filter:grayscale(1)}
+.pscTrophy.empty .trophyImg{opacity:.25;filter:grayscale(1)}
 .pscTrophyN{font-size:12px;font-weight:900;color:#fff}
 .pscTrophy.empty .pscTrophyN{color:var(--muted)}
 .pscCard .cash{color:#2ecc71}
