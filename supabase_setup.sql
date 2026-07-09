@@ -102,10 +102,11 @@ create table if not exists public.profiles (
 create index if not exists profiles_username_lower_idx on public.profiles(username_lower);
 create index if not exists profiles_xp_idx on public.profiles(xp desc);
 
--- add region/streak/verified if an older profiles table already existed
+-- add region/streak/verified/platform if an older profiles table already existed
 alter table public.profiles add column if not exists region text default 'NA';
 alter table public.profiles add column if not exists streak integer not null default 0;
 alter table public.profiles add column if not exists verified boolean not null default false;
+alter table public.profiles add column if not exists platform text default 'PC + Console';
 
 -- Payout provider fields (Stripe Connect Express is the default provider).
 -- `pending_balance` mirrors funds moved into an in-flight withdrawal so the

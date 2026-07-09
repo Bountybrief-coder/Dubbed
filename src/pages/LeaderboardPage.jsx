@@ -206,7 +206,7 @@ export function LeaderboardPage({ onOpenProfile }) {
               <span>Player</span>
               <span className="lbHideMobile">Tier</span>
               <span>Record</span>
-              <span className="lbHideMobile">{metricLabel(metric)}</span>
+              <span className="lbHideMobile">Win %</span>
               <span>{metric === "xp" ? "Earnings" : "XP"}</span>
               <span>{metricLabel(metric)}</span>
             </div>
