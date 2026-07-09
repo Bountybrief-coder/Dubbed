@@ -1507,15 +1507,85 @@ begin
 end $$;
 grant execute on function public.check_ban_expiry() to authenticated;
 
+-- ---------- tournament templates + scheduler ----------
+create table if not exists public.tournament_templates (
+  id                  uuid primary key default gen_random_uuid(),
+  title               text not null,
+  game                text not null,
+  mode                text not null,
+  format              text not null,
+  team_size           integer not null default 1,
+  entry_fee           numeric(12,2) not null default 0,
+  region              text not null default 'NA',
+  platform            text not null default 'PC + Console Mixed',
+  series              text not null default 'Best of 1',
+  max_entries         integer not null default 16,
+  min_entries         integer not null default 2,
+  recurrence          text not null default 'daily',
+  daily_times         text[] not null default '{}',
+  schedule_tz         text not null default 'America/New_York',
+  reg_open_minutes    integer not null default 45,
+  registration_minutes integer not null default 60,
+  lead_minutes        integer not null default 10,
+  enabled             boolean not null default true,
+  weapon_restriction  text,
+  host_rule           text not null default 'auto',
+  skill_tier          text not null default 'Open',
+  created_at          timestamptz not null default now()
+);
+
+create table if not exists public.tournament_schedules (
+  id          uuid primary key default gen_random_uuid(),
+  template_id uuid not null unique references public.tournament_templates(id) on delete cascade,
+  active      boolean not null default true,
+  next_run_at timestamptz not null default now(),
+  last_run_at timestamptz,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
+create or replace function public.run_tournament_scheduler()
+returns void language plpgsql security definer set search_path = public as $$
+declare v_s record; v_tmpl public.tournament_templates; v_t text; v_starts timestamptz;
+begin
+  for v_s in
+    select s.*, t.* from public.tournament_schedules s
+      join public.tournament_templates t on t.id = s.template_id
+    where s.active and s.next_run_at <= now()
+    for update of s skip locked
+  loop
+    foreach v_t in array v_s.daily_times loop
+      v_starts := (now() at time zone v_s.schedule_tz)::date + v_t::time
+        + (v_s.reg_open_minutes || ' minutes')::interval;
+      v_starts := v_starts at time zone v_s.schedule_tz;
+      if v_starts < now() then v_starts := v_starts + interval '1 day'; end if;
+      if not exists (
+        select 1 from public.tournaments
+        where name = v_s.title and game = v_s.game
+          and starts_at between v_starts - interval '5 minutes' and v_starts + interval '5 minutes'
+      ) then
+        insert into public.tournaments(name, game, mode, format, entry, capacity, region,
+          platform, series, skill_tier, weapon_restriction, host_rule, starts_at, status)
+          values (v_s.title, v_s.game, v_s.mode, v_s.format, v_s.entry_fee, v_s.max_entries,
+            v_s.region, v_s.platform, v_s.series, v_s.skill_tier, v_s.weapon_restriction,
+            v_s.host_rule, v_starts, 'upcoming');
+      end if;
+    end loop;
+    update public.tournament_schedules set last_run_at = now(),
+      next_run_at = now() + interval '2 minutes', updated_at = now()
+      where id = v_s.id;
+  end loop;
+end $$;
+
 -- ---------- tournament bracket ----------
 -- Generate a seeded single-elimination bracket from the entries.
-create or replace function public.generate_bracket(p_tournament uuid)
+create or replace function public.generate_bracket(p_tournament uuid, p_auto boolean default false)
 returns void language plpgsql security definer set search_path = public as $$
 declare
   v_t public.tournaments; v_count int; v_bracket int; v_rounds int; v_round_id uuid;
   v_seed_a int; v_seed_b int; v_ea record; v_eb record; v_is_bye boolean; v_mn int;
 begin
-  if not public.is_admin() then raise exception 'admin only'; end if;
+  if not p_auto and not public.is_admin() then raise exception 'admin only'; end if;
   select * into v_t from public.tournaments where id = p_tournament for update;
   if v_t.status <> 'upcoming' then raise exception 'tournament already started'; end if;
   if v_t.bracket_generated then raise exception 'bracket already generated'; end if;
@@ -1620,7 +1690,7 @@ begin
 
   select * into v_t from public.tournaments where id = v_tm.tournament_id;
   select * into v_round from public.tournament_rounds where id = v_tm.round_id;
-  select not exists (select 1 from public.tournament_matches where round_id=v_round.id and status not in ('completed','bye'))
+  select not exists (select 1 from public.tournament_matches where round_id=v_round.id and status not in ('completed','bye','stalled'))
     into v_done;
   if not v_done then return; end if;
 
@@ -1656,7 +1726,7 @@ begin
   update public.tournaments set current_round = v_next where id = v_t.id;
 end $$;
 
-grant execute on function public.generate_bracket(uuid) to authenticated;
+grant execute on function public.generate_bracket(uuid, boolean) to authenticated;
 grant execute on function public.start_tournament_match(uuid) to authenticated;
 grant execute on function public.advance_bracket(uuid) to authenticated;
 
@@ -2889,9 +2959,51 @@ begin
       values (v_t.id, 'auto_archive', 'Stale legacy: no entries after 24h.');
   end loop;
 
-  -- 3. Auto-start: upcoming, past starts_at, has enough entries, not yet bracket_generated
-  --    (Admin-triggered for now — the scheduler or admin calls generate_bracket.)
-  --    This section is a placeholder for future auto-start logic.
+  -- 3. Auto-start: upcoming, past starts_at, >= 2 entries, no bracket yet
+  for v_t in
+    select t.* from public.tournaments t
+    where t.status = 'upcoming'
+      and t.starts_at <= now()
+      and not t.bracket_generated
+      and (select count(*) from public.tournament_entries where tournament_id = t.id) >= 2
+    for update skip locked
+  loop
+    perform public.generate_bracket(v_t.id, true);
+    -- Auto-start all round 1 ready matches
+    for v_entry in
+      select tm.id from public.tournament_matches tm
+        join public.tournament_rounds tr on tr.id = tm.round_id
+      where tm.tournament_id = v_t.id and tr.round_number = 1
+        and tm.status = 'ready'
+    loop
+      perform public.start_tournament_match(v_entry.id);
+    end loop;
+    insert into public.tournament_log(tournament_id, action, detail)
+      values (v_t.id, 'auto_start',
+        'Bracket generated and round 1 matches started automatically at scheduled time.');
+  end loop;
+
+  -- 4. Stalled matches: tournament matches live for 2+ hours with no report
+  for v_entry in
+    select tm.id as tm_id, tm.match_id, t.name as tourney_name
+    from public.tournament_matches tm
+      join public.tournaments t on t.id = tm.tournament_id
+      join public.matches m on m.id = tm.match_id
+    where tm.status = 'live'
+      and m.status = 'live'
+      and m.created_at < now() - interval '2 hours'
+    for update of tm skip locked
+  loop
+    update public.matches set status = 'cancelled' where id = v_entry.match_id;
+    update public.tournament_matches set status = 'stalled' where id = v_entry.tm_id;
+    insert into public.tournament_log(tournament_id, action, detail)
+      select tm.tournament_id, 'stalled_match',
+        'Match ' || v_entry.match_id || ' auto-cancelled after 2h with no report.'
+      from public.tournament_matches tm where tm.id = v_entry.tm_id;
+    insert into public.notifications(user_id, text)
+      select mp.user_id, v_entry.tourney_name || ' match was cancelled due to inactivity (2+ hours with no report).'
+      from public.match_players mp where mp.match_id = v_entry.match_id;
+  end loop;
 end $$;
 
 -- Cron: run maintenance every 3 minutes

@@ -228,9 +228,21 @@ no bracket are silently archived (no refund needed).
 - `tournament_log` table records every automated transition with action
   and detail for audit.
 
+### Auto-Start at Scheduled Time
+When `starts_at` passes and there are >= 2 entries, `tournament_maintenance()`
+auto-generates the bracket (calls `generate_bracket` with `p_auto=true`) and
+immediately starts all Round 1 ready matches. No admin intervention needed.
+
+### Stalled Match Handling
+Tournament matches live for 2+ hours with no result report are auto-cancelled.
+The tournament_match status is set to 'stalled', players are notified, and
+the round can still complete if other matches finish (stalled counts as done
+for round advancement).
+
 ### Tournament Status Flow
 ```
 upcoming → live → completed
               ↘ cancelled → archived   (manual cancel)
 upcoming → archived                     (auto: under-filled / stale)
+upcoming → live (auto-start at starts_at with >= 2 entries)
 ```
