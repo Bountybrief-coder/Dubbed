@@ -304,6 +304,11 @@ select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .uploadStub{display:flex;align-items:center;gap:8px;background:#080b0f;border:1px dashed var(--line);border-radius:10px;padding:14px;color:var(--muted);font-size:13px;margin:8px 0}
 
 /* tournaments */
+.tourListTabs{display:flex;gap:2px;margin-bottom:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:4px;overflow-x:auto}
+.tourListTab{display:flex;align-items:center;gap:6px;padding:10px 18px;font-size:13px;font-weight:700;color:var(--muted);background:none;border:none;border-radius:8px;cursor:pointer;white-space:nowrap;transition:all .15s}
+.tourListTab:hover{color:var(--ink)}
+.tourListTab.on{color:var(--neon);background:var(--neon-dim)}
+.tourTabCount{font-size:11px;background:var(--neon-dim);color:var(--neon);padding:1px 7px;border-radius:10px;margin-left:4px}
 .tourList{display:flex;flex-direction:column;gap:10px}
 .tourTile{display:grid;grid-template-columns:48px 1.6fr repeat(3,.8fr) 1.1fr auto;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:12px 16px}
 .tourCover{width:48px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}

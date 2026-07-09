@@ -8,6 +8,7 @@ export async function listTournaments() {
   const { data, error } = await supabase
     .from("tournaments")
     .select(`${T_SELECT}, tournament_entries(count)`)
+    .in("status", ["upcoming", "live", "completed"])
     .order("starts_at", { ascending: true });
   const rows = (data || []).map((t) => ({
     ...t,

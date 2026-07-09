@@ -23,16 +23,43 @@ const GAME_COVERS = {
 };
 const cover = (g) => GAME_COVERS[g] || bo7;
 
+const LIST_TABS = [
+  { key: "open",     label: "Open Now" },
+  { key: "upcoming", label: "Upcoming" },
+  { key: "results",  label: "Recent Results" },
+];
+const MAX_VISIBLE = 8;
+const MAX_RESULTS = 5;
+
+function bucketTournaments(all) {
+  const now = Date.now();
+  const open = [];
+  const upcoming = [];
+  const results = [];
+  for (const t of all) {
+    if (t.status === "completed") { results.push(t); continue; }
+    const started = new Date(t.starts_at).getTime() <= now;
+    if (t.status === "live" || started) open.push(t);
+    else upcoming.push(t);
+  }
+  results.sort((a, b) => new Date(b.starts_at) - new Date(a.starts_at));
+  return { open, upcoming, results: results.slice(0, MAX_RESULTS) };
+}
+
 export function TournamentsPage({ onLogin, onNavigate }) {
   const { profile, isAdmin } = useAuth();
   const { data, loading, error, reload } = useAsync(() => listTournaments(), []);
   const [joinT, setJoinT] = useState(null);
   const [regionFilter, setRegionFilter] = useState("All");
+  const [listTab, setListTab] = useState("open");
   const [detailId, setDetailId] = useState(null);
 
   const REGION_FILTERS = ["All", "NA", "EU", "NA + EU", "Latin America", "Worldwide"];
-  const filtered = !data ? [] : regionFilter === "All" ? data
+  const byRegion = !data ? [] : regionFilter === "All" ? data
     : data.filter((t) => t.region === regionFilter);
+  const buckets = bucketTournaments(byRegion);
+  const visible = (buckets[listTab] || buckets.open).slice(0, MAX_VISIBLE);
+  const totalInBucket = (buckets[listTab] || buckets.open).length;
 
   if (detailId) {
     const initial = data?.find((t) => t.id === detailId);
@@ -55,6 +82,20 @@ export function TournamentsPage({ onLogin, onNavigate }) {
         <p className="sub">The pot is built by who shows up. Entry times teams joined. 2% keeps the lights on, rest goes to the winners.</p>
       </div>
 
+      {/* ── List Tabs ── */}
+      <div className="tourListTabs" role="tablist" aria-label="Tournament filter">
+        {LIST_TABS.map(({ key, label }) => {
+          const count = (buckets[key] || []).length;
+          return (
+            <button key={key} role="tab" aria-selected={listTab === key}
+              className={`tourListTab ${listTab === key ? "on" : ""}`}
+              onClick={() => setListTab(key)}>
+              {label}{count > 0 && <span className="tourTabCount">{count}</span>}
+            </button>
+          );
+        })}
+      </div>
+
       <div className="chipRow" style={{ marginBottom: 16 }}>
         {REGION_FILTERS.map((r) => (
           <button key={r} className={regionFilter === r ? "on" : ""} onClick={() => setRegionFilter(r)}>{r}</button>
@@ -65,43 +106,52 @@ export function TournamentsPage({ onLogin, onNavigate }) {
         <SkeletonRows rows={4} height={72} />
       ) : error ? (
         <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
-      ) : filtered.length === 0 ? (
-        <EmptyState icon={Trophy} title="No tournaments scheduled">Check back soon. Hosted brackets appear here.</EmptyState>
+      ) : visible.length === 0 ? (
+        <EmptyState icon={Trophy} title={listTab === "results" ? "No recent results" : "No tournaments right now"}>
+          {listTab === "results" ? "Completed tournaments show up here." : "Check back soon. Hosted brackets appear here."}
+        </EmptyState>
       ) : (
-        <div className="tourList">
-          {filtered.map((t) => {
-            const pz = pooledPrize(t.entry, t.entries_count);
-            const full = t.entries_count >= t.capacity;
-            const started = new Date(t.starts_at).getTime() <= Date.now();
-            const done = t.status === "completed";
-            return (
-              <div className="tourTile" key={t.id} onClick={() => setDetailId(t.id)} role="button" style={{ cursor: "pointer" }}>
-                <img className="tourCover" src={cover(t.game)} alt="" loading="lazy" />
-                <div className="tourMeta">
-                  <b>{t.name}</b>
-                  <small>{shortForGame(t.game)} · {t.format} {t.mode} · {t.series} · {t.region}</small>
-                  <div className="matchBadges">
-                    <span className="badge">{t.platform}</span>
-                    {t.skill_tier !== "Open" && <span className="badge accent">{t.skill_tier}</span>}
-                    {t.weapon_restriction && <span className="badge warn">{t.weapon_restriction}</span>}
+        <>
+          <div className="tourList">
+            {visible.map((t) => {
+              const pz = pooledPrize(t.entry, t.entries_count);
+              const full = t.entries_count >= t.capacity;
+              const started = new Date(t.starts_at).getTime() <= Date.now();
+              const done = t.status === "completed";
+              return (
+                <div className="tourTile" key={t.id} onClick={() => setDetailId(t.id)} role="button" style={{ cursor: "pointer" }}>
+                  <img className="tourCover" src={cover(t.game)} alt="" loading="lazy" />
+                  <div className="tourMeta">
+                    <b>{t.name}</b>
+                    <small>{shortForGame(t.game)} · {t.format} {t.mode} · {t.series} · {t.region}</small>
+                    <div className="matchBadges">
+                      <span className="badge">{t.platform}</span>
+                      {t.skill_tier !== "Open" && <span className="badge accent">{t.skill_tier}</span>}
+                      {t.weapon_restriction && <span className="badge warn">{t.weapon_restriction}</span>}
+                    </div>
+                    {done && t.winner_name && <span className="tourWinner"><Trophy size={12} /> {t.winner_name}</span>}
                   </div>
-                  {done && t.winner_name && <span className="tourWinner"><Trophy size={12} /> {t.winner_name}</span>}
+                  <div className="tourStat"><small>CURRENT POT</small><b className="cash">{money(pz.pot)}</b></div>
+                  <div className="tourStat"><small>ENTRY</small><b>{money(t.entry)}</b></div>
+                  <div className="tourStat"><small>TEAMS</small><b>{t.entries_count}/{t.capacity}</b></div>
+                  <div className="tourStat wide"><small>STARTS</small><b>{done ? <em className="doneTag">ENDED</em> : started ? <em className="liveTag">● LIVE</em> : <Countdown to={new Date(t.starts_at).getTime()} />}</b></div>
+                  <div onClick={(e) => e.stopPropagation()}>
+                    {done
+                      ? <Button variant="ghost" onClick={() => setDetailId(t.id)}>View</Button>
+                      : started
+                      ? <Button variant="ghost" onClick={() => setDetailId(t.id)}>View</Button>
+                      : <Button variant="primary" disabled={full} onClick={() => (profile ? setJoinT(t) : onLogin())}>{full ? "Full" : "Join"}</Button>}
+                  </div>
                 </div>
-                <div className="tourStat"><small>CURRENT POT</small><b className="cash">{money(pz.pot)}</b></div>
-                <div className="tourStat"><small>ENTRY</small><b>{money(t.entry)}</b></div>
-                <div className="tourStat"><small>TEAMS</small><b>{t.entries_count}/{t.capacity}</b></div>
-                <div className="tourStat wide"><small>STARTS</small><b>{done ? <em className="doneTag">ENDED</em> : started ? <em className="liveTag">● LIVE</em> : <Countdown to={new Date(t.starts_at).getTime()} />}</b></div>
-                <div onClick={(e) => e.stopPropagation()}>
-                  {done
-                    ? <Button variant="ghost" onClick={() => setDetailId(t.id)}>View</Button>
-                    : started
-                    ? <Button variant="ghost" onClick={() => setDetailId(t.id)}>View</Button>
-                    : <Button variant="primary" disabled={full} onClick={() => (profile ? setJoinT(t) : onLogin())}>{full ? "Full" : "Join"}</Button>}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+          {totalInBucket > MAX_VISIBLE && (
+            <p className="subtle" style={{ textAlign: "center", marginTop: 12 }}>
+              Showing {MAX_VISIBLE} of {totalInBucket}. Older tournaments are auto-archived.
+            </p>
+          )}
+        </>
       )}
 
       {joinT && <JoinModal t={joinT} onClose={() => setJoinT(null)} onDone={reload} onLogin={onLogin} />}
