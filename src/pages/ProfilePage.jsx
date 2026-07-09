@@ -39,6 +39,7 @@ export function ProfilePage({ username }) {
   const rank = rankForXp(profile.xp);
   const nxt = nextRank(profile.xp);
   const progress = rankProgress(profile.xp);
+  const isMaxed = nxt.xp === rank.xp;
   const total = profile.wins + profile.losses;
 
   async function onAvatar(e) {
@@ -57,7 +58,7 @@ export function ProfilePage({ username }) {
   return (
     <main className="page">
       {/* ── HERO HEADER ── */}
-      <section className="profileHero2">
+      <section className="profileHero2" style={{ "--rank-glow": rank.glow }}>
         <div className="phAvatarCol">
           <div className="phAvatar" style={{ borderColor: rank.glow, boxShadow: `0 0 28px ${rank.glow}30, 0 4px 16px rgba(0,0,0,.4)` }}>
             {profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : <span>{profile.username.slice(0, 2)}</span>}
@@ -65,15 +66,20 @@ export function ProfilePage({ username }) {
           {isMe && <label className="avatarUp"><ImagePlus size={13} /> Change<input type="file" accept="image/*" onChange={onAvatar} /></label>}
         </div>
         <div className="phInfo">
-          <div className="phTierRow" style={{ "--rank-glow": rank.glow }}>
-            <RankStar rank={rank} size={42} />
-            <span className="phTierName" style={{ color: rank.glow }}>{rank.name.toUpperCase()}</span>
-            <span className="phTierSub">MEMBER</span>
-          </div>
           <h1>{profile.username}{profile.wagr_member && <WagrBadge size={24} />}</h1>
           <p className="sub">{profile.region || "NA"} · Joined {new Date(profile.member_since).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}</p>
           <div className="xpBar"><div className="xpFill" style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${rank.glow}, ${rank.glow}cc)` }} /></div>
           <small className="subtle">{nxt.xp === rank.xp ? "Max tier reached" : `${(nxt.xp - profile.xp).toLocaleString()} XP to ${nxt.name}`}</small>
+        </div>
+        {/* ── Rank Medallion (top-right) ── */}
+        <div className={`phMedallion ${isMaxed ? "phMedallion--max" : ""}`}>
+          <div className="phMedHalo" />
+          <RankStar rank={rank} size={80} />
+          <span className="phMedTier">{rank.name.toUpperCase()}</span>
+          {isMaxed
+            ? <span className="phMedMax">MAX</span>
+            : <span className="phMedXp">{(nxt.xp - profile.xp).toLocaleString()} to {nxt.name}</span>
+          }
         </div>
       </section>
 
