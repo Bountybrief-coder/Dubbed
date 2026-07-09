@@ -4,21 +4,27 @@ import { Button } from "./Button";
 import { MapCard } from "./MapCard";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAuth } from "../hooks/useAuth.jsx";
+import { useAsync } from "../hooks/useAsync";
 import { createMatch } from "../services/matchService";
+import { getMyTeams } from "../services/teamService";
 import {
   GAME_NAMES, CURRENT_GAMES, REGIONS, PLATFORMS, SKILL_TIERS,
   SERIES_OPTIONS, WEAPON_RESTRICTIONS, FORMAT_LABELS,
   formatsForGameMode, modesForGame, modeRule, seriesRule, shortForGame, formatLabel,
   usesMapVeto, isSingleMapMode, isBattleRoyaleGame, isKillRaceMode, isRookieEligible,
-  calculateRake, calculatePayout, RAKE_CONFIG, mapsForGameMode
+  calculateRake, calculatePayout, RAKE_CONFIG, mapsForGameMode, checkGameEligibility
 } from "../utils/games";
 import { validateEntry } from "../utils/validation";
 import { money } from "../utils/format";
-import { Zap, DollarSign, Trophy, Swords, Shield } from "lucide-react";
+import { Zap, DollarSign, Trophy, Swords, Shield, AlertTriangle } from "lucide-react";
 
-export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGame, defaultMode, onCreated }) {
+export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGame, defaultMode, onCreated, onNavigate }) {
   const toast = useToast();
   const { profile, refreshProfile } = useAuth();
+  const { data: myTeams } = useAsync(
+    () => profile ? getMyTeams(profile.id) : Promise.resolve({ data: [] }),
+    [profile?.id]
+  );
   const initGame = defaultGame || GAME_NAMES[0];
   const initMode = defaultMode || modesForGame(initGame)[0];
 
@@ -58,6 +64,8 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
   const showWeaponToggle = game === "Call of Duty: Black Ops 7";
   const rookieBlocked = skillTier === "Rookie Only" && profile && !isRookieEligible(profile.xp);
   const isWagr = profile?.wagr_member;
+  const elig = checkGameEligibility(game, profile, myTeams);
+  const gateBlocked = !elig.eligible && elig.cta !== "login";
 
   const pot = kind === "cash" ? Number(entry) * (parseInt(format) || 1) * 2 : 0;
   const rake = pot > 0 ? calculateRake(pot, isWagr) : 0;
@@ -152,6 +160,19 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
       <div className="chipRow wrap">{CURRENT_GAMES.map((g) => (
         <button key={g.name} className={game === g.name ? "on" : ""} onClick={() => pickGame(g.name)}>{g.short}</button>
       ))}</div>
+
+      {gateBlocked && (
+        <div className="cmGate">
+          <AlertTriangle size={14} />
+          <span>{elig.reason}</span>
+          {elig.cta === "account" && (
+            <button className="btn btn-sm btn-primary" onClick={() => { onClose(); onNavigate?.("profile"); }}>Link Account</button>
+          )}
+          {elig.cta === "team" && (
+            <button className="btn btn-sm btn-primary" onClick={() => { onClose(); onNavigate?.("teams"); }}>Create Team</button>
+          )}
+        </div>
+      )}
 
       <label className="fieldLbl">Mode</label>
       <div className="chipRow wrap">{modes.map((m) => (
@@ -248,7 +269,7 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
         </div>
       )}
 
-      <Button variant="primary" className="wide" loading={busy} disabled={rookieBlocked} onClick={submit}>
+      <Button variant="primary" className="wide" loading={busy} disabled={rookieBlocked || gateBlocked} onClick={submit}>
         {kind === "cash" ? <><DollarSign size={14} /> Post Cash Match</> : <><Zap size={14} /> Post XP Match</>}
       </Button>
     </Modal>

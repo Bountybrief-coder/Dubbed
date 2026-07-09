@@ -35,6 +35,7 @@ create table if not exists public.profiles (
   username       text unique not null,
   username_lower text unique not null,
   avatar_url     text default '',
+  activision_id  text default '',
   psn            text default '',
   xbox           text default '',
   region         text default 'NA',
@@ -610,7 +611,7 @@ create policy "profiles self update" on public.profiles for update using (auth.u
 
 -- Lock the money/stat columns: revoke direct UPDATE so only RPCs can change them
 revoke update on public.profiles from authenticated;
-grant update (avatar_url, psn, xbox, region) on public.profiles to authenticated;
+grant update (avatar_url, activision_id, psn, xbox, region) on public.profiles to authenticated;
 
 drop policy if exists "trophies read" on public.trophies;
 create policy "trophies read" on public.trophies for select using (true);
@@ -1682,6 +1683,52 @@ begin
   return case when random() < 0.5 then 'NA' else 'EU' end;
 end $$;
 
+-- ---------- migration: activision_id column ----------
+alter table public.profiles add column if not exists activision_id text default '';
+
+-- ---------- can_play_game gate ----------
+-- Returns NULL when the user is eligible, or a human reason when blocked.
+-- Games requiring Activision ID: BO7, Warzone, BOR, MW4 (current-gen CoD).
+-- WWII requires PSN or Xbox (old-gen console-only title).
+create or replace function public.can_play_game(p_user uuid, p_game text)
+returns text language plpgsql stable security definer set search_path = public as $$
+declare
+  v_act text; v_psn text; v_xbox text;
+  v_needs_activision boolean;
+  v_needs_console boolean;
+begin
+  -- 1. Team check
+  if not exists (
+    select 1 from public.team_members tm
+    join public.teams t on t.id = tm.team_id
+    where tm.user_id = p_user and t.game = p_game
+  ) then
+    return 'Create a team for ' || p_game || ' first';
+  end if;
+
+  -- 2. Linked-account check (game-dependent)
+  v_needs_activision := p_game in (
+    'Call of Duty: Black Ops 7', 'Warzone', 'Black Ops Royale',
+    'Call of Duty: Modern Warfare 4'
+  );
+  v_needs_console := p_game = 'Call of Duty: WWII';
+
+  if v_needs_activision then
+    select coalesce(activision_id, '') into v_act from public.profiles where id = p_user;
+    if v_act = '' or v_act !~ '^\S+#\d{4,10}$' then
+      return 'Link your Activision ID to play ' || p_game;
+    end if;
+  elsif v_needs_console then
+    select coalesce(psn, ''), coalesce(xbox, '') into v_psn, v_xbox
+    from public.profiles where id = p_user;
+    if v_psn = '' and v_xbox = '' then
+      return 'Link an Xbox or PSN account to play ' || p_game;
+    end if;
+  end if;
+
+  return null; -- eligible
+end $$;
+
 -- ---------- matches ----------
 create or replace function public.create_match(
   p_game text, p_mode text, p_format text, p_region text, p_entry numeric, p_kind match_kind,
@@ -1689,10 +1736,12 @@ create or replace function public.create_match(
   p_series text default 'Best of 1', p_weapon_restriction text default null,
   p_host_rule text default 'auto'
 ) returns matches language plpgsql security definer set search_path = public as $$
-declare v_code text; v_match public.matches; v_bal numeric; v_xp int; v_region text;
+declare v_code text; v_match public.matches; v_bal numeric; v_xp int; v_region text; v_gate text;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
   perform public.check_not_banned();
+  v_gate := public.can_play_game(auth.uid(), p_game);
+  if v_gate is not null then raise exception '%', v_gate; end if;
   if not public.format_allowed(p_game, p_format) then
     raise exception '% only supports 1v1/2v2 lobbies', p_game;
   end if;
@@ -1724,12 +1773,14 @@ end $$;
 
 create or replace function public.join_match(p_match uuid)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_m public.matches; v_bal numeric; v_xp int; v_region text; v_players int; v_needed int; v_pool jsonb;
+declare v_m public.matches; v_bal numeric; v_xp int; v_region text; v_players int; v_needed int; v_pool jsonb; v_gate text;
 begin
   perform public.check_not_banned();
   select * into v_m from public.matches where id = p_match for update;
   if not found then raise exception 'match not found'; end if;
   if v_m.status <> 'open' then raise exception 'match is not open'; end if;
+  v_gate := public.can_play_game(auth.uid(), v_m.game);
+  if v_gate is not null then raise exception '%', v_gate; end if;
   if exists (select 1 from public.match_players where match_id=p_match and user_id=auth.uid())
     then raise exception 'already joined'; end if;
   if v_m.skill_tier = 'Rookie Only' then

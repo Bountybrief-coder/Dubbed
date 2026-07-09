@@ -84,3 +84,38 @@ The UI never computes payouts. All money movement goes through SQL RPCs
 (`settle_match`, `settle_bet`, `settle_tournament`). The UI only submits
 who won and the score — the server handles rake, balance credits, and
 ledger entries.
+
+## Match Gate — Linked Account + Team Requirements
+
+Before posting or accepting a match, the server (`can_play_game` RPC) checks:
+1. The user is a member of a team whose `game` matches the match's game.
+2. The user has the correct linked gaming account for that game.
+
+### Per-Game Linked-Account Rule Table
+
+| Game | Required Account | Validation Pattern |
+|---|---|---|
+| Call of Duty: Black Ops 7 | Activision ID | `^\S+#\d{4,10}$` (e.g. `Player#1234567`) |
+| Warzone | Activision ID | Same |
+| Black Ops Royale | Activision ID | Same |
+| Call of Duty: Modern Warfare 4 | Activision ID | Same |
+| Call of Duty: WWII | PSN **or** Xbox | Non-empty string |
+| (Future CoD titles) | Default: Activision ID | Unless old-gen console-only |
+
+### Enforcement
+
+- **Server-side** (`can_play_game`): called at the top of `create_match` and
+  `join_match`. Returns a human-readable reason or NULL. This is authoritative.
+- **Client-side** (`checkGameEligibility` in `games.js`): convenience check
+  to show inline gates and disable buttons. Not a security boundary.
+
+### Gamertag Privacy
+
+Gamertags (Activision ID / PSN / Xbox) are only shown in the Match Room to
+participants of that match, not to spectators or the public profile.
+
+### Activision ID Format
+
+Pattern: `^\S+#\d{4,10}$` — non-whitespace username followed by `#` and
+4-10 digits. This is a format check only. Live verification against Activision
+servers is a future integration (see `/docs/TODO.md`).

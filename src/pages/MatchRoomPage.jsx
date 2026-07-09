@@ -190,6 +190,7 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
         clanTags={clanTags}
         winner={winner}
         onNavigate={onNavigate}
+        showGamertags={isParticipant}
       />
 
       {/* §4 — Per-map host table (step 2) */}
@@ -299,23 +300,23 @@ function MatchHeader({ match, statusLabel, pot, naCount, euCount }) {
 // §3 — TEAMS VS PANEL
 // ═══════════════════════════════════════════════════════════════════════════
 
-function TeamsVsPanel({ match, players, teamSize, clanTags, winner, onNavigate }) {
+function TeamsVsPanel({ match, players, teamSize, clanTags, winner, onNavigate, showGamertags }) {
   if (teamSize === 1) {
     if (players.length >= 2) {
       return (
         <section className="mrPlayers">
-          <PlayerCard player={players[0]} isWinner={match.winner_id === players[0].id} settled={match.status === "settled"} clanTag={clanTags[0]} onNavigate={onNavigate} />
+          <PlayerCard player={players[0]} isWinner={match.winner_id === players[0].id} settled={match.status === "settled"} clanTag={clanTags[0]} onNavigate={onNavigate} showGamertags={showGamertags} />
           <div className="mrVs">
             <span>VS</span>
             {match.status === "settled" && winner && <div className="mrVerdict">{winner.name} wins</div>}
           </div>
-          <PlayerCard player={players[1]} isWinner={match.winner_id === players[1].id} settled={match.status === "settled"} clanTag={clanTags[1]} onNavigate={onNavigate} />
+          <PlayerCard player={players[1]} isWinner={match.winner_id === players[1].id} settled={match.status === "settled"} clanTag={clanTags[1]} onNavigate={onNavigate} showGamertags={showGamertags} />
         </section>
       );
     }
     return (
       <section className="mrPlayers">
-        {players[0] ? <PlayerCard player={players[0]} isWinner={false} settled={false} clanTag={clanTags[0]} onNavigate={onNavigate} /> : <div className="mrPlayerCard empty"><div className="mrPcAvatar"><span>?</span></div><b>Waiting...</b></div>}
+        {players[0] ? <PlayerCard player={players[0]} isWinner={false} settled={false} clanTag={clanTags[0]} onNavigate={onNavigate} showGamertags={showGamertags} /> : <div className="mrPlayerCard empty"><div className="mrPcAvatar"><span>?</span></div><b>Waiting...</b></div>}
         <div className="mrVs"><span>VS</span></div>
         <div className="mrPlayerCard empty"><div className="mrPcAvatar"><span>?</span></div><b>Waiting for opponent...</b></div>
       </section>
@@ -337,7 +338,7 @@ function TeamsVsPanel({ match, players, teamSize, clanTags, winner, onNavigate }
           <h3 className="mrTeamName">{sideA[0]}</h3>
           <span className="mrTeamTag">[{clanTags[0]}]</span>
         </div>
-        {sideA[1].map(p => <PlayerCard key={p.id} player={p} isWinner={aWon} settled={match.status === "settled"} onNavigate={onNavigate} />)}
+        {sideA[1].map(p => <PlayerCard key={p.id} player={p} isWinner={aWon} settled={match.status === "settled"} onNavigate={onNavigate} showGamertags={showGamertags} />)}
       </div>
       <div className="mrVs">
         <span>VS</span>
@@ -349,7 +350,7 @@ function TeamsVsPanel({ match, players, teamSize, clanTags, winner, onNavigate }
             <h3 className="mrTeamName">{sideB[0]}</h3>
             <span className="mrTeamTag">[{clanTags[1]}]</span>
           </div>
-          {sideB[1].map(p => <PlayerCard key={p.id} player={p} isWinner={bWon} settled={match.status === "settled"} onNavigate={onNavigate} />)}
+          {sideB[1].map(p => <PlayerCard key={p.id} player={p} isWinner={bWon} settled={match.status === "settled"} onNavigate={onNavigate} showGamertags={showGamertags} />)}
         </> : <div className="mrPlayerCard empty"><div className="mrPcAvatar"><span>?</span></div><b>Waiting for opponents...</b></div>}
       </div>
     </section>
@@ -508,7 +509,7 @@ function ClanTagBox({ label, tag }) {
 // PLAYER CARD
 // ═══════════════════════════════════════════════════════════════════════════
 
-function PlayerCard({ player, isWinner, settled, clanTag, onNavigate }) {
+function PlayerCard({ player, isWinner, settled, clanTag, onNavigate, showGamertags = true }) {
   const rank = rankForXp(player.xp);
   const total = player.wins + player.losses;
   const winRate = total ? Math.round((player.wins / total) * 100) : 0;
@@ -555,11 +556,13 @@ function PlayerCard({ player, isWinner, settled, clanTag, onNavigate }) {
         <div><small>Earnings</small><b className="cash">{money(player.earnings)}</b></div>
       </div>
 
-      <div className="mrPcTags">
-        {player.activision_id && <div className="mrTag"><Crosshair size={12} /> <span>{player.activision_id}</span></div>}
-        {player.psn && <div className="mrTag"><Gamepad2 size={12} /> <span>PSN: {player.psn}</span></div>}
-        {player.xbox && <div className="mrTag"><Monitor size={12} /> <span>Xbox: {player.xbox}</span></div>}
-      </div>
+      {showGamertags && (player.activision_id || player.psn || player.xbox) && (
+        <div className="mrPcTags">
+          {player.activision_id && <div className="mrTag"><Crosshair size={12} /> <span>{player.activision_id}</span></div>}
+          {player.psn && <div className="mrTag"><Gamepad2 size={12} /> <span>PSN: {player.psn}</span></div>}
+          {player.xbox && <div className="mrTag"><Monitor size={12} /> <span>Xbox: {player.xbox}</span></div>}
+        </div>
+      )}
 
       {(player.twitch || player.twitter || player.youtube) && (
         <div className="mrPcSocials">

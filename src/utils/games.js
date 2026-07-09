@@ -329,3 +329,38 @@ export function resolveHostRegion(region, { naCount = 0, euCount = 0, latamCount
 
 export const ROOKIE_XP_CEILING = 25000;
 export const isRookieEligible = (xp = 0) => xp < ROOKIE_XP_CEILING;
+
+// ---------------------------------------------------------------------------
+// Linked-account + team gate  (client-side convenience — server is authoritative)
+// ---------------------------------------------------------------------------
+const ACTIVISION_GAMES = new Set([
+  "Call of Duty: Black Ops 7", "Warzone", "Black Ops Royale",
+  "Call of Duty: Modern Warfare 4",
+]);
+const CONSOLE_ONLY_GAMES = new Set(["Call of Duty: WWII"]);
+const ACTIVISION_RE = /^\S+#\d{4,10}$/;
+
+export function requiredAccountForGame(game) {
+  if (ACTIVISION_GAMES.has(game)) return "activision";
+  if (CONSOLE_ONLY_GAMES.has(game)) return "console";
+  return null;
+}
+
+export function checkGameEligibility(game, profile, teams) {
+  if (!profile) return { eligible: false, reason: "Log in to play", cta: "login" };
+
+  const hasTeam = (teams || []).some((t) => t.game === game);
+  if (!hasTeam) return { eligible: false, reason: `Create a team for ${shortForGame(game) || game} first`, cta: "team", game };
+
+  const req = requiredAccountForGame(game);
+  if (req === "activision") {
+    const id = (profile.activision_id || "").trim();
+    if (!id || !ACTIVISION_RE.test(id))
+      return { eligible: false, reason: "Link your Activision ID to play", cta: "account" };
+  } else if (req === "console") {
+    if (!(profile.psn || "").trim() && !(profile.xbox || "").trim())
+      return { eligible: false, reason: "Link an Xbox or PSN account to play", cta: "account" };
+  }
+
+  return { eligible: true, reason: null, cta: null };
+}

@@ -1,17 +1,18 @@
 import React, { useState } from "react";
-import { Plus, Crosshair } from "lucide-react";
+import { Plus, Crosshair, AlertTriangle } from "lucide-react";
 import { WagerIcon } from "../components/WagerIcon";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
 import { listOpenMatches, joinMatch } from "../services/matchService";
+import { getMyTeams } from "../services/teamService";
 import { CreateMatchModal } from "../components/CreateMatchModal";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { SkeletonRows } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
 import { money } from "../utils/format";
-import { shortForGame, formatLabel, mapsForGameMode } from "../utils/games";
+import { shortForGame, formatLabel, mapsForGameMode, checkGameEligibility } from "../utils/games";
 import { MapBadge, MapCard } from "../components/MapCard";
 import bo7 from "../assets/black-ops-7.png";
 import wz from "../assets/warzone.png";
@@ -23,7 +24,7 @@ const GAME_COVERS = {
 };
 const cover = (game) => GAME_COVERS[game] || bo7;
 
-export function MatchfinderPage({ onLogin, onOpenMatch }) {
+export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
   const { profile, refreshProfile } = useAuth();
   const toast = useToast();
   const [kind, setKind] = useState("all");
@@ -32,6 +33,10 @@ export function MatchfinderPage({ onLogin, onOpenMatch }) {
   const { data, loading, reload } = useAsync(
     () => listOpenMatches(kind === "all" ? {} : { kind }),
     [kind]
+  );
+  const { data: myTeams } = useAsync(
+    () => profile ? getMyTeams(profile.id) : Promise.resolve({ data: [] }),
+    [profile?.id]
   );
 
   function handleAccept(m) {
@@ -87,6 +92,7 @@ export function MatchfinderPage({ onLogin, onOpenMatch }) {
         <div className="matchList">
           {data.map((m) => {
             const isMine = profile && m.created_by === profile.id;
+            const mElig = profile ? checkGameEligibility(m.game, profile, myTeams) : { eligible: true };
             return (
             <div className="matchTile" key={m.id} onClick={() => onOpenMatch?.(m.id)} style={{ cursor: "pointer" }}>
               <img className="matchCover" src={cover(m.game)} alt="" />
@@ -107,7 +113,9 @@ export function MatchfinderPage({ onLogin, onOpenMatch }) {
               </div>
               {isMine
                 ? <Button variant="ghost" onClick={(e) => { e.stopPropagation(); onOpenMatch?.(m.id); }}>View</Button>
-                : <Button variant="primary" onClick={(e) => { e.stopPropagation(); handleAccept(m); }}>Accept</Button>
+                : !mElig.eligible
+                  ? <span className="matchGateHint" title={mElig.reason}><AlertTriangle size={14} /> {mElig.cta === "account" ? "Link acct" : "Need team"}</span>
+                  : <Button variant="primary" onClick={(e) => { e.stopPropagation(); handleAccept(m); }}>Accept</Button>
               }
             </div>
             );
@@ -123,7 +131,7 @@ export function MatchfinderPage({ onLogin, onOpenMatch }) {
         />
       )}
 
-      <CreateMatchModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={(matchId) => { reload(); if (matchId) onOpenMatch?.(matchId); }} />
+      <CreateMatchModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={(matchId) => { reload(); if (matchId) onOpenMatch?.(matchId); }} onNavigate={onNavigate} />
     </main>
   );
 }

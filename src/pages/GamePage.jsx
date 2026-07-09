@@ -190,6 +190,7 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
         onCreated={reload}
         defaultGame={game.name}
         defaultMode={selectedMode}
+        onNavigate={onNavigate}
       />
     </main>
   );

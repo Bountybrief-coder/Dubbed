@@ -51,3 +51,13 @@
 - [ ] Onboarding flow
 - [ ] Mobile / accessibility pass
 - [ ] Rules-as-data (move hardcoded rules to DB/config)
+
+## Linked-Account Verification
+- [ ] Live Activision ID verification via Activision API (currently format-only)
+- [ ] Live PSN / Xbox gamertag verification via Sony/Microsoft APIs
+- [ ] Periodic re-validation of linked accounts (detect renamed/deleted tags)
+
+## SQL Migration Notes
+- Re-run `supabase_setup.sql` to apply: `activision_id` column addition,
+  `can_play_game` function, and updated `create_match`/`join_match` gates.
+  All statements are idempotent (`add column if not exists`, `create or replace`).

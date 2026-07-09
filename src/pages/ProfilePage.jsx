@@ -71,13 +71,13 @@ export function ProfilePage({ username }) {
           <div className="xpBar"><div className="xpFill" style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${rank.glow}, ${rank.glow}cc)` }} /></div>
           <small className="subtle">{nxt.xp === rank.xp ? "Max tier reached" : `${(nxt.xp - profile.xp).toLocaleString()} XP to ${nxt.name}`}</small>
         </div>
-        {/* ── Rank Medallion (top-right) ── */}
+        {/* ── Rank Medallion ── */}
         <div className={`phMedallion ${isMaxed ? "phMedallion--max" : ""}`}>
           <div className="phMedHalo" />
-          <RankStar rank={rank} size={130} />
+          <RankStar rank={rank} size={260} />
           <span className="phMedTier">{rank.name.toUpperCase()}</span>
           {isMaxed
-            ? <span className="phMedMax">MAX</span>
+            ? <span className="phMedMax">MAX PRESTIGE</span>
             : <span className="phMedXp">{(nxt.xp - profile.xp).toLocaleString()} to {nxt.name}</span>
           }
         </div>
