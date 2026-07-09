@@ -306,9 +306,13 @@ alter table public.matches add column if not exists host_rule text not null defa
 -- veto in progress — room is NOT playable yet), 'complete' (map(s) locked in).
 alter table public.matches add column if not exists veto_status text not null default 'none';
 alter table public.matches add column if not exists veto jsonb;
+alter table public.matches add column if not exists team_name text;
+alter table public.matches add column if not exists map text;
+alter table public.matches add column if not exists match_number integer;
 do $$ begin
-  alter table public.matches add constraint matches_platform_chk check (platform in ('Console Only','PC Only','PC + Console Mixed')) not valid;
-exception when duplicate_object then null; end $$;
+  alter table public.matches drop constraint if exists matches_platform_chk;
+  alter table public.matches add constraint matches_platform_chk check (platform in ('Console Only','PC Only','PC + Console Mixed','PlayStation Only','Xbox Only')) not valid;
+exception when others then null; end $$;
 do $$ begin
   alter table public.matches add constraint matches_skill_chk check (skill_tier in ('Rookie Only','Open','Mixed Skill','Advanced/Elite')) not valid;
 exception when duplicate_object then null; end $$;
@@ -1871,8 +1875,13 @@ begin
   return case when random() < 0.5 then 'NA' else 'EU' end;
 end $$;
 
--- ---------- migration: activision_id column ----------
+-- ---------- migration: activision_id + social columns ----------
 alter table public.profiles add column if not exists activision_id text default '';
+alter table public.profiles add column if not exists twitter text default '';
+alter table public.profiles add column if not exists youtube text default '';
+alter table public.profiles add column if not exists twitch_username text default '';
+alter table public.profiles add column if not exists favorite_game text;
+alter table public.profiles add column if not exists favorite_mode text;
 
 -- ---------- can_play gate ----------
 -- Full eligibility check: team + linked account + platform (WWII split).
@@ -1998,7 +2007,8 @@ create or replace function public.create_match(
   p_game text, p_mode text, p_format text, p_region text, p_entry numeric, p_kind match_kind,
   p_platform text default 'PC + Console Mixed', p_skill_tier text default 'Open',
   p_series text default 'Best of 1', p_weapon_restriction text default null,
-  p_host_rule text default 'auto', p_team_id uuid default null
+  p_host_rule text default 'auto', p_team_id uuid default null,
+  p_map text default null, p_veto_ban text default null, p_map_pool text[] default null
 ) returns matches language plpgsql security definer set search_path = public as $$
 declare v_code text; v_match public.matches; v_bal numeric; v_xp int; v_region text; v_gate text;
         v_team public.teams; v_team_name text;
@@ -2053,10 +2063,12 @@ begin
     insert into public.wallet_ledger(user_id, delta, reason) values (auth.uid(), -p_entry, 'match_entry');
   end if;
   insert into public.matches(code, game, mode, format, region, entry, kind, status, created_by,
-                              platform, skill_tier, series, weapon_restriction, host_rule)
+                              platform, skill_tier, series, weapon_restriction, host_rule,
+                              team_name, map)
     values (v_code, p_game, p_mode, p_format, p_region,
             case when p_kind='cash' then p_entry else 0 end, p_kind, 'open', auth.uid(),
-            p_platform, p_skill_tier, p_series, nullif(p_weapon_restriction,'None'), coalesce(p_host_rule,'auto'))
+            p_platform, p_skill_tier, p_series, nullif(p_weapon_restriction,'None'), coalesce(p_host_rule,'auto'),
+            v_team_name, p_map)
     returning * into v_match;
   select region into v_region from public.profiles where id = auth.uid();
   insert into public.match_players(match_id, user_id, region, team_id, team_name)
@@ -2064,7 +2076,7 @@ begin
   return v_match;
 end $$;
 
-create or replace function public.join_match(p_match uuid, p_team_id uuid default null)
+create or replace function public.join_match(p_match uuid, p_team_id uuid default null, p_veto_ban text default null)
 returns void language plpgsql security definer set search_path = public as $$
 declare v_m public.matches; v_bal numeric; v_xp int; v_region text; v_players int; v_needed int;
         v_pool jsonb; v_gate text; v_team public.teams; v_team_name text;
@@ -2910,56 +2922,12 @@ create table if not exists public.tournament_log (
 create index if not exists tlog_tourney_idx on public.tournament_log(tournament_id, created_at desc);
 
 -- tournament_maintenance(): called by pg_cron every 3 minutes.
--- Transitions: under-filled/expired → cancel + refund + archive (idempotent).
+-- Order matters: auto-start first, then immediately refund anything that didn't start.
 create or replace function public.tournament_maintenance()
 returns void language plpgsql security definer set search_path = public as $$
 declare v_t record; v_entry record; v_count int;
 begin
-  -- 1. Under-filled or expired-unplayed: upcoming, past starts_at + 30min, not bracket_generated
-  for v_t in
-    select * from public.tournaments
-    where status = 'upcoming'
-      and starts_at < now() - interval '30 minutes'
-      and not bracket_generated
-    for update skip locked
-  loop
-    -- Refund all entries if not already refunded
-    if not v_t.refunded then
-      for v_entry in
-        select user_id, paid from public.tournament_entries
-        where tournament_id = v_t.id and paid > 0
-      loop
-        update public.profiles set balance = balance + v_entry.paid where id = v_entry.user_id;
-        insert into public.wallet_ledger(user_id, delta, reason, ref_id)
-          values (v_entry.user_id, v_entry.paid, 'tournament_refund', v_t.id);
-        insert into public.notifications(user_id, text)
-          values (v_entry.user_id, v_t.name || ' was cancelled (not enough players). Your entry has been refunded.');
-      end loop;
-    end if;
-
-    update public.tournaments set status = 'archived', refunded = true where id = v_t.id;
-    insert into public.tournament_log(tournament_id, action, detail)
-      values (v_t.id, 'auto_archive',
-        'Under-filled or expired at start time. ' ||
-        (select count(*) from public.tournament_entries where tournament_id = v_t.id) ||
-        ' entries refunded.');
-  end loop;
-
-  -- 2. Stale legacy: upcoming, no entries, created > 24h ago, no bracket
-  for v_t in
-    select t.* from public.tournaments t
-    where t.status = 'upcoming'
-      and t.created_at < now() - interval '24 hours'
-      and not t.bracket_generated
-      and not exists (select 1 from public.tournament_entries where tournament_id = t.id)
-    for update skip locked
-  loop
-    update public.tournaments set status = 'archived' where id = v_t.id;
-    insert into public.tournament_log(tournament_id, action, detail)
-      values (v_t.id, 'auto_archive', 'Stale legacy: no entries after 24h.');
-  end loop;
-
-  -- 3. Auto-start: upcoming, past starts_at, >= 2 entries, no bracket yet
+  -- 1. Auto-start: upcoming, past starts_at, >= 2 entries, no bracket yet
   for v_t in
     select t.* from public.tournaments t
     where t.status = 'upcoming'
@@ -2969,7 +2937,6 @@ begin
     for update skip locked
   loop
     perform public.generate_bracket(v_t.id, true);
-    -- Auto-start all round 1 ready matches
     for v_entry in
       select tm.id from public.tournament_matches tm
         join public.tournament_rounds tr on tr.id = tm.round_id
@@ -2981,6 +2948,49 @@ begin
     insert into public.tournament_log(tournament_id, action, detail)
       values (v_t.id, 'auto_start',
         'Bracket generated and round 1 matches started automatically at scheduled time.');
+  end loop;
+
+  -- 2. Under-filled: upcoming, past starts_at, no bracket (< 2 joined) → immediate refund + archive
+  for v_t in
+    select * from public.tournaments
+    where status = 'upcoming'
+      and starts_at <= now()
+      and not bracket_generated
+    for update skip locked
+  loop
+    if not v_t.refunded then
+      for v_entry in
+        select user_id, paid from public.tournament_entries
+        where tournament_id = v_t.id and paid > 0
+      loop
+        update public.profiles set balance = balance + v_entry.paid where id = v_entry.user_id;
+        insert into public.wallet_ledger(user_id, delta, reason, ref_id)
+          values (v_entry.user_id, v_entry.paid, 'tournament_refund', v_t.id);
+        insert into public.notifications(user_id, text)
+          values (v_entry.user_id, v_t.name || ' was cancelled (not enough players). Your $' || v_entry.paid || ' entry has been refunded to your wallet.');
+      end loop;
+    end if;
+
+    update public.tournaments set status = 'archived', refunded = true where id = v_t.id;
+    insert into public.tournament_log(tournament_id, action, detail)
+      values (v_t.id, 'auto_archive',
+        'Under-filled at start time. ' ||
+        (select count(*) from public.tournament_entries where tournament_id = v_t.id) ||
+        ' entries refunded.');
+  end loop;
+
+  -- 3. Stale legacy: upcoming, no entries, created > 24h ago, no bracket
+  for v_t in
+    select t.* from public.tournaments t
+    where t.status = 'upcoming'
+      and t.created_at < now() - interval '24 hours'
+      and not t.bracket_generated
+      and not exists (select 1 from public.tournament_entries where tournament_id = t.id)
+    for update skip locked
+  loop
+    update public.tournaments set status = 'archived' where id = v_t.id;
+    insert into public.tournament_log(tournament_id, action, detail)
+      values (v_t.id, 'auto_archive', 'Stale legacy: no entries after 24h.');
   end loop;
 
   -- 4. Stalled matches: tournament matches live for 2+ hours with no report
@@ -3033,6 +3043,128 @@ do $$ begin
   execute 'alter publication supabase_realtime add table public.team_match_history';
 exception when duplicate_object then null; when others then null;
 end $$;
+
+-- ============================================================================
+-- MISSING RPCs (frontend calls these but they were never defined)
+-- ============================================================================
+
+-- 1. mark_all_notifications_read: marks all unread notifications for the caller
+create or replace function public.mark_all_notifications_read()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  update public.notifications set read = true
+    where user_id = auth.uid() and read = false;
+end $$;
+grant execute on function public.mark_all_notifications_read() to authenticated;
+
+-- 2. platform_stats: aggregate stats for the homepage hero section
+create or replace function public.platform_stats()
+returns json language plpgsql security definer stable set search_path = public as $$
+declare v_matches bigint; v_winnings numeric; v_open bigint;
+begin
+  select count(*) into v_matches from public.matches where status in ('settled','completed','live','reported');
+  select coalesce(sum(l.delta),0) into v_winnings from public.wallet_ledger l where l.reason = 'match_win';
+  select count(*) into v_open from public.matches where status = 'open';
+  return json_build_object('total_matches', v_matches, 'total_winnings', v_winnings, 'open_lobbies', v_open);
+end $$;
+grant execute on function public.platform_stats() to anon, authenticated;
+
+-- 3. get_achievements: returns earned achievements for a user
+create table if not exists public.achievements (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references public.profiles(id) on delete cascade,
+  title       text not null,
+  description text not null default '',
+  icon        text not null default 'trophy',
+  tier        text not null default 'bronze',
+  xp_reward   integer not null default 0,
+  earned_at   timestamptz not null default now()
+);
+create index if not exists ach_user_idx on public.achievements(user_id);
+alter table public.achievements enable row level security;
+drop policy if exists "achievements read" on public.achievements;
+create policy "achievements read" on public.achievements for select using (true);
+
+create or replace function public.get_achievements(p_user uuid)
+returns setof public.achievements language sql security definer stable set search_path = public as $$
+  select * from public.achievements where user_id = p_user order by earned_at desc;
+$$;
+grant execute on function public.get_achievements(uuid) to anon, authenticated;
+
+-- 4. get_revenue_dashboard: admin-only revenue aggregation
+create or replace function public.get_revenue_dashboard()
+returns json language plpgsql security definer stable set search_path = public as $$
+declare v_total numeric; v_today numeric; v_week numeric; v_month numeric;
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  select coalesce(sum(delta),0) into v_total from public.wallet_ledger where reason in ('match_rake','tournament_rake','bet_rake');
+  select coalesce(sum(delta),0) into v_today from public.wallet_ledger where reason in ('match_rake','tournament_rake','bet_rake') and created_at >= current_date;
+  select coalesce(sum(delta),0) into v_week from public.wallet_ledger where reason in ('match_rake','tournament_rake','bet_rake') and created_at >= current_date - interval '7 days';
+  select coalesce(sum(delta),0) into v_month from public.wallet_ledger where reason in ('match_rake','tournament_rake','bet_rake') and created_at >= current_date - interval '30 days';
+  return json_build_object('total', abs(v_total), 'today', abs(v_today), 'week', abs(v_week), 'month', abs(v_month));
+end $$;
+grant execute on function public.get_revenue_dashboard() to authenticated;
+
+-- 5. admin_revert_match: undo settlement, reverse payouts, set match back to live
+create or replace function public.admin_revert_match(p_match uuid, p_note text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_m public.matches; v_ledger record;
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  select * into v_m from public.matches where id = p_match for update;
+  if not found then raise exception 'match not found'; end if;
+  if v_m.status not in ('settled','completed') then raise exception 'can only revert settled/completed matches'; end if;
+
+  -- Reverse wallet_ledger entries for this match
+  for v_ledger in
+    select user_id, delta from public.wallet_ledger where ref_id = p_match and reason in ('match_win','match_rake')
+  loop
+    update public.profiles set balance = balance - v_ledger.delta where id = v_ledger.user_id;
+    insert into public.wallet_ledger(user_id, delta, reason, ref_id)
+      values (v_ledger.user_id, -v_ledger.delta, 'match_revert', p_match);
+  end loop;
+
+  -- Reverse win/loss stats
+  if v_m.winner_id is not null then
+    update public.profiles set wins = greatest(0, wins - 1) where id = v_m.winner_id;
+    update public.profiles set losses = greatest(0, losses - 1)
+      where id in (select user_id from public.match_players where match_id = p_match and user_id <> v_m.winner_id);
+  end if;
+
+  update public.matches set status = 'live', winner_id = null where id = p_match;
+  insert into public.notifications(user_id, text)
+    select mp.user_id, 'Match ' || v_m.code || ' has been reverted to live by an admin.' || coalesce(' Reason: ' || p_note, '')
+    from public.match_players mp where mp.match_id = p_match;
+end $$;
+grant execute on function public.admin_revert_match(uuid, text) to authenticated;
+
+-- 6. admin_set_match_status: force a match to any status (admin override)
+create or replace function public.admin_set_match_status(p_match uuid, p_status text, p_note text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_m public.matches; v_entry numeric;
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  select * into v_m from public.matches where id = p_match for update;
+  if not found then raise exception 'match not found'; end if;
+
+  -- Refund on cancel
+  if p_status = 'cancelled' and v_m.kind = 'cash' and v_m.status in ('open','live','reported') then
+    v_entry := v_m.entry;
+    if v_entry > 0 then
+      update public.profiles set balance = balance + v_entry
+        where id in (select user_id from public.match_players where match_id = p_match);
+      insert into public.wallet_ledger(user_id, delta, reason, ref_id)
+        select user_id, v_entry, 'match_cancel_refund', p_match
+        from public.match_players where match_id = p_match;
+    end if;
+  end if;
+
+  update public.matches set status = p_status::match_status where id = p_match;
+  insert into public.notifications(user_id, text)
+    select mp.user_id, 'Match ' || v_m.code || ' status set to ' || p_status || ' by admin.' || coalesce(' Note: ' || p_note, '')
+    from public.match_players mp where mp.match_id = p_match;
+end $$;
+grant execute on function public.admin_set_match_status(uuid, text, text) to authenticated;
 
 -- ============================================================================
 -- DONE. After running:
