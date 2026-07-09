@@ -13,6 +13,8 @@ do $$ begin create type match_status as enum ('open','live','reported','settled'
 do $$ begin create type match_kind as enum ('cash','xp'); exception when duplicate_object then null; end $$;
 do $$ begin create type team_type as enum ('xp','cash'); exception when duplicate_object then null; end $$;
 do $$ begin create type tournament_status as enum ('upcoming','live','completed','cancelled'); exception when duplicate_object then null; end $$;
+-- Add 'archived' to tournament_status if missing (idempotent).
+do $$ begin alter type tournament_status add value if not exists 'archived'; exception when others then null; end $$;
 do $$ begin create type chat_channel as enum ('global','lfg','betting','support'); exception when duplicate_object then null; end $$;
 do $$ begin create type bet_market as enum ('streamer','cdl'); exception when duplicate_object then null; end $$;
 do $$ begin create type bet_status as enum ('open','won','lost','void'); exception when duplicate_object then null; end $$;
@@ -2819,6 +2821,81 @@ drop policy if exists "weekly_stats read own" on public.weekly_stats;
 create policy "weekly_stats read own" on public.weekly_stats for select using (true);
 drop policy if exists "weekly_rewards read own" on public.weekly_rewards;
 create policy "weekly_rewards read own" on public.weekly_rewards for select using (true);
+
+-- ============================================================================
+-- TOURNAMENT MAINTENANCE — auto-archive + refund lifecycle
+-- ============================================================================
+
+-- Guard flag: prevents double-refunding on re-run.
+alter table public.tournaments add column if not exists refunded boolean not null default false;
+
+-- Audit log for automated tournament transitions.
+create table if not exists public.tournament_log (
+  id            uuid primary key default gen_random_uuid(),
+  tournament_id uuid not null references public.tournaments(id) on delete cascade,
+  action        text not null,
+  detail        text,
+  created_at    timestamptz not null default now()
+);
+create index if not exists tlog_tourney_idx on public.tournament_log(tournament_id, created_at desc);
+
+-- tournament_maintenance(): called by pg_cron every 3 minutes.
+-- Transitions: under-filled/expired → cancel + refund + archive (idempotent).
+create or replace function public.tournament_maintenance()
+returns void language plpgsql security definer set search_path = public as $$
+declare v_t record; v_entry record; v_count int;
+begin
+  -- 1. Under-filled or expired-unplayed: upcoming, past starts_at + 30min, not bracket_generated
+  for v_t in
+    select * from public.tournaments
+    where status = 'upcoming'
+      and starts_at < now() - interval '30 minutes'
+      and not bracket_generated
+    for update skip locked
+  loop
+    -- Refund all entries if not already refunded
+    if not v_t.refunded then
+      for v_entry in
+        select user_id, paid from public.tournament_entries
+        where tournament_id = v_t.id and paid > 0
+      loop
+        update public.profiles set balance = balance + v_entry.paid where id = v_entry.user_id;
+        insert into public.wallet_ledger(user_id, delta, reason, ref_id)
+          values (v_entry.user_id, v_entry.paid, 'tournament_refund', v_t.id);
+        insert into public.notifications(user_id, text)
+          values (v_entry.user_id, v_t.name || ' was cancelled (not enough players). Your entry has been refunded.');
+      end loop;
+    end if;
+
+    update public.tournaments set status = 'archived', refunded = true where id = v_t.id;
+    insert into public.tournament_log(tournament_id, action, detail)
+      values (v_t.id, 'auto_archive',
+        'Under-filled or expired at start time. ' ||
+        (select count(*) from public.tournament_entries where tournament_id = v_t.id) ||
+        ' entries refunded.');
+  end loop;
+
+  -- 2. Stale legacy: upcoming, no entries, created > 24h ago, no bracket
+  for v_t in
+    select t.* from public.tournaments t
+    where t.status = 'upcoming'
+      and t.created_at < now() - interval '24 hours'
+      and not t.bracket_generated
+      and not exists (select 1 from public.tournament_entries where tournament_id = t.id)
+    for update skip locked
+  loop
+    update public.tournaments set status = 'archived' where id = v_t.id;
+    insert into public.tournament_log(tournament_id, action, detail)
+      values (v_t.id, 'auto_archive', 'Stale legacy: no entries after 24h.');
+  end loop;
+
+  -- 3. Auto-start: upcoming, past starts_at, has enough entries, not yet bracket_generated
+  --    (Admin-triggered for now — the scheduler or admin calls generate_bracket.)
+  --    This section is a placeholder for future auto-start logic.
+end $$;
+
+-- Cron: run maintenance every 3 minutes
+-- SELECT cron.schedule('dubbed-tournament-maintenance', '*/3 * * * *', $$SELECT public.tournament_maintenance()$$);
 
 -- ============================================================================
 -- TEAM MATCH HISTORY (per-team per-settled-match record)

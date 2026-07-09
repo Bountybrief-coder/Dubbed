@@ -206,3 +206,31 @@ disputed` involving team members. Each card shows full setup (game, mode,
 format, platform, region, entry, players, status) with a "Go to match"
 button. Updates via Supabase realtime + `useVisibilityRefresh` fallback.
 This guarantees a player never loses track of a live match.
+
+## Tournament Auto-Archive & Maintenance
+
+`tournament_maintenance()` runs via pg_cron every 3 minutes. It handles:
+
+### Under-Filled / Expired Tournaments
+Tournaments still `upcoming` 30 minutes past `starts_at` with no bracket
+generated are cancelled → refunded → archived:
+- All paid entries refunded to player balances via `wallet_ledger`.
+- Players notified via `notifications` table.
+- `refunded` boolean on tournaments prevents double-refund on re-run.
+
+### Stale Legacy Cleanup
+Tournaments `upcoming` with zero entries, created over 24 hours ago, and
+no bracket are silently archived (no refund needed).
+
+### Idempotency
+- `FOR UPDATE SKIP LOCKED` prevents concurrent cron runs from conflicting.
+- `refunded` flag prevents double-refunding.
+- `tournament_log` table records every automated transition with action
+  and detail for audit.
+
+### Tournament Status Flow
+```
+upcoming → live → completed
+              ↘ cancelled → archived   (manual cancel)
+upcoming → archived                     (auto: under-filled / stale)
+```
