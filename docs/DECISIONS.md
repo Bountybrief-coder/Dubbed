@@ -1,0 +1,86 @@
+# Match Layout — Design Decisions
+
+## No-Show Timing
+
+Players have **10 minutes** from the scheduled match start to join the lobby.
+
+- At 10 minutes the waiting player clicks **"No Show"** in the match chat,
+  which auto-files a dispute with the reason pre-filled.
+- An admin reviews and may grant a brief extension at their discretion.
+- Failure to join after the admin's deadline results in a map or match forfeit.
+- For multi-map series: if an opponent forfeits Map 1, the waiting team must
+  still attempt Map 2 or provide proof of waiting the full window for that map.
+
+## Reporting Timeout
+
+If one team reports a result and the opponent does **not respond within
+2 hours**, the reported result stands automatically. This prevents stalling.
+
+## Host Rules (Per-Map)
+
+| Series | Map 1 | Map 2 | Map 3+ |
+|---|---|---|---|
+| Bo1 | Match host (creator or higher rank) | — | — |
+| Bo3 | Higher-ranked team hosts | Lower-ranked team hosts | Team with most combined kills/rounds from Maps 1–2 |
+| Bo5 | Higher-ranked team hosts | Lower-ranked team hosts | Continues alternating; tiebreaker on kills |
+
+Rank is determined by total XP (leaderboard position).
+
+For **NA + EU** lobbies, the region with more players in the lobby hosts
+(existing `resolve_host` RPC). This determines the server region; the per-map
+host assignment determines which team creates the private match lobby.
+
+## One Component, Two Contexts
+
+`MatchRoomPage` serves both ladder matches and tournament matches. The only
+difference is the `ContextStrip`:
+
+- **Tournament match:** shows tournament name, round, match number, and
+  "Back to bracket" link. Detected via `getTournamentContext(matchId)` query
+  against `tournament_matches`.
+- **Ladder match:** shows "Back to matchfinder" link.
+
+Everything else (header, teams panel, host table, veto, reporting, chat,
+rules strip) is identical between contexts.
+
+## Proof Requirements
+
+- All proof must be **video format** (VOD, clip, DVR recording).
+- Proof must show the **full scoreboard with gamertags** clearly readable.
+- PC players must stream with past broadcasts enabled; VOD stays up 24 hours.
+- Conversations outside Dubbed are not valid proof.
+- Accepted streaming platforms: Twitch, YouTube, Kick, Facebook. Not TikTok.
+
+## Leaderboard Win % Threshold
+
+The **Win %** board requires a minimum of **10 completed matches** to qualify.
+Without this, a 1-0 player tops the board at 100%. The threshold is enforced
+server-side in the `get_leaderboard` RPC (`WHERE (wins + losses) >= 10`).
+
+## Weekly Leaderboard & Rewards
+
+Weekly stats are tracked in `weekly_stats` (per-user, per-week deltas).
+The week runs **Sunday 00:00 UTC to Saturday 23:59 UTC** (matching CMG).
+
+**Credit rewards for top-3 weekly XP earners:**
+| Place | Credits |
+|---|---|
+| 1st | $25.00 |
+| 2nd | $15.00 |
+| 3rd | $10.00 |
+
+Credits are granted via `rollover_week()`, which writes to `wallet_ledger`
+(reason `'weekly_reward'`) and uses `weekly_rewards` as an idempotency guard.
+The function is designed for `pg_cron` or a Supabase scheduled function
+running every Sunday at 00:00 UTC.
+
+**Status:** The `weekly_stats` table and `rollover_week` function exist but
+`settle_match` / `settle_tournament` do not yet INSERT/UPSERT into
+`weekly_stats`. See TODO.md for the wiring steps.
+
+## Settlement Is Server-Authoritative
+
+The UI never computes payouts. All money movement goes through SQL RPCs
+(`settle_match`, `settle_bet`, `settle_tournament`). The UI only submits
+who won and the score — the server handles rake, balance credits, and
+ledger entries.

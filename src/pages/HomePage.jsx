@@ -1,0 +1,189 @@
+import React from "react";
+import { Zap, Trophy, ShieldCheck, DollarSign, ChevronRight, Swords, Gamepad2 } from "lucide-react";
+import { Button } from "../components/Button";
+import { useAuth } from "../hooks/useAuth.jsx";
+import { useToast } from "../hooks/useToast.jsx";
+import { useAsync } from "../hooks/useAsync";
+import { listOpenMatches, joinMatch } from "../services/matchService";
+import { supabase } from "../lib/supabase";
+import { CURRENT_GAMES, shortForGame, formatLabel, calculatePayout, RAKE_CONFIG } from "../utils/games";
+import { money } from "../utils/format";
+import { PlayerCard } from "../components/PlayerCard";
+import bo7Cover from "../assets/black-ops-7.png";
+import wzCover from "../assets/warzone.png";
+import mw4Cover from "../assets/mw4.png";
+import wwiiCover from "../assets/wwii.png";
+
+const COVERS = { bo7: bo7Cover, warzone: wzCover, bor: wzCover, mw4: mw4Cover, wwii: wwiiCover };
+
+export function HomePage({ onNavigate, onLogin }) {
+  const { profile, refreshProfile } = useAuth();
+  const toast = useToast();
+  const { data: matches, reload } = useAsync(() => listOpenMatches({}), []);
+  const { data: stats } = useAsync(() => supabase.rpc("platform_stats"), []);
+  const openMatches = matches || [];
+  const platformStats = stats || { total_matches: 0, total_winnings: 0, open_lobbies: 0 };
+
+  async function acceptMatch(m) {
+    if (!profile) return onLogin();
+    const res = await joinMatch(m.id);
+    if (res.error) return toast.error(res.error);
+    toast.success("Joined. Match is live.");
+    refreshProfile();
+    reload();
+    onNavigate("match", m.id);
+  }
+
+  return (
+    <main className="page home2">
+      {/* ── HERO ── */}
+      <section className="heroPanel">
+        <div className="heroGlow" />
+        <div className="heroInner">
+          <div className="heroTag">COMPETITIVE WAGER PLATFORM</div>
+          <h1>Wager. Win. Get&nbsp;Paid.</h1>
+          <p>Real money wagers on Call of Duty. Solo, duos, trios, and full squads. Post a lobby, set your entry, play the match, and get paid. It's that simple.</p>
+          <div className="heroActions">
+            <Button variant="primary" onClick={() => onNavigate("matchfinder")}><Zap size={16} /> Find a match</Button>
+            <Button variant="ghost" onClick={() => onNavigate("tournaments")}>Browse tournaments</Button>
+          </div>
+        </div>
+        <div className="heroStats">
+          <div className="heroStat"><b>{money(platformStats.total_winnings)}</b><small>WINNINGS PAID</small></div>
+          <div className="heroStat"><b>{platformStats.total_matches.toLocaleString()}</b><small>MATCHES PLAYED</small></div>
+          <div className="heroStat"><b>{platformStats.open_lobbies}</b><small>OPEN LOBBIES</small></div>
+        </div>
+      </section>
+
+      {/* ── GAME CARDS ── */}
+      <section className="gameCardsSection">
+        <div className="sectionHead">
+          <div><div className="eyebrow">SELECT YOUR GAME</div><h2>Current Titles</h2></div>
+        </div>
+        <div className="gameCardsGrid">
+          {CURRENT_GAMES.map((g) => {
+            const count = openMatches.filter((m) => m.game === g.name).length;
+            return (
+              <button className="gameCard" key={g.slug} onClick={() => onNavigate("game", g.slug)}>
+                <img className="gameCardCover" src={COVERS[g.slug]} alt="" />
+                <div className="gameCardOverlay" />
+                <div className="gameCardContent">
+                  <span className="gameCardShort">{g.short}</span>
+                  <span className="gameCardName">{g.name}</span>
+                  <div className="gameCardMeta">
+                    <span><Gamepad2 size={12} /> {g.formats.length} formats</span>
+                    <span><Swords size={12} /> {g.modes.length} modes</span>
+                  </div>
+                  {count > 0 && <span className="gameCardLive">{count} open</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+      </section>
+
+      {/* ── FEATURED MATCHES ── */}
+      {openMatches.length > 0 && (
+        <section className="featuredSection">
+          <div className="sectionHead">
+            <div><div className="eyebrow">READY TO PLAY</div><h2>Open Lobbies</h2></div>
+            <Button variant="ghost" onClick={() => onNavigate("matchfinder")}>View all <ChevronRight size={14} /></Button>
+          </div>
+          <div className="featuredGrid">
+            {openMatches.slice(0, 6).map((m) => (
+              <div className="featuredMatch" key={m.id}>
+                <div className="fmTop">
+                  <span className="fmGame">{shortForGame(m.game)}</span>
+                  <span className="fmMode">{m.mode}</span>
+                  <span className={`fmEntry ${m.kind}`}>{m.kind === "cash" ? money(m.entry) : "XP"}</span>
+                </div>
+                <div className="fmDetails">
+                  <span>{m.format} · {formatLabel(m.format)}</span>
+                  <span>{m.region}</span>
+                  <span>{m.platform}</span>
+                </div>
+                <div className="fmBottom">
+                  <PlayerCard player={m.creator} />
+                  <Button variant="primary" className="btn-sm" onClick={() => acceptMatch(m)}>Accept</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── HOW IT WORKS ── */}
+      <section className="howSection">
+        <div className="sectionHead center">
+          <div><div className="eyebrow">HOW IT WORKS</div><h2>Three steps to getting paid</h2></div>
+        </div>
+        <div className="howGrid">
+          <div className="howStep">
+            <div className="howNum">1</div>
+            <b>Post or Accept</b>
+            <p>Pick your game, mode, team size, and entry fee. Or jump into an open lobby. Your entry is held in escrow until the match settles.</p>
+          </div>
+          <div className="howStep">
+            <div className="howNum">2</div>
+            <b>Play & Report</b>
+            <p>Play your match. When it's over, both sides report scores and upload proof. If results don't match, an admin reviews it.</p>
+          </div>
+          <div className="howStep">
+            <div className="howNum">3</div>
+            <b>Win & Cash Out</b>
+            <p>Winnings land in your Dubbed wallet instantly. Cash out anytime through Stripe — no minimum wait, no hoops.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── MONETIZATION / RAKE INFO ── */}
+      <section className="rakeSection">
+        <div className="sectionHead center">
+          <div><div className="eyebrow">TRANSPARENT FEES</div><h2>Know exactly what you pay</h2></div>
+        </div>
+        <div className="rakeGrid">
+          <div className="rakeCard">
+            <div className="rakeIcon"><DollarSign size={22} /></div>
+            <b>Standard</b>
+            <span className="rakeRate">{RAKE_CONFIG.standard * 100}% rake</span>
+            <p>Free accounts pay {RAKE_CONFIG.standard * 100}% of the pot. On a $20 pot, that's $1. Winner takes ${calculatePayout(20, false)}.</p>
+          </div>
+          <div className="rakeCard wagr">
+            <div className="rakeIcon gold"><Trophy size={22} /></div>
+            <b>WAGR Member</b>
+            <span className="rakeRate gold">{RAKE_CONFIG.wagr * 100}% rake</span>
+            <p>WAGR members get half the rake. Same $20 pot, only $0.50. Winner takes ${calculatePayout(20, true)}.</p>
+            <Button variant="primary" className="btn-sm" onClick={() => onNavigate("shop")}>Get WAGR</Button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FEATURES ── */}
+      <section className="featureGrid">
+        {[
+          { Icon: Zap, t: "Instant Wagers", d: "Pick your game, mode, and team size. Post a lobby or jump into one. Matches fill fast." },
+          { Icon: Trophy, t: "Tournaments & Brackets", d: "SND, Hardpoint, Kill Race, and BR brackets with real prize pools. Win a trophy that lives on your profile." },
+          { Icon: Swords, t: "Side Betting", d: "Put money on CDL series and streamer matchups. Dubbed holds the pot and pays the winner. No bookmakers, just players." },
+          { Icon: ShieldCheck, t: "Fair Play Guaranteed", d: "CDL rulesets, map veto, host-region logic, and admin-reviewed results. Every match is played on a level field." }
+        ].map(({ Icon, t, d }) => (
+          <div className="featureCard" key={t}>
+            <div className="featureIcon"><Icon size={20} /></div>
+            <b>{t}</b><p>{d}</p>
+          </div>
+        ))}
+      </section>
+
+      {/* ── CTA ── */}
+      {!profile && (
+        <section className="ctaStrip">
+          <div>
+            <h2>Ready to run it?</h2>
+            <p>Create your account, deposit, and post your first match in under a minute.</p>
+          </div>
+          <Button variant="primary" onClick={onLogin}>Get started <ChevronRight size={16} /></Button>
+        </section>
+      )}
+    </main>
+  );
+}

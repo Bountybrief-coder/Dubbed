@@ -1,0 +1,23 @@
+# Netlify configuration for the Dubbed Vite SPA.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Use a modern Node for the build (Vite 5 needs 18+).
+[build.environment]
+  NODE_VERSION = "20"
+
+# SPA fallback: the app uses in-app routing, so every path must serve index.html
+# and let the client render the right view. Without this, refreshing or deep
+# linking to anything other than "/" would 404 on Netlify.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Long-cache the fingerprinted build assets (Vite hashes filenames).
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
