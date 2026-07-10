@@ -309,6 +309,7 @@ alter table public.matches add column if not exists veto jsonb;
 alter table public.matches add column if not exists team_name text;
 alter table public.matches add column if not exists map text;
 alter table public.matches add column if not exists match_number integer;
+alter table public.matches add column if not exists allowed_input text not null default 'Controller + M&K';
 do $$ begin
   alter table public.matches drop constraint if exists matches_platform_chk;
   alter table public.matches add constraint matches_platform_chk check (platform in ('Console Only','PC Only','PC + Console Mixed','PlayStation Only','Xbox Only')) not valid;
@@ -369,6 +370,24 @@ create table if not exists public.match_messages (
   created_at timestamptz not null default now()
 );
 create index if not exists match_messages_match_idx on public.match_messages(match_id, created_at);
+
+create or replace function public.match_msg_set_username()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v_real text;
+begin
+  if NEW.kind = 'msg' then
+    select username into v_real from public.profiles where id = NEW.user_id;
+    if v_real is not null then
+      NEW.username := v_real;
+    end if;
+  end if;
+  return NEW;
+end $$;
+
+drop trigger if exists match_msg_username_trg on public.match_messages;
+create trigger match_msg_username_trg
+  before insert on public.match_messages
+  for each row execute function public.match_msg_set_username();
 
 -- Either side can request to cancel a lobby before it settles; the other
 -- side (or an admin) has to accept it for the match to actually cancel.
@@ -460,10 +479,11 @@ alter table public.tournaments add column if not exists bracket_generated boolea
 alter table public.tournaments add column if not exists current_round integer not null default 0;
 alter table public.tournaments add column if not exists total_rounds integer;
 
--- Add resolution columns to match_disputes for admin dispute flow
+-- Add resolution + assigned admin columns to match_disputes for admin dispute flow
 alter table public.match_disputes add column if not exists resolved_by uuid references public.profiles(id);
 alter table public.match_disputes add column if not exists resolved_at timestamptz;
 alter table public.match_disputes add column if not exists resolution_note text;
+alter table public.match_disputes add column if not exists assigned_admin_id uuid references public.profiles(id);
 
 -- ============================================================================
 -- CHAT / BETS / NOTIFICATIONS / WALLET / WITHDRAWALS / AUDIT
@@ -542,6 +562,7 @@ create table if not exists public.wallet_ledger (
   created_at timestamptz not null default now()
 );
 create index if not exists wallet_user_idx on public.wallet_ledger(user_id, created_at);
+alter table public.wallet_ledger add column if not exists note text;
 
 create table if not exists public.withdrawal_requests (
   id          uuid primary key default gen_random_uuid(),
@@ -600,6 +621,15 @@ create table if not exists public.audit_logs (
   created_at timestamptz not null default now()
 );
 
+-- Platform-wide configuration (kill switches, limits).
+create table if not exists public.app_settings (
+  key        text primary key,
+  value      jsonb not null default 'true'::jsonb,
+  updated_at timestamptz not null default now()
+);
+insert into public.app_settings(key, value) values ('auto_payouts_enabled', 'true'::jsonb)
+  on conflict (key) do nothing;
+
 -- Ban records — every ban/unban is an immutable audit row
 create table if not exists public.user_bans (
   id          uuid primary key default gen_random_uuid(),
@@ -609,6 +639,8 @@ create table if not exists public.user_bans (
   duration    text not null,
   expires_at  timestamptz,
   active      boolean not null default true,
+  ban_type    text,
+  ip_address  text,
   unbanned_by uuid references public.profiles(id) on delete set null,
   unbanned_at timestamptz,
   unban_note  text,
@@ -668,7 +700,7 @@ create table if not exists public.app_admins (
   user_id uuid primary key references public.profiles(id) on delete cascade
 );
 create or replace function public.is_admin()
-returns boolean language sql stable as $$
+returns boolean language sql stable security definer as $$
   select exists (select 1 from public.app_admins where user_id = auth.uid());
 $$;
 grant execute on function public.is_admin() to authenticated;
@@ -698,6 +730,7 @@ alter table public.withdrawal_requests enable row level security;
 alter table public.payout_events       enable row level security;
 alter table public.payment_events      enable row level security;
 alter table public.audit_logs          enable row level security;
+alter table public.app_settings        enable row level security;
 alter table public.shop_purchases      enable row level security;
 alter table public.username_history    enable row level security;
 alter table public.subscription_events enable row level security;
@@ -814,6 +847,9 @@ create policy "wd admin update" on public.withdrawal_requests for update using (
 
 drop policy if exists "payout events admin read" on public.payout_events;
 create policy "payout events admin read" on public.payout_events for select using (public.is_admin());
+
+drop policy if exists "app_settings_admin" on public.app_settings;
+create policy "app_settings_admin" on public.app_settings for all using (public.is_admin());
 
 drop policy if exists "shop read own" on public.shop_purchases;
 create policy "shop read own" on public.shop_purchases for select using (auth.uid() = user_id or public.is_admin());
@@ -1106,14 +1142,74 @@ returns numeric language sql stable security definer set search_path = public as
   select greatest(0, coalesce((select balance from public.profiles where id = p_user), 0))
 $$;
 
+-- Auto-withdrawal decision engine. Returns jsonb {decision, reason}.
+-- Called inside request_withdrawal, not directly by users.
+-- Rules: ceiling $500, account age 7d, 3+ settled, first-wd manual,
+-- daily cap $1000/24h, rapid deposit→withdraw flag, kill switch.
+create or replace function public.auto_withdrawal_decision(p_withdrawal_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_w  public.withdrawal_requests;
+  v_p  public.profiles;
+  v_on boolean;
+  v_settled int; v_prior int; v_daily numeric; v_deps48 numeric; v_wds48 numeric;
+begin
+  select * into v_w from public.withdrawal_requests where id = p_withdrawal_id;
+  if not found then return '{"decision":"hold_for_review","reason":"not found"}'::jsonb; end if;
+  select * into v_p from public.profiles where id = v_w.user_id;
+  if v_p is null then return '{"decision":"hold_for_review","reason":"profile not found"}'::jsonb; end if;
+
+  select coalesce((value)::text::boolean, false) into v_on
+    from public.app_settings where key = 'auto_payouts_enabled';
+  if not coalesce(v_on, false) then
+    return '{"decision":"hold_for_review","reason":"auto-payouts disabled globally"}'::jsonb;
+  end if;
+  if not v_p.stripe_payouts_enabled then
+    return jsonb_build_object('decision','hold_for_review','reason','stripe payouts not enabled');
+  end if;
+  if v_w.amount > 500 then
+    return jsonb_build_object('decision','hold_for_review','reason','amount exceeds $500 auto-approve ceiling');
+  end if;
+  if v_p.created_at > now() - interval '7 days' then
+    return jsonb_build_object('decision','hold_for_review','reason','account less than 7 days old');
+  end if;
+  v_settled := coalesce(v_p.wins, 0) + coalesce(v_p.losses, 0);
+  if v_settled < 3 then
+    return jsonb_build_object('decision','hold_for_review','reason','fewer than 3 settled matches');
+  end if;
+  select count(*) into v_prior from public.withdrawal_requests
+    where user_id = v_w.user_id and status = 'paid' and id <> p_withdrawal_id;
+  if v_prior = 0 then
+    return jsonb_build_object('decision','hold_for_review','reason','first withdrawal — manual review required');
+  end if;
+  select coalesce(sum(amount), 0) into v_daily from public.withdrawal_requests
+    where user_id = v_w.user_id and status in ('pending','processing','paid')
+      and created_at > now() - interval '24 hours' and id <> p_withdrawal_id;
+  if v_daily + v_w.amount > 1000 then
+    return jsonb_build_object('decision','hold_for_review','reason','daily withdrawal cap ($1000/24h) exceeded');
+  end if;
+  select coalesce(sum(delta), 0) into v_deps48 from public.wallet_ledger
+    where user_id = v_w.user_id and reason = 'deposit' and created_at > now() - interval '48 hours';
+  if v_deps48 > 0 then
+    select coalesce(sum(amount), 0) into v_wds48 from public.withdrawal_requests
+      where user_id = v_w.user_id and status in ('pending','processing','paid')
+        and created_at > now() - interval '48 hours' and id <> p_withdrawal_id;
+    if (v_wds48 + v_w.amount) > v_deps48 * 0.5 then
+      return jsonb_build_object('decision','hold_for_review','reason','rapid deposit-to-withdraw pattern');
+    end if;
+  end if;
+  return '{"decision":"auto_approve","reason":"all checks passed"}'::jsonb;
+end $$;
+
 -- File a withdrawal. Moves funds balance -> pending_balance (held, not gone),
--- writes an immutable ledger row, creates the request in 'pending', notifies.
+-- writes an immutable ledger row, creates the request, runs auto-approval.
+-- Returns jsonb {id, auto_approved}.
 create or replace function public.request_withdrawal(p_amount numeric, p_destination text)
-returns uuid language plpgsql security definer set search_path = public as $$
-declare v_bal numeric; v_id uuid; v_block text; v_tx text;
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_bal numeric; v_id uuid; v_block text; v_dec jsonb; v_auto boolean;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
-  perform public.check_rate_limit('withdrawal', 3, 300);  -- 3 per 5 minutes
+  perform public.check_rate_limit('withdrawal', 3, 300);
   if p_amount is null or p_amount < 10 then raise exception 'minimum withdrawal is $10'; end if;
 
   v_block := public.withdrawal_block_reason(auth.uid());
@@ -1129,11 +1225,29 @@ begin
 
   insert into public.withdrawal_requests(user_id, amount, destination, provider, status)
     values (auth.uid(), p_amount, p_destination, 'stripe', 'pending')
-    returning id, transaction_id into v_id, v_tx;
+    returning id into v_id;
 
-  insert into public.notifications(user_id, text)
-    values (auth.uid(), 'Withdrawal requested: $' || to_char(p_amount, 'FM999999990.00') || ' — track it in your Wallet.');
-  return v_id;
+  v_dec := public.auto_withdrawal_decision(v_id);
+  v_auto := (v_dec->>'decision') = 'auto_approve';
+
+  if v_auto then
+    update public.withdrawal_requests
+      set status = 'processing', processing_at = now(),
+          meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object(
+            'auto_approved', true, 'auto_reason', v_dec->>'reason')
+      where id = v_id;
+    insert into public.notifications(user_id, text)
+      values (auth.uid(), 'Withdrawal of $' || to_char(p_amount, 'FM999999990.00') || ' auto-approved — on its way.');
+  else
+    update public.withdrawal_requests
+      set meta = coalesce(meta, '{}'::jsonb) || jsonb_build_object(
+            'auto_approved', false, 'hold_reason', v_dec->>'reason')
+      where id = v_id;
+    insert into public.notifications(user_id, text)
+      values (auth.uid(), 'Withdrawal of $' || to_char(p_amount, 'FM999999990.00') || ' submitted for review.');
+  end if;
+
+  return jsonb_build_object('id', v_id, 'auto_approved', v_auto);
 end $$;
 
 -- Admin moves a request pending -> processing (about to fire the payout).
@@ -1227,6 +1341,17 @@ end $$;
 
 grant execute on function public.withdrawal_block_reason(uuid) to authenticated;
 grant execute on function public.available_to_withdraw(uuid) to authenticated;
+grant execute on function public.request_withdrawal(numeric, text) to authenticated;
+
+-- Admin kill switch for auto-payouts.
+create or replace function public.admin_toggle_auto_payouts(p_enabled boolean)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  insert into public.app_settings(key, value, updated_at)
+    values ('auto_payouts_enabled', to_jsonb(p_enabled), now())
+    on conflict (key) do update set value = to_jsonb(p_enabled), updated_at = now();
+end $$;
 
 -- ---------- shop: Stripe-side grants (service role) ----------
 -- Records + grants a Stripe-Checkout account-service purchase (idempotent on
@@ -1249,6 +1374,10 @@ begin
 
   if p_item = 'username_change' then
     update public.profiles set username_change_tokens = username_change_tokens + 1 where id = p_user;
+  elsif p_item = 'double_xp_token' then
+    update public.profiles set
+      double_xp_active_until = greatest(coalesce(double_xp_active_until, now()), now()) + interval '24 hours'
+    where id = p_user;
   end if;
 
   insert into public.notifications(user_id, text)
@@ -1279,10 +1408,7 @@ begin
   if v_active and not coalesce(v_was,false) then
     insert into public.notifications(user_id, text) values (p_user, 'WAGR Membership activated. No-fee wagers and perks are live.');
   elsif v_active and coalesce(v_was,false) then
-    insert into public.notifications(user_id, text) values (p_user, 'WAGR Membership renewed. $1.00 added to your wallet.');
-    -- $1.00 monthly top-up perk
-    update public.profiles set balance = balance + 1.00 where id = p_user;
-    insert into public.wallet_ledger(user_id, delta, reason) values (p_user, 1.00, 'wagr_monthly_topup');
+    insert into public.notifications(user_id, text) values (p_user, 'WAGR Membership renewed.');
   elsif not v_active and coalesce(v_was,false) then
     insert into public.notifications(user_id, text) values (p_user, 'Your WAGR Membership has ended. Premium perks were removed.');
   end if;
@@ -1358,6 +1484,28 @@ begin
     values (v_p.user_id, 'Your purchase of ' || v_p.item_name || ' was refunded' || case when p_to_wallet then ' to your wallet.' else '.' end);
 end $$;
 
+-- WAGR membership monthly $1 wallet credit (called by stripe-shop-webhook on renewal)
+create or replace function public.grant_wagr_monthly_credit(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_month text;
+begin
+  v_month := to_char(now(), 'YYYY-MM');
+  if exists (
+    select 1 from public.wallet_ledger
+    where user_id = p_user
+      and reason = 'wagr_monthly_topup'
+      and to_char(created_at, 'YYYY-MM') = v_month
+  ) then
+    return;
+  end if;
+  update public.profiles set balance = balance + 1.00 where id = p_user;
+  insert into public.wallet_ledger (user_id, delta, reason)
+    values (p_user, 1.00, 'wagr_monthly_topup');
+end $$;
+
+grant execute on function public.grant_wagr_monthly_credit(uuid) to service_role;
+
 -- Admin-only; RLS on the base table already restricts non-admins, but this
 -- shapes the exact fields the admin dashboard needs in one call.
 create or replace function public.admin_list_withdrawals(p_status text default null)
@@ -1365,11 +1513,13 @@ returns table (
   id uuid, user_id uuid, username text, amount numeric, status withdrawal_status,
   provider text, destination text, payout_id text, transaction_id text,
   rejected_reason text, created_at timestamptz, processing_at timestamptz, completed_at timestamptz,
-  stripe_account_id text, stripe_payouts_enabled boolean, stripe_verification_status text, suspended boolean
+  stripe_account_id text, stripe_payouts_enabled boolean, stripe_verification_status text, suspended boolean,
+  meta jsonb
 ) language sql stable security definer set search_path = public as $$
   select w.id, w.user_id, p.username, w.amount, w.status, w.provider, w.destination,
          w.payout_id, w.transaction_id, w.rejected_reason, w.created_at, w.processing_at, w.completed_at,
-         p.stripe_account_id, p.stripe_payouts_enabled, p.stripe_verification_status, p.suspended
+         p.stripe_account_id, p.stripe_payouts_enabled, p.stripe_verification_status, p.suspended,
+         w.meta
   from public.withdrawal_requests w
   join public.profiles p on p.id = w.user_id
   where public.is_admin()
@@ -1419,20 +1569,7 @@ returns uuid language sql stable security definer set search_path = public as $$
 $$;
 
 -- ---------- bets ----------
-create or replace function public.place_bet(p_target text, p_market bet_market, p_stake numeric, p_odds numeric)
-returns uuid language plpgsql security definer set search_path = public as $$
-declare v_bal numeric; v_id uuid;
-begin
-  perform public.check_not_banned();
-  if p_stake <= 0 then raise exception 'stake must be positive'; end if;
-  select balance into v_bal from public.profiles where id = auth.uid() for update;
-  if v_bal < p_stake then raise exception 'insufficient balance'; end if;
-  update public.profiles set balance = balance - p_stake where id = auth.uid();
-  insert into public.wallet_ledger(user_id, delta, reason) values (auth.uid(), -p_stake, 'bet');
-  insert into public.bets(user_id, target, market, stake, odds)
-    values (auth.uid(), p_target, p_market, p_stake, p_odds) returning id into v_id;
-  return v_id;
-end $$;
+-- (4-param overload removed — 5-param version below handles both cases)
 
 -- ---------- ban system ----------
 -- Reusable guard — add to the top of any RPC that banned users shouldn't call.
@@ -1444,7 +1581,10 @@ begin
   end if;
 end $$;
 
-create or replace function public.admin_ban_user(p_user_id uuid, p_reason text, p_duration text)
+create or replace function public.admin_ban_user(
+  p_user_id uuid, p_reason text, p_duration text,
+  p_ban_type text default 'other', p_ip_address text default null
+)
 returns void language plpgsql security definer set search_path = public as $$
 declare v_expires timestamptz;
 begin
@@ -1456,22 +1596,21 @@ begin
     when '30d' then now() + interval '30 days'
     when 'permanent' then null
     else null end;
-  -- Deactivate previous active bans
   update public.user_bans set active = false where user_id = p_user_id and active = true;
-  insert into public.user_bans (user_id, banned_by, reason, duration, expires_at)
-    values (p_user_id, auth.uid(), p_reason, p_duration, v_expires);
+  insert into public.user_bans (user_id, banned_by, reason, duration, expires_at, ban_type, ip_address)
+    values (p_user_id, auth.uid(), p_reason, p_duration, v_expires, p_ban_type, p_ip_address);
   update public.profiles set banned = true, ban_reason = p_reason, ban_expires_at = v_expires, suspended = true
     where id = p_user_id;
-  -- Cancel open matches
   update public.matches set status = 'cancelled' where created_by = p_user_id and status = 'open';
   insert into public.audit_logs(actor_id, action, target, meta)
     values (auth.uid(), 'ban_user', p_user_id::text,
-      jsonb_build_object('reason', p_reason, 'duration', p_duration, 'expires_at', v_expires));
+      jsonb_build_object('reason', p_reason, 'duration', p_duration, 'expires_at', v_expires,
+        'ban_type', p_ban_type, 'ip_address', p_ip_address));
   insert into public.notifications(user_id, text)
     values (p_user_id, 'Your account has been banned: ' || p_reason || '. Duration: ' || p_duration || '.');
 end $$;
 
-create or replace function public.admin_unban_user(p_user_id uuid, p_note text default null)
+create or replace function public.admin_unban_user(p_user_id uuid, p_note text default null, p_mark_redeemed boolean default false)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   if not public.is_admin() then raise exception 'Not authorized'; end if;
@@ -1480,7 +1619,8 @@ begin
   update public.profiles set banned = false, ban_reason = null, ban_expires_at = null, suspended = false
     where id = p_user_id;
   insert into public.audit_logs(actor_id, action, target, meta)
-    values (auth.uid(), 'unban_user', p_user_id::text, jsonb_build_object('note', p_note));
+    values (auth.uid(), 'unban_user', p_user_id::text,
+      jsonb_build_object('note', p_note, 'mark_redeemed', p_mark_redeemed));
   insert into public.notifications(user_id, text)
     values (p_user_id, 'Your account ban has been lifted.' || coalesce(' Note: ' || p_note, ''));
 end $$;
@@ -1537,6 +1677,9 @@ create table if not exists public.tournament_templates (
   skill_tier          text not null default 'Open',
   created_at          timestamptz not null default now()
 );
+alter table public.tournament_templates enable row level security;
+drop policy if exists "tt admin" on public.tournament_templates;
+create policy "tt admin" on public.tournament_templates for all using (public.is_admin());
 
 create table if not exists public.tournament_schedules (
   id          uuid primary key default gen_random_uuid(),
@@ -1547,6 +1690,9 @@ create table if not exists public.tournament_schedules (
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+alter table public.tournament_schedules enable row level security;
+drop policy if exists "ts admin" on public.tournament_schedules;
+create policy "ts admin" on public.tournament_schedules for all using (public.is_admin());
 
 create or replace function public.run_tournament_scheduler()
 returns void language plpgsql security definer set search_path = public as $$
@@ -1707,7 +1853,7 @@ begin
         from public.tournament_matches tm2 join public.tournament_rounds tr2 on tr2.id=tm2.round_id
         where tm2.tournament_id=v_t.id and tr2.round_number=v_t.total_rounds-1 and tm2.status='completed'
         order by tm2.match_number limit 1;
-      perform public.settle_tournament(v_t.id, v_we, v_fl, coalesce(v_third, v_fl));
+      perform public.settle_tournament_auto(v_t.id, v_we, v_fl, coalesce(v_third, v_fl));
     end;
     return;
   end if;
@@ -1884,7 +2030,7 @@ alter table public.profiles add column if not exists favorite_game text;
 alter table public.profiles add column if not exists favorite_mode text;
 
 -- ---------- can_play gate ----------
--- Full eligibility check: team + linked account + platform (WWII split).
+-- Full eligibility check: team + linked account + platform (console-only split).
 -- p_platform / p_type are optional — when NULL, checks for ANY matching team.
 -- Returns NULL when eligible, or a human reason string when blocked.
 create or replace function public.can_play(
@@ -1894,17 +2040,19 @@ create or replace function public.can_play(
 declare
   v_act text; v_psn text; v_xbox text;
   v_needs_activision boolean;
-  v_is_wwii boolean;
+  v_is_console_only boolean;
   v_team_platform text;
 begin
-  v_is_wwii := p_game = 'Call of Duty: WWII';
+  v_is_console_only := p_game in (
+    'Call of Duty: WWII', 'Call of Duty: Black Ops', 'Call of Duty: Black Ops II'
+  );
   v_needs_activision := p_game in (
     'Call of Duty: Black Ops 7', 'Warzone', 'Black Ops Royale',
     'Call of Duty: Modern Warfare 4'
   );
 
-  -- 1. Team check (game + type + platform for WWII)
-  if v_is_wwii then
+  -- 1. Team check (game + type + platform for console-only games)
+  if v_is_console_only then
     if not exists (
       select 1 from public.team_members tm
       join public.teams t on t.id = tm.team_id
@@ -1913,12 +2061,11 @@ begin
         and (p_platform is null or t.platform = p_platform)
     ) then
       if p_platform is not null then
-        return 'Create a ' || p_platform || ' team for WWII first';
+        return 'Create a ' || p_platform || ' team for ' || p_game || ' first';
       end if;
       return 'Create a team for ' || p_game || ' first';
     end if;
 
-    -- For WWII, get the team's platform to check the right linked account
     select t.platform into v_team_platform
     from public.team_members tm
     join public.teams t on t.id = tm.team_id
@@ -1931,14 +2078,14 @@ begin
     from public.profiles where id = p_user;
 
     if v_team_platform = 'PlayStation Only' and v_psn = '' then
-      return 'Link your PSN account to play WWII on PlayStation';
+      return 'Link your PSN account to play ' || p_game || ' on PlayStation';
     elsif v_team_platform = 'Xbox Only' and v_xbox = '' then
-      return 'Link your Xbox account to play WWII on Xbox';
+      return 'Link your Xbox account to play ' || p_game || ' on Xbox';
     elsif v_psn = '' and v_xbox = '' then
       return 'Link an Xbox or PSN account to play ' || p_game;
     end if;
   else
-    -- Non-WWII: just game + type
+    -- Non-console-only: just game + type
     if not exists (
       select 1 from public.team_members tm
       join public.teams t on t.id = tm.team_id
@@ -2008,16 +2155,17 @@ create or replace function public.create_match(
   p_platform text default 'PC + Console Mixed', p_skill_tier text default 'Open',
   p_series text default 'Best of 1', p_weapon_restriction text default null,
   p_host_rule text default 'auto', p_team_id uuid default null,
-  p_map text default null, p_veto_ban text default null, p_map_pool text[] default null
+  p_map text default null, p_veto_ban text default null, p_map_pool text[] default null,
+  p_allowed_input text default 'Controller + M&K',
+  p_roster uuid[] default null
 ) returns matches language plpgsql security definer set search_path = public as $$
 declare v_code text; v_match public.matches; v_bal numeric; v_xp int; v_region text; v_gate text;
-        v_team public.teams; v_team_name text;
+        v_team public.teams; v_team_name text; v_rid uuid;
 begin
   if auth.uid() is null then raise exception 'not authenticated'; end if;
   perform public.check_not_banned();
   perform public.check_rate_limit('create_match', 5, 60);
 
-  -- Resolve team: if not passed, pick the user's first matching team
   if p_team_id is not null then
     select * into v_team from public.teams where id = p_team_id;
     if not found then raise exception 'team not found'; end if;
@@ -2032,7 +2180,6 @@ begin
     limit 1;
   end if;
 
-  -- Full eligibility gate (team + linked account + platform for WWII)
   v_gate := public.can_play(auth.uid(), p_game, p_platform, p_kind::text);
   if v_gate is not null then raise exception '%', v_gate; end if;
 
@@ -2044,12 +2191,22 @@ begin
     if coalesce(v_xp,0) >= 25000 then raise exception 'Rookie Only lobbies require Rookie rank (under 25,000 XP)'; end if;
   end if;
 
-  -- WWII: force platform from team
-  if p_game = 'Call of Duty: WWII' and v_team.id is not null then
+  if p_game in ('Call of Duty: WWII', 'Call of Duty: Black Ops', 'Call of Duty: Black Ops II')
+     and v_team.id is not null then
     p_platform := v_team.platform;
   end if;
 
   v_team_name := v_team.name;
+
+  -- Validate roster members are on the team
+  if p_roster is not null and array_length(p_roster, 1) > 0 then
+    if v_team.id is null then raise exception 'roster requires a team'; end if;
+    for v_rid in select unnest(p_roster) loop
+      if not exists (select 1 from public.team_members where team_id = v_team.id and user_id = v_rid) then
+        raise exception 'roster member is not on this team';
+      end if;
+    end loop;
+  end if;
 
   loop
     v_code := 'DUB-' || upper(substr(replace(gen_random_uuid()::text,'-',''),1,6));
@@ -2060,26 +2217,40 @@ begin
     select balance into v_bal from public.profiles where id = auth.uid() for update;
     if v_bal < p_entry then raise exception 'insufficient balance'; end if;
     update public.profiles set balance = balance - p_entry where id = auth.uid();
-    insert into public.wallet_ledger(user_id, delta, reason) values (auth.uid(), -p_entry, 'match_entry');
   end if;
   insert into public.matches(code, game, mode, format, region, entry, kind, status, created_by,
                               platform, skill_tier, series, weapon_restriction, host_rule,
-                              team_name, map)
+                              team_name, map, allowed_input)
     values (v_code, p_game, p_mode, p_format, p_region,
             case when p_kind='cash' then p_entry else 0 end, p_kind, 'open', auth.uid(),
             p_platform, p_skill_tier, p_series, nullif(p_weapon_restriction,'None'), coalesce(p_host_rule,'auto'),
-            v_team_name, p_map)
+            v_team_name, p_map, coalesce(p_allowed_input, 'Controller + M&K'))
     returning * into v_match;
-  select region into v_region from public.profiles where id = auth.uid();
-  insert into public.match_players(match_id, user_id, region, team_id, team_name)
-    values (v_match.id, auth.uid(), coalesce(v_region,'NA'), v_team.id, v_team_name);
+  if p_kind = 'cash' then
+    insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (auth.uid(), -p_entry, 'match_entry', v_match.id);
+  end if;
+
+  -- Insert roster players (or just the creator if no roster)
+  if p_roster is not null and array_length(p_roster, 1) > 0 then
+    for v_rid in select unnest(p_roster) loop
+      select region into v_region from public.profiles where id = v_rid;
+      insert into public.match_players(match_id, user_id, region, team_id, team_name)
+        values (v_match.id, v_rid, coalesce(v_region,'NA'), v_team.id, v_team_name);
+    end loop;
+  else
+    select region into v_region from public.profiles where id = auth.uid();
+    insert into public.match_players(match_id, user_id, region, team_id, team_name)
+      values (v_match.id, auth.uid(), coalesce(v_region,'NA'), v_team.id, v_team_name);
+  end if;
   return v_match;
 end $$;
 
-create or replace function public.join_match(p_match uuid, p_team_id uuid default null, p_veto_ban text default null)
+create or replace function public.join_match(p_match uuid, p_team_id uuid default null, p_veto_ban text default null,
+  p_roster uuid[] default null)
 returns void language plpgsql security definer set search_path = public as $$
 declare v_m public.matches; v_bal numeric; v_xp int; v_region text; v_players int; v_needed int;
-        v_pool jsonb; v_gate text; v_team public.teams; v_team_name text;
+        v_pool jsonb; v_gate text; v_team public.teams; v_team_name text; v_rid uuid;
+        v_username text;
 begin
   perform public.check_not_banned();
   perform public.check_rate_limit('join_match', 10, 60);
@@ -2087,7 +2258,6 @@ begin
   if not found then raise exception 'match not found'; end if;
   if v_m.status <> 'open' then raise exception 'match is not open'; end if;
 
-  -- Resolve team
   if p_team_id is not null then
     select * into v_team from public.teams where id = p_team_id;
     if not found then raise exception 'team not found'; end if;
@@ -2102,9 +2272,8 @@ begin
   v_gate := public.can_play(auth.uid(), v_m.game, v_m.platform, v_m.kind::text);
   if v_gate is not null then raise exception '%', v_gate; end if;
 
-  -- WWII platform must match the match
-  if v_m.game = 'Call of Duty: WWII' and v_team.id is not null
-     and v_team.platform <> v_m.platform then
+  if v_m.game in ('Call of Duty: WWII', 'Call of Duty: Black Ops', 'Call of Duty: Black Ops II')
+     and v_team.id is not null and v_team.platform <> v_m.platform then
     raise exception 'Your team is % but this match is %', v_team.platform, v_m.platform;
   end if;
 
@@ -2121,9 +2290,37 @@ begin
     insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (auth.uid(), -v_m.entry, 'match_entry', p_match);
   end if;
   v_team_name := v_team.name;
-  select region into v_region from public.profiles where id = auth.uid();
-  insert into public.match_players(match_id, user_id, region, team_id, team_name)
-    values (p_match, auth.uid(), coalesce(v_region,'NA'), v_team.id, v_team_name);
+
+  -- Validate roster if provided
+  if p_roster is not null and array_length(p_roster, 1) > 0 then
+    if v_team.id is null then raise exception 'roster requires a team'; end if;
+    for v_rid in select unnest(p_roster) loop
+      if exists (select 1 from public.match_players where match_id=p_match and user_id=v_rid) then
+        raise exception 'roster member already in this match';
+      end if;
+      if not exists (select 1 from public.team_members where team_id = v_team.id and user_id = v_rid) then
+        raise exception 'roster member is not on this team';
+      end if;
+    end loop;
+  end if;
+
+  -- Insert roster players (or just the joiner)
+  if p_roster is not null and array_length(p_roster, 1) > 0 then
+    for v_rid in select unnest(p_roster) loop
+      select region into v_region from public.profiles where id = v_rid;
+      insert into public.match_players(match_id, user_id, region, team_id, team_name)
+        values (p_match, v_rid, coalesce(v_region,'NA'), v_team.id, v_team_name);
+    end loop;
+  else
+    select region into v_region from public.profiles where id = auth.uid();
+    insert into public.match_players(match_id, user_id, region, team_id, team_name)
+      values (p_match, auth.uid(), coalesce(v_region,'NA'), v_team.id, v_team_name);
+  end if;
+
+  select username into v_username from public.profiles where id = auth.uid();
+  insert into public.match_messages(match_id, user_id, username, text, kind)
+    values (p_match, auth.uid(), 'System',
+      coalesce(v_team_name, coalesce(v_username, 'A player')) || ' joined the match.', 'system');
 
   select count(*) into v_players from public.match_players where match_id = p_match;
   v_needed := public.team_size(v_m.format) * 2;
@@ -2158,6 +2355,7 @@ create or replace function public.veto_action(p_match uuid, p_map text)
 returns matches language plpgsql security definer set search_path = public as $$
 declare v_m public.matches; v_state jsonb; v_order jsonb; v_turn int; v_actor uuid;
         v_remaining jsonb; v_needed int; v_actions jsonb; v_count int;
+        v_username text;
 begin
   select * into v_m from public.matches where id = p_match for update;
   if not found then raise exception 'match not found'; end if;
@@ -2183,6 +2381,10 @@ begin
   v_state := jsonb_set(v_state, '{actions}', v_actions);
   v_state := jsonb_set(v_state, '{turn}', to_jsonb(v_turn + 1));
 
+  select username into v_username from public.profiles where id = auth.uid();
+  insert into public.match_messages(match_id, user_id, username, text, kind)
+    values (p_match, auth.uid(), 'System', coalesce(v_username, 'Player') || ' banned ' || p_map || '.', 'system');
+
   v_count := jsonb_array_length(v_remaining);
   if v_count <= v_needed then
     v_state := jsonb_set(v_state, '{finalMaps}', v_remaining);
@@ -2190,7 +2392,7 @@ begin
       set veto = v_state, veto_status = 'complete', host_region = public.resolve_host(p_match)
       where id = p_match returning * into v_m;
     insert into public.match_messages(match_id, user_id, username, text, kind)
-      values (p_match, auth.uid(), 'System', 'Veto complete. Map(s): ' || array_to_string(array(select jsonb_array_elements_text(v_remaining)), ', '), 'system');
+      values (p_match, auth.uid(), 'System', 'Veto complete. Map(s): ' || array_to_string(array(select jsonb_array_elements_text(v_remaining)), ', ') || '. Match is live — good luck.', 'system');
   else
     update public.matches set veto = v_state where id = p_match returning * into v_m;
   end if;
@@ -2199,18 +2401,17 @@ end $$;
 
 create or replace function public.settle_match(p_match uuid, p_winner uuid)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_m public.matches; v_players int; v_pot numeric; v_rake numeric; v_payout numeric; v_member boolean;
-        v_mp record; v_is_tourney boolean; v_opp_team uuid;
+declare v_m public.matches; v_pot numeric; v_rake numeric; v_payout numeric; v_member boolean;
+        v_mp record; v_is_tourney boolean; v_opp_team uuid; v_winner_name text;
 begin
   select * into v_m from public.matches where id = p_match for update;
   if v_m.status = 'settled' then return; end if;
-  select count(*) into v_players from public.match_players where match_id = p_match;
   if v_m.kind = 'cash' then
     select wagr_member into v_member from public.profiles where id = p_winner;
-    v_pot := v_m.entry * v_players;
-    v_rake := case when coalesce(v_member,false) then 0 else round(v_pot * 0.10, 2) end;
+    v_pot := v_m.entry * 2;
+    v_rake := case when coalesce(v_member,false) then 0 else round(v_pot * 0.05, 2) end;
     v_payout := v_pot - v_rake;
-    update public.profiles set balance = balance + v_payout, earnings = earnings + v_payout where id = p_winner;
+    update public.profiles set balance = balance + v_payout, earnings = earnings + (v_payout - v_m.entry) where id = p_winner;
     insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (p_winner, v_payout, 'match_payout', p_match);
   end if;
   update public.profiles p set
@@ -2221,30 +2422,33 @@ begin
   from public.match_players mp where mp.match_id = p_match and mp.user_id = p.id;
   update public.matches set status='settled', winner_id=p_winner where id=p_match;
 
-  -- Check if this is a tournament match
+  select username into v_winner_name from public.profiles where id = p_winner;
+  insert into public.match_messages(match_id, user_id, username, text, kind)
+    values (p_match, p_winner, 'System', 'Match settled. ' || coalesce(v_winner_name, 'Winner') || ' wins!', 'system');
+
   v_is_tourney := exists (select 1 from public.tournament_matches where match_id = p_match);
 
   -- Credit team records
   for v_mp in select mp.user_id, mp.team_id from public.match_players mp where mp.match_id = p_match and mp.team_id is not null loop
     -- Find opponent team
     select mp2.team_id into v_opp_team from public.match_players mp2
-    where mp2.match_id = p_match and mp2.user_id <> v_mp.user_id and mp2.team_id is not null limit 1;
+    where mp2.match_id = p_match and mp2.team_id <> v_mp.team_id limit 1;
 
     if v_mp.user_id = p_winner then
       if v_is_tourney then
         update public.teams set tourney_wins = tourney_wins + 1,
           xp = xp + 100,
-          earnings = earnings + coalesce(v_payout, 0)
+          earnings = earnings + greatest(coalesce(v_payout, 0) - v_m.entry, 0)
         where id = v_mp.team_id;
       else
         update public.teams set wins = wins + 1,
           xp = xp + 100,
-          earnings = earnings + coalesce(v_payout, 0)
+          earnings = earnings + greatest(coalesce(v_payout, 0) - v_m.entry, 0)
         where id = v_mp.team_id;
       end if;
       insert into public.team_match_history(team_id, match_id, result, earnings, xp_earned, opponent_team_id,
         tournament_id)
-        values (v_mp.team_id, p_match, 'win', coalesce(v_payout, 0), 100, v_opp_team,
+        values (v_mp.team_id, p_match, 'win', greatest(coalesce(v_payout, 0) - v_m.entry, 0), 100, v_opp_team,
           (select tournament_id from public.tournament_matches where match_id = p_match limit 1));
     else
       if v_is_tourney then
@@ -2261,6 +2465,16 @@ begin
     end if;
   end loop;
 
+  -- Weekly stats: credit every participant
+  for v_mp in select user_id from public.match_players where match_id = p_match loop
+    perform public.upsert_weekly_stat(
+      v_mp.user_id,
+      case when v_mp.user_id = p_winner then 100 else 25 end,
+      case when v_mp.user_id = p_winner then greatest(coalesce(v_payout, 0) - v_m.entry, 0) else 0 end,
+      v_mp.user_id = p_winner
+    );
+  end loop;
+
   perform public.settle_match_bets(p_match, p_winner);
   declare v_tm_id uuid; begin
     select id into v_tm_id from public.tournament_matches where match_id=p_match limit 1;
@@ -2270,7 +2484,7 @@ end $$;
 
 create or replace function public.report_match(p_match uuid, p_winner uuid, p_score text, p_evidence_url text)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_players int; v_reports int; v_distinct int;
+declare v_players int; v_reports int; v_distinct int; v_username text;
 begin
   perform public.check_not_banned();
   if not exists (select 1 from public.match_players where match_id=p_match and user_id=auth.uid())
@@ -2280,6 +2494,11 @@ begin
     on conflict (match_id, reported_by)
     do update set winner_id=excluded.winner_id, score=excluded.score, evidence_url=excluded.evidence_url;
   update public.matches set status = 'reported' where id = p_match and status = 'live';
+
+  select username into v_username from public.profiles where id = auth.uid();
+  insert into public.match_messages(match_id, user_id, username, text, kind)
+    values (p_match, auth.uid(), 'System', coalesce(v_username, 'A player') || ' submitted their result.', 'system');
+
   select count(*) into v_players from public.match_players where match_id = p_match;
   select count(*), count(distinct winner_id) into v_reports, v_distinct from public.match_reports where match_id = p_match;
   if v_reports = v_players and v_distinct = 1 then
@@ -2288,14 +2507,117 @@ begin
 end $$;
 
 create or replace function public.open_dispute(p_match uuid, p_reason text, p_evidence_url text)
-returns void language plpgsql security definer set search_path = public as $$
+returns uuid language plpgsql security definer set search_path = public as $$
+declare v_username text; v_admin_id uuid; v_admin_name text; v_dispute_id uuid;
 begin
   perform public.check_not_banned();
   if not exists (select 1 from public.match_players where match_id=p_match and user_id=auth.uid())
     then raise exception 'not a participant'; end if;
-  insert into public.match_disputes(match_id, opened_by, reason, evidence_url) values (p_match, auth.uid(), p_reason, p_evidence_url);
+  if exists (select 1 from public.match_disputes where match_id=p_match and status in ('open','reviewing'))
+    then raise exception 'a dispute is already open for this match'; end if;
+
+  select user_id into v_admin_id from public.app_admins order by random() limit 1;
+
+  insert into public.match_disputes(match_id, opened_by, reason, evidence_url, assigned_admin_id)
+    values (p_match, auth.uid(), p_reason, p_evidence_url, v_admin_id)
+    returning id into v_dispute_id;
   update public.matches set status='disputed' where id=p_match;
+
+  select username into v_username from public.profiles where id = auth.uid();
+  insert into public.match_messages(match_id, user_id, username, text, kind)
+    values (p_match, auth.uid(), 'System', coalesce(v_username, 'A player') || ' opened a dispute.', 'system');
+
+  if v_admin_id is not null then
+    select username into v_admin_name from public.profiles where id = v_admin_id;
+    insert into public.match_messages(match_id, user_id, username, text, kind)
+      values (p_match, v_admin_id, 'System', 'Admin ' || coalesce(v_admin_name, '???') || ' has been assigned to review this dispute.', 'system');
+    insert into public.notifications(user_id, text)
+      values (v_admin_id, 'You have been assigned to dispute on match #' || (select match_number from public.matches where id=p_match) || '.');
+  end if;
+
+  return v_dispute_id;
 end $$;
+
+-- Submit proof into an active dispute (participant only, while disputed).
+create or replace function public.submit_dispute_proof(p_match uuid, p_evidence_url text, p_notes text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_username text;
+begin
+  if not exists (select 1 from public.match_players where match_id=p_match and user_id=auth.uid())
+    then raise exception 'not a participant'; end if;
+  if not exists (select 1 from public.matches where id=p_match and status='disputed')
+    then raise exception 'match is not under dispute'; end if;
+
+  select username into v_username from public.profiles where id = auth.uid();
+  insert into public.match_messages(match_id, user_id, username, text, kind)
+    values (p_match, auth.uid(), 'System',
+      coalesce(v_username, 'A player') || ' submitted proof: ' || p_evidence_url
+        || (case when p_notes is not null and p_notes <> '' then ' — ' || p_notes else '' end),
+      'system');
+end $$;
+grant execute on function public.submit_dispute_proof(uuid, text, text) to authenticated;
+
+-- Assigned admin awards the winner. Only the admin assigned to this dispute may call.
+create or replace function public.admin_award_match(p_match uuid, p_winner uuid, p_note text default null)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_dispute public.match_disputes; v_tm_id uuid;
+begin
+  select * into v_dispute from public.match_disputes
+    where match_id=p_match and status in ('open','reviewing')
+    order by created_at desc limit 1
+    for update;
+  if not found then raise exception 'no open dispute for this match'; end if;
+
+  if v_dispute.assigned_admin_id is not null and v_dispute.assigned_admin_id <> auth.uid() then
+    if not public.is_admin() then raise exception 'not the assigned admin'; end if;
+  else
+    if not public.is_admin() then raise exception 'admin only'; end if;
+  end if;
+
+  if (select status from public.matches where id=p_match) = 'settled'
+    then raise exception 'match already settled'; end if;
+
+  perform public.settle_match(p_match, p_winner);
+  update public.match_disputes set status='resolved', resolved_by=auth.uid(), resolved_at=now(),
+    resolution_note=coalesce(p_note, 'Admin awarded winner')
+    where id=v_dispute.id;
+
+  insert into public.match_messages(match_id, user_id, username, text, kind)
+    values (p_match, auth.uid(), 'System',
+      '⚖️ Admin ruled: ' || (select username from public.profiles where id=p_winner) || ' wins. Payout processed.',
+      'system');
+
+  insert into public.notifications(user_id, text)
+    select user_id, 'Your disputed match has been resolved by an admin. Check the match room.'
+    from public.match_players where match_id=p_match;
+
+  select id into v_tm_id from public.tournament_matches where match_id=p_match limit 1;
+  if v_tm_id is not null then perform public.advance_bracket(v_tm_id); end if;
+
+  insert into public.audit_logs(actor_id, action, target, meta)
+    values (auth.uid(), 'admin_award_match', p_match::text, jsonb_build_object('winner', p_winner, 'note', p_note));
+end $$;
+grant execute on function public.admin_award_match(uuid, uuid, text) to authenticated;
+
+-- Get the active dispute for a match (for UI rendering).
+create or replace function public.get_match_dispute(p_match uuid)
+returns table (
+  dispute_id uuid, opened_by uuid, opened_by_name text, reason text,
+  evidence_url text, assigned_admin_id uuid, assigned_admin_name text,
+  status text, created_at timestamptz
+) language plpgsql stable security definer set search_path = public as $$
+begin
+  return query
+    select d.id, d.opened_by,
+      (select username from public.profiles where id=d.opened_by),
+      d.reason, d.evidence_url, d.assigned_admin_id,
+      (select username from public.profiles where id=d.assigned_admin_id),
+      d.status::text, d.created_at
+    from public.match_disputes d
+    where d.match_id=p_match
+    order by d.created_at desc limit 1;
+end $$;
+grant execute on function public.get_match_dispute(uuid) to authenticated;
 
 -- Either participant can request to cancel a lobby that hasn't settled yet.
 -- The other participant (or an admin) accepts or declines it. Accepting
@@ -2320,7 +2642,7 @@ end $$;
 
 create or replace function public.respond_match_cancel(p_request uuid, p_accept boolean)
 returns void language plpgsql security definer set search_path = public as $$
-declare v_req public.match_cancel_requests; v_m public.matches; v_pid uuid; v_entry numeric;
+declare v_req public.match_cancel_requests; v_m public.matches; v_pid uuid;
 begin
   select * into v_req from public.match_cancel_requests where id = p_request for update;
   if not found then raise exception 'request not found'; end if;
@@ -2331,8 +2653,15 @@ begin
 
   if p_accept then
     update public.match_cancel_requests set status='accepted', resolved_by=auth.uid(), resolved_at=now() where id=p_request;
-    if v_m.kind = 'cash' and v_m.status <> 'open' then
-      for v_pid in select user_id from public.match_players where match_id = v_m.id loop
+    if v_m.kind = 'cash' then
+      for v_pid in
+        select distinct uid from (
+          select v_m.created_by as uid
+          union
+          select wl.user_id from public.wallet_ledger wl
+          where wl.reason = 'match_entry' and wl.ref_id = v_m.id
+        ) paying where uid is not null
+      loop
         update public.profiles set balance = balance + v_m.entry where id = v_pid;
         insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_pid, v_m.entry, 'match_cancel_refund', v_m.id);
       end loop;
@@ -2354,6 +2683,8 @@ begin
   perform public.settle_match(p_match, p_winner);
   update public.match_disputes set status='resolved', resolved_by=auth.uid(), resolution=p_note, resolved_at=now()
     where match_id=p_match and status in ('open','reviewing');
+  insert into public.match_messages(match_id, user_id, username, text, kind)
+    values (p_match, auth.uid(), 'System', 'An admin resolved the dispute. Match settled.', 'system');
 end $$;
 
 -- ---------- tournaments ----------
@@ -2386,9 +2717,8 @@ begin
   v_gate := public.can_play(auth.uid(), v_t.game, v_t.platform, null);
   if v_gate is not null then raise exception '%', v_gate; end if;
 
-  -- WWII platform match
-  if v_t.game = 'Call of Duty: WWII' and v_team.id is not null
-     and v_team.platform <> v_t.platform then
+  if v_t.game in ('Call of Duty: WWII', 'Call of Duty: Black Ops', 'Call of Duty: Black Ops II')
+     and v_team.id is not null and v_team.platform <> v_t.platform then
     raise exception 'Your team is % but this tournament is %', v_team.platform, v_t.platform;
   end if;
 
@@ -2411,9 +2741,59 @@ begin
     values (p_tournament, p_entrant, auth.uid(), v_t.entry, v_team.id);
 end $$;
 
+-- Section 5: Teammate-funded tournament entry — funder pays for another player on the same team
+create or replace function public.fund_tournament_entry(
+  p_tournament uuid, p_for_user uuid, p_entrant text, p_team_id uuid default null
+) returns void language plpgsql security definer set search_path = public as $$
+declare v_t public.tournaments; v_bal numeric; v_count int; v_gate text;
+        v_team public.teams;
+begin
+  if auth.uid() is null then raise exception 'not authenticated'; end if;
+  perform public.check_not_banned();
+  if auth.uid() = p_for_user then raise exception 'use join_tournament to enter yourself'; end if;
+
+  select * into v_t from public.tournaments where id = p_tournament for update;
+  if not found then raise exception 'tournament not found'; end if;
+  if v_t.status <> 'upcoming' then raise exception 'tournament is not open'; end if;
+  if exists (select 1 from public.tournament_entries where tournament_id=p_tournament and user_id=p_for_user)
+    then raise exception 'that player is already entered'; end if;
+  select count(*) into v_count from public.tournament_entries where tournament_id = p_tournament;
+  if v_count >= v_t.capacity then raise exception 'tournament is full'; end if;
+
+  if p_team_id is not null then
+    select * into v_team from public.teams where id = p_team_id;
+    if not found then raise exception 'team not found'; end if;
+    if not exists (select 1 from public.team_members where team_id = p_team_id and user_id = p_for_user) then
+      raise exception 'covered player is not on this team';
+    end if;
+    if not exists (select 1 from public.team_members where team_id = p_team_id and user_id = auth.uid()) then
+      raise exception 'you are not on this team';
+    end if;
+  else
+    select t.* into v_team from public.team_members tm
+    join public.teams t on t.id = tm.team_id
+    where tm.user_id = p_for_user and t.game = v_t.game
+    limit 1;
+  end if;
+
+  v_gate := public.can_play(p_for_user, v_t.game, v_t.platform, null);
+  if v_gate is not null then raise exception 'covered player: %', v_gate; end if;
+
+  select balance into v_bal from public.profiles where id = auth.uid() for update;
+  if v_bal < v_t.entry then raise exception 'insufficient balance to cover entry'; end if;
+  update public.profiles set balance = balance - v_t.entry where id = auth.uid();
+  insert into public.wallet_ledger(user_id, delta, reason, ref_id, note)
+    values (auth.uid(), -v_t.entry, 'tournament_entry', p_tournament,
+            'covered entry for ' || (select username from public.profiles where id = p_for_user));
+
+  insert into public.tournament_entries(tournament_id, entrant_name, user_id, paid, team_id)
+    values (p_tournament, p_entrant, p_for_user, v_t.entry, v_team.id);
+end $$;
+
 -- Settle a tournament: pot = entry * teams joined. Pays 1st 80%, 2nd 15%, 3rd 5%
 -- to the users behind the given entrant names, awards gold/silver/bronze
 -- trophies (with the tournament title), and records placements. Admin only.
+-- Free-entry (WAGR) tournaments award 'wagr' trophies instead of gold/silver/bronze.
 create or replace function public.settle_tournament(
   p_tournament uuid, p_first text, p_second text, p_third text
 ) returns void language plpgsql security definer set search_path = public as $$
@@ -2421,6 +2801,7 @@ declare
   v_t public.tournaments; v_joined int; v_pot numeric;
   v_p1 numeric; v_p2 numeric; v_p3 numeric;
   v_u1 uuid; v_u2 uuid; v_u3 uuid;
+  v_is_wagr boolean;
 begin
   if not public.is_admin() then raise exception 'admin only'; end if;
   select * into v_t from public.tournaments where id = p_tournament for update;
@@ -2428,6 +2809,7 @@ begin
   if v_t.status = 'completed' then return; end if;
 
   select count(*) into v_joined from public.tournament_entries where tournament_id = p_tournament;
+  v_is_wagr := (v_t.entry = 0);
   v_pot := round(v_t.entry * v_joined * 0.98, 2); -- 2% house cut
   v_p1 := round(v_pot * 0.833, 2);
   v_p2 := round(v_pot * 0.10, 2);
@@ -2437,29 +2819,38 @@ begin
   select user_id into v_u2 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_second limit 1;
   select user_id into v_u3 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_third limit 1;
 
-  -- 1st: cash + earnings + gold trophy + XP
+  -- 1st: cash + earnings + trophy + XP
   if v_u1 is not null then
-    update public.profiles set balance=balance+v_p1, earnings=earnings+v_p1, xp=xp+500 where id=v_u1;
-    insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_u1, v_p1, 'tournament_payout', p_tournament);
+    update public.profiles set balance=balance+v_p1, earnings=earnings+greatest(v_p1 - v_t.entry, 0), xp=xp+500 where id=v_u1;
+    if v_p1 > 0 then
+      insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_u1, v_p1, 'tournament_payout', p_tournament);
+    end if;
     insert into public.trophies(user_id, title, place, tone, game, prize, bracket_size)
-      values (v_u1, v_t.name, 1, 'gold', v_t.game, v_p1, v_joined);
+      values (v_u1, v_t.name, 1, case when v_is_wagr then 'wagr' else 'gold' end, v_t.game, v_p1, v_joined);
     update public.tournament_entries set placed=1 where tournament_id=p_tournament and entrant_name=p_first;
+    perform public.upsert_weekly_stat(v_u1, 500, greatest(v_p1 - v_t.entry, 0), true);
   end if;
-  -- 2nd: cash + silver trophy
+  -- 2nd: cash + trophy
   if v_u2 is not null then
-    update public.profiles set balance=balance+v_p2, earnings=earnings+v_p2, xp=xp+250 where id=v_u2;
-    insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_u2, v_p2, 'tournament_payout', p_tournament);
+    update public.profiles set balance=balance+v_p2, earnings=earnings+greatest(v_p2 - v_t.entry, 0), xp=xp+250 where id=v_u2;
+    if v_p2 > 0 then
+      insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_u2, v_p2, 'tournament_payout', p_tournament);
+    end if;
     insert into public.trophies(user_id, title, place, tone, game, prize, bracket_size)
-      values (v_u2, v_t.name, 2, 'silver', v_t.game, v_p2, v_joined);
+      values (v_u2, v_t.name, 2, case when v_is_wagr then 'wagr' else 'silver' end, v_t.game, v_p2, v_joined);
     update public.tournament_entries set placed=2 where tournament_id=p_tournament and entrant_name=p_second;
+    perform public.upsert_weekly_stat(v_u2, 250, greatest(v_p2 - v_t.entry, 0), false);
   end if;
-  -- 3rd: cash + bronze trophy
+  -- 3rd: cash + trophy
   if v_u3 is not null then
-    update public.profiles set balance=balance+v_p3, earnings=earnings+v_p3, xp=xp+100 where id=v_u3;
-    insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_u3, v_p3, 'tournament_payout', p_tournament);
+    update public.profiles set balance=balance+v_p3, earnings=earnings+greatest(v_p3 - v_t.entry, 0), xp=xp+100 where id=v_u3;
+    if v_p3 > 0 then
+      insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_u3, v_p3, 'tournament_payout', p_tournament);
+    end if;
     insert into public.trophies(user_id, title, place, tone, game, prize, bracket_size)
-      values (v_u3, v_t.name, 3, 'bronze', v_t.game, v_p3, v_joined);
+      values (v_u3, v_t.name, 3, case when v_is_wagr then 'wagr' else 'bronze' end, v_t.game, v_p3, v_joined);
     update public.tournament_entries set placed=3 where tournament_id=p_tournament and entrant_name=p_third;
+    perform public.upsert_weekly_stat(v_u3, 100, greatest(v_p3 - v_t.entry, 0), false);
   end if;
 
   update public.tournaments
@@ -2467,6 +2858,56 @@ begin
     where id=p_tournament;
 
   -- notify winners
+  if v_u1 is not null then insert into public.notifications(user_id, text) values (v_u1, 'You won ' || v_t.name || '! +' || v_p1); end if;
+  if v_u2 is not null then insert into public.notifications(user_id, text) values (v_u2, '2nd place in ' || v_t.name || '. +' || v_p2); end if;
+  if v_u3 is not null then insert into public.notifications(user_id, text) values (v_u3, '3rd place in ' || v_t.name || '. +' || v_p3); end if;
+end $$;
+
+-- Auto-settle variant called from advance_bracket (no is_admin() gate since
+-- it runs inside SECURITY DEFINER context where auth.uid() is a regular player).
+create or replace function public.settle_tournament_auto(
+  p_tournament uuid, p_first text, p_second text, p_third text
+) returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_t public.tournaments; v_joined int; v_pot numeric;
+  v_p1 numeric; v_p2 numeric; v_p3 numeric;
+  v_u1 uuid; v_u2 uuid; v_u3 uuid;
+  v_is_wagr boolean;
+begin
+  select * into v_t from public.tournaments where id = p_tournament for update;
+  if not found then raise exception 'tournament not found'; end if;
+  if v_t.status = 'completed' then return; end if;
+  select count(*) into v_joined from public.tournament_entries where tournament_id = p_tournament;
+  v_is_wagr := (v_t.entry = 0);
+  v_pot := round(v_t.entry * v_joined * 0.98, 2);
+  v_p1 := round(v_pot * 0.833, 2);
+  v_p2 := round(v_pot * 0.10, 2);
+  v_p3 := round(v_pot * 0.067, 2);
+  select user_id into v_u1 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_first limit 1;
+  select user_id into v_u2 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_second limit 1;
+  select user_id into v_u3 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_third limit 1;
+  if v_u1 is not null then
+    update public.profiles set balance=balance+v_p1, earnings=earnings+greatest(v_p1 - v_t.entry, 0), xp=xp+500 where id=v_u1;
+    if v_p1 > 0 then insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_u1, v_p1, 'tournament_payout', p_tournament); end if;
+    insert into public.trophies(user_id, title, place, tone, game, prize, bracket_size) values (v_u1, v_t.name, 1, case when v_is_wagr then 'wagr' else 'gold' end, v_t.game, v_p1, v_joined);
+    update public.tournament_entries set placed=1 where tournament_id=p_tournament and entrant_name=p_first;
+    perform public.upsert_weekly_stat(v_u1, 500, greatest(v_p1 - v_t.entry, 0), true);
+  end if;
+  if v_u2 is not null then
+    update public.profiles set balance=balance+v_p2, earnings=earnings+greatest(v_p2 - v_t.entry, 0), xp=xp+250 where id=v_u2;
+    if v_p2 > 0 then insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_u2, v_p2, 'tournament_payout', p_tournament); end if;
+    insert into public.trophies(user_id, title, place, tone, game, prize, bracket_size) values (v_u2, v_t.name, 2, case when v_is_wagr then 'wagr' else 'silver' end, v_t.game, v_p2, v_joined);
+    update public.tournament_entries set placed=2 where tournament_id=p_tournament and entrant_name=p_second;
+    perform public.upsert_weekly_stat(v_u2, 250, greatest(v_p2 - v_t.entry, 0), false);
+  end if;
+  if v_u3 is not null then
+    update public.profiles set balance=balance+v_p3, earnings=earnings+greatest(v_p3 - v_t.entry, 0), xp=xp+100 where id=v_u3;
+    if v_p3 > 0 then insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_u3, v_p3, 'tournament_payout', p_tournament); end if;
+    insert into public.trophies(user_id, title, place, tone, game, prize, bracket_size) values (v_u3, v_t.name, 3, case when v_is_wagr then 'wagr' else 'bronze' end, v_t.game, v_p3, v_joined);
+    update public.tournament_entries set placed=3 where tournament_id=p_tournament and entrant_name=p_third;
+    perform public.upsert_weekly_stat(v_u3, 100, greatest(v_p3 - v_t.entry, 0), false);
+  end if;
+  update public.tournaments set status='completed', winner_name=p_first, second_name=p_second, third_name=p_third where id=p_tournament;
   if v_u1 is not null then insert into public.notifications(user_id, text) values (v_u1, 'You won ' || v_t.name || '! +' || v_p1); end if;
   if v_u2 is not null then insert into public.notifications(user_id, text) values (v_u2, '2nd place in ' || v_t.name || '. +' || v_p2); end if;
   if v_u3 is not null then insert into public.notifications(user_id, text) values (v_u3, '3rd place in ' || v_t.name || '. +' || v_p3); end if;
@@ -2521,7 +2962,7 @@ begin
     select wagr_member into v_member from public.profiles where id = v_bet.user_id;
     v_rake := case when coalesce(v_member, false) then 0 else round(greatest(v_profit, 0) * 0.05, 2) end;
     v_net := v_gross - v_rake;
-    update public.profiles set balance = balance + v_net, earnings = earnings + v_net where id = v_bet.user_id;
+    update public.profiles set balance = balance + v_net, earnings = earnings + (v_profit - v_rake) where id = v_bet.user_id;
     insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_bet.user_id, v_net, 'bet_payout', p_bet);
   elsif p_outcome = 'void' then
     update public.profiles set balance = balance + v_bet.stake where id = v_bet.user_id;
@@ -2709,6 +3150,168 @@ begin
 end $$;
 
 -- ============================================================================
+-- P2P BET OFFERS (peer-to-peer matched betting)
+-- ============================================================================
+create table if not exists public.bet_offers (
+  id            uuid primary key default gen_random_uuid(),
+  creator_id    uuid not null references public.profiles(id) on delete cascade,
+  section       text not null check (section in ('streamer','cdl')),
+  event_ref     text not null,
+  market        text not null default 'match_winner',
+  creator_pick  text not null,
+  stake         numeric not null check (stake > 0),
+  status        text not null default 'open' check (status in ('open','matched','settled','void')),
+  acceptor_id   uuid references public.profiles(id),
+  acceptor_pick text,
+  winner_pick   text,
+  rake          numeric not null default 0,
+  created_at    timestamptz not null default now(),
+  locks_at      timestamptz,
+  settled_at    timestamptz
+);
+create index if not exists betoff_status_idx on public.bet_offers(status, created_at desc);
+create index if not exists betoff_creator_idx on public.bet_offers(creator_id);
+
+alter table public.bet_offers enable row level security;
+create policy "bet_offers read" on public.bet_offers for select using (true);
+create policy "bet_offers insert" on public.bet_offers for insert with check (auth.uid() = creator_id);
+create policy "bet_offers update" on public.bet_offers for update using (true);
+
+do $$ begin
+  execute 'alter publication supabase_realtime add table public.bet_offers';
+exception when duplicate_object then null; when others then null;
+end $$;
+
+-- User: create a P2P bet offer (escrows stake)
+create or replace function public.create_bet_offer(
+  p_section text, p_event_ref text, p_market text,
+  p_creator_pick text, p_stake numeric, p_locks_at timestamptz default null
+) returns uuid language plpgsql security definer set search_path = public as $$
+declare v_bal numeric; v_id uuid;
+begin
+  perform public.check_not_banned();
+  perform public.check_rate_limit('bet_offer', 10, 60);
+  if p_section not in ('streamer','cdl') then raise exception 'invalid section'; end if;
+  if p_stake <= 0 then raise exception 'stake must be positive'; end if;
+  if p_stake > 100 then raise exception 'max bet is $100'; end if;
+
+  select balance into v_bal from public.profiles where id = auth.uid() for update;
+  if v_bal < p_stake then raise exception 'insufficient balance'; end if;
+
+  update public.profiles set balance = balance - p_stake where id = auth.uid();
+  insert into public.wallet_ledger(user_id, delta, reason) values (auth.uid(), -p_stake, 'bet_offer_escrow');
+
+  insert into public.bet_offers(creator_id, section, event_ref, market, creator_pick, stake, locks_at)
+    values (auth.uid(), p_section, p_event_ref, p_market, p_creator_pick, p_stake, p_locks_at)
+    returning id into v_id;
+  return v_id;
+end $$;
+
+-- User: accept a P2P bet offer (escrows acceptor stake)
+create or replace function public.accept_bet_offer(p_offer uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_off public.bet_offers; v_bal numeric; v_pick text;
+begin
+  perform public.check_not_banned();
+  select * into v_off from public.bet_offers where id = p_offer for update;
+  if not found then raise exception 'offer not found'; end if;
+  if v_off.status <> 'open' then raise exception 'offer is no longer open'; end if;
+  if v_off.creator_id = auth.uid() then raise exception 'cannot accept your own offer'; end if;
+  if v_off.locks_at is not null and now() >= v_off.locks_at then raise exception 'offer has expired'; end if;
+
+  select balance into v_bal from public.profiles where id = auth.uid() for update;
+  if v_bal < v_off.stake then raise exception 'insufficient balance'; end if;
+
+  update public.profiles set balance = balance - v_off.stake where id = auth.uid();
+  insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (auth.uid(), -v_off.stake, 'bet_offer_accept', p_offer);
+
+  update public.bet_offers
+    set status = 'matched', acceptor_id = auth.uid(), acceptor_pick = v_off.creator_pick
+  where id = p_offer;
+  -- acceptor_pick stores "opposite" — but since it's free text picks, the admin settles by choosing the winner_pick
+  -- For simplicity: acceptor_pick = 'ACCEPTED' (the admin picks winner_pick = creator_pick or 'acceptor')
+end $$;
+
+-- Admin: settle a P2P bet offer
+create or replace function public.settle_bet_offer(p_offer uuid, p_winner text)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_off public.bet_offers; v_winner_id uuid; v_loser_id uuid;
+  v_pot numeric; v_profit numeric; v_rake numeric; v_payout numeric; v_member boolean;
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  select * into v_off from public.bet_offers where id = p_offer for update;
+  if not found then raise exception 'offer not found'; end if;
+  if v_off.status = 'settled' then return; end if;
+  if v_off.status <> 'matched' then raise exception 'offer must be matched to settle'; end if;
+  if p_winner not in ('creator','acceptor') then raise exception 'winner must be creator or acceptor'; end if;
+
+  v_pot := v_off.stake * 2;
+
+  if p_winner = 'creator' then
+    v_winner_id := v_off.creator_id;
+    v_loser_id := v_off.acceptor_id;
+  else
+    v_winner_id := v_off.acceptor_id;
+    v_loser_id := v_off.creator_id;
+  end if;
+
+  v_profit := v_off.stake;
+  select wagr_member into v_member from public.profiles where id = v_winner_id;
+  v_rake := case when coalesce(v_member, false) then 0 else round(greatest(v_profit, 0) * 0.05, 2) end;
+  v_payout := v_pot - v_rake;
+
+  update public.profiles set balance = balance + v_payout, earnings = earnings + (v_profit - v_rake) where id = v_winner_id;
+  insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_winner_id, v_payout, 'bet_offer_payout', p_offer);
+  if v_rake > 0 then
+    insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_winner_id, -v_rake, 'bet_offer_rake', p_offer);
+  end if;
+
+  update public.bet_offers set status = 'settled', winner_pick = p_winner, rake = v_rake, settled_at = now() where id = p_offer;
+
+  insert into public.chat_messages(channel, user_id, username, text, kind)
+    values ('betting'::chat_channel, auth.uid(), 'System',
+            '🎯 P2P bet settled: ' || v_off.event_ref || ' — ' || p_winner || ' wins $' || v_payout || '!', 'system');
+end $$;
+
+-- Admin: void a P2P bet offer (refund both)
+create or replace function public.void_bet_offer(p_offer uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_off public.bet_offers;
+begin
+  if not public.is_admin() then raise exception 'admin only'; end if;
+  select * into v_off from public.bet_offers where id = p_offer for update;
+  if not found then raise exception 'offer not found'; end if;
+  if v_off.status in ('settled','void') then return; end if;
+
+  -- Refund creator
+  update public.profiles set balance = balance + v_off.stake where id = v_off.creator_id;
+  insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_off.creator_id, v_off.stake, 'bet_offer_refund', p_offer);
+
+  -- Refund acceptor if matched
+  if v_off.acceptor_id is not null then
+    update public.profiles set balance = balance + v_off.stake where id = v_off.acceptor_id;
+    insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (v_off.acceptor_id, v_off.stake, 'bet_offer_refund', p_offer);
+  end if;
+
+  update public.bet_offers set status = 'void', settled_at = now() where id = p_offer;
+end $$;
+
+-- User: cancel own P2P bet offer (only while open)
+create or replace function public.cancel_bet_offer(p_offer uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v_off public.bet_offers;
+begin
+  select * into v_off from public.bet_offers where id = p_offer for update;
+  if not found then raise exception 'offer not found'; end if;
+  if v_off.creator_id <> auth.uid() then raise exception 'not your offer'; end if;
+  if v_off.status <> 'open' then raise exception 'offer is no longer open'; end if;
+
+  update public.profiles set balance = balance + v_off.stake where id = auth.uid();
+  insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (auth.uid(), v_off.stake, 'bet_offer_cancel', p_offer);
+  update public.bet_offers set status = 'void', settled_at = now() where id = p_offer;
+end $$;
+
+-- ============================================================================
 -- SEED — a few upcoming tournaments so the page isn't empty (only if none yet)
 -- ============================================================================
 insert into public.tournaments
@@ -2841,7 +3444,23 @@ begin
 end $$;
 grant execute on function public.get_my_rank(text,text,text) to authenticated;
 
--- weekly_stats: per-week deltas (STUB — not yet populated by settle functions).
+-- Helper: upsert a player's weekly stats row after a match or tournament settles.
+create or replace function public.upsert_weekly_stat(
+  p_user uuid, p_xp int, p_earnings numeric, p_won boolean
+) returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_week date := date_trunc('week', now())::date;
+begin
+  insert into public.weekly_stats(user_id, week_start, xp_gained, earnings_gained, wins, losses)
+    values (p_user, v_week, p_xp, greatest(p_earnings, 0), case when p_won then 1 else 0 end, case when p_won then 0 else 1 end)
+    on conflict (user_id, week_start) do update set
+      xp_gained       = weekly_stats.xp_gained + excluded.xp_gained,
+      earnings_gained = weekly_stats.earnings_gained + excluded.earnings_gained,
+      wins            = weekly_stats.wins + excluded.wins,
+      losses          = weekly_stats.losses + excluded.losses;
+end $$;
+
+-- weekly_stats: per-week deltas (populated by settle_match + settle_tournament via upsert_weekly_stat).
 create table if not exists public.weekly_stats (
   id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null references public.profiles(id),
@@ -2920,6 +3539,9 @@ create table if not exists public.tournament_log (
   created_at    timestamptz not null default now()
 );
 create index if not exists tlog_tourney_idx on public.tournament_log(tournament_id, created_at desc);
+alter table public.tournament_log enable row level security;
+drop policy if exists "tlog read" on public.tournament_log;
+create policy "tlog read" on public.tournament_log for select using (public.is_admin());
 
 -- tournament_maintenance(): called by pg_cron every 3 minutes.
 -- Order matters: auto-start first, then immediately refund anything that didn't start.
@@ -3062,7 +3684,7 @@ create or replace function public.platform_stats()
 returns json language plpgsql security definer stable set search_path = public as $$
 declare v_matches bigint; v_winnings numeric; v_open bigint;
 begin
-  select count(*) into v_matches from public.matches where status in ('settled','completed','live','reported');
+  select count(*) into v_matches from public.matches where status in ('settled','live','reported');
   select coalesce(sum(l.delta),0) into v_winnings from public.wallet_ledger l where l.reason = 'match_win';
   select count(*) into v_open from public.matches where status = 'open';
   return json_build_object('total_matches', v_matches, 'total_winnings', v_winnings, 'open_lobbies', v_open);

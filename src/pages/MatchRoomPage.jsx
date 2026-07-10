@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Flag, AlertTriangle, Upload, ChevronLeft, Crosshair, Send, XCircle, Check, X, Gamepad2, Monitor, Tv, ExternalLink, Shield, Copy, ChevronDown, UserX, Headphones } from "lucide-react";
+import { Flag, AlertTriangle, Upload, ChevronLeft, Crosshair, Send, XCircle, Check, X, Gamepad2, Monitor, Tv, ExternalLink, Shield, Copy, ChevronDown, UserX, Headphones, Paperclip, Scale, Link as LinkIcon } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import {
   getMatch, reportMatch, openDispute, subscribeToMatch,
   submitVeto, requestMatchCancel, respondMatchCancel, getCancelRequest,
-  subscribeToCancelRequests, getTournamentContext
+  subscribeToCancelRequests, getTournamentContext,
+  getMatchDispute, submitDisputeProof, adminAwardMatch
 } from "../services/matchService";
 import { getMatchMessages, sendMatchMessage, subscribeToMatchMessages } from "../services/matchChatService";
 import { Button } from "../components/Button";
@@ -15,8 +16,10 @@ import { WagrBadge } from "../components/WagrBadge";
 import { RankStar } from "../components/RankStar";
 import { TrophyIcon } from "../components/TrophyIcon";
 import { money, shortTime } from "../utils/format";
-import { modeRule, seriesRule, formatLabel, RAKE_CONFIG, mapsForGameMode, mapsNeededForSeries } from "../utils/games";
+import { modeRule, seriesRule, formatLabel, RAKE_CONFIG, mapsForGameMode, mapsNeededForSeries, seriesLabel, pcPlayersFromPlatform, isConsoleOnlyGame } from "../utils/games";
+import { uploadEvidence } from "../utils/storage";
 import { MapCard } from "../components/MapCard";
+import { mapHue as getMapHue } from "../utils/mapImages";
 import { rankForXp } from "../utils/ranks";
 import { supabase } from "../lib/supabase";
 
@@ -43,6 +46,12 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReq, setCancelReq] = useState(null);
   const [trophyCounts, setTrophyCounts] = useState({});
+  const [dispute, setDispute] = useState(null);
+
+  async function loadDispute() {
+    const { data } = await getMatchDispute(matchId);
+    setDispute(data);
+  }
 
   async function load() {
     try {
@@ -79,8 +88,8 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
     setTournamentCtx(data);
   }
 
-  useEffect(() => { load(); loadCancel(); loadTournamentCtx(); }, [matchId]); // eslint-disable-line
-  useEffect(() => subscribeToMatch(matchId, load), [matchId]); // eslint-disable-line
+  useEffect(() => { load(); loadCancel(); loadTournamentCtx(); loadDispute(); }, [matchId]); // eslint-disable-line
+  useEffect(() => subscribeToMatch(matchId, () => { load(); loadDispute(); }), [matchId]); // eslint-disable-line
   useEffect(() => subscribeToCancelRequests(matchId, loadCancel), [matchId]); // eslint-disable-line
 
   if (loading) return <main className="page"><Skeleton w="40%" h={28} /><div style={{ height: 16 }} /><Skeleton h={180} r={14} /></main>;
@@ -118,6 +127,7 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
   const winner = match.winner_id ? players.find((p) => p.id === match.winner_id) : null;
   const clanTags = deriveClanTags(match.code);
   const teamSize = parseInt(match.format) || 1;
+  const mapHue = match.map ? getMapHue(match.map, match.game) : 200;
 
   return (
     <main className="page matchRoomPage" aria-label="Match room">
@@ -130,14 +140,18 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
 
       {/* §2a — Map hero (when map is locked) */}
       {match.map && (
-        <section className="mrMapHero">
-          <div className="mrMapHeroCard">
-            <MapCard map={match.map} game={match.game} size="lg" />
-          </div>
-          <div className="mrMapHeroInfo">
-            <small className="mrMapLabel">MAP</small>
-            <div className="mrMapName">{match.map}</div>
-            <span className={`roomStatus s-${match.status}`} aria-live="polite">{statusLabel}</span>
+        <section className="mrMapHero" style={{ background: `linear-gradient(135deg, hsla(${mapHue}, 60%, 8%, 1) 0%, hsla(${mapHue}, 80%, 4%, 1) 100%)` }}>
+          <div className="mrMapHeroInner">
+            <div className="mrMapHeroCard">
+              <MapCard map={match.map} game={match.game} size="lg" />
+            </div>
+            <div className="mrMapHeroInfo">
+              <small className="mrMapLabel">MAP 1</small>
+              <div className="mrMapName">{match.map}</div>
+              <div className="mrMapHeroStatus">
+                <span className={`roomStatus s-${match.status}`} aria-live="polite">{statusLabel}</span>
+              </div>
+            </div>
           </div>
         </section>
       )}
@@ -164,6 +178,10 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
 
       {/* Info bar */}
       <section className="mrInfoBar">
+        <div className="mrInfoItem"><small>{seriesLabel(match.series)} · {match.platform}</small></div>
+        {!isConsoleOnlyGame(match.game) && (
+          <div className="mrInfoItem"><small>PC: {pcPlayersFromPlatform(match.platform)} · Input: {match.allowed_input || "Controller + M&K"}</small></div>
+        )}
         <div className="mrInfoItem">
           <small>Created {new Date(match.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</small>
         </div>
@@ -217,6 +235,19 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
         </div>
       )}
 
+      {/* §6b — Dispute panel (when match is disputed) */}
+      {match.status === "disputed" && dispute && (
+        <DisputePanel
+          dispute={dispute}
+          match={match}
+          players={players}
+          userId={user?.id}
+          isAdmin={isAdmin}
+          isParticipant={isParticipant}
+          onDone={() => { load(); loadDispute(); }}
+        />
+      )}
+
       {/* §7 — Chat dock */}
       {(isParticipant || isAdmin) && (
         <ChatDock
@@ -231,16 +262,18 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
             openDispute(match.id, { reason: "No-show: opponent did not join within the 10-minute window." });
             toast.success("No-show reported. An admin will review.");
           }}
-          onRequestAdmin={() => {
-            sendMatchMessage(matchId, user.id, "System", "An admin has been requested to review this match.");
-            toast.success("Admin requested.");
+          onRequestAdmin={async () => {
+            const res = await openDispute(match.id, { reason: "Admin requested from chat.", evidenceUrl: null });
+            if (res.error) return toast.error(res.error);
+            toast.success("Admin assigned. Check the dispute panel.");
+            load(); loadDispute();
           }}
         />
       )}
 
       {/* Modals */}
       <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} match={match} players={players} onDone={load} toast={toast} />
-      <DisputeModal open={disputeOpen} onClose={() => setDisputeOpen(false)} match={match} onDone={load} toast={toast} />
+      <DisputeModal open={disputeOpen} onClose={() => setDisputeOpen(false)} match={match} onDone={() => { load(); loadDispute(); }} toast={toast} />
       <CancelModal open={cancelOpen} onClose={() => setCancelOpen(false)} match={match} onDone={() => { loadCancel(); load(); }} toast={toast} />
     </main>
   );
@@ -280,7 +313,7 @@ function MatchHeader({ match, statusLabel, pot, naCount, euCount }) {
       <div className="mrHeadLeft">
         <div className="mrId">MATCH #{match.match_number || "?"}</div>
         <h1>{match.game}</h1>
-        <p className="mrSub">{formatLabel(match.format)} · {match.mode} · {match.series}</p>
+        <p className="mrSub">{formatLabel(match.format)} · {match.mode} · {seriesLabel(match.series)}</p>
         <div className="matchBadges">
           <span className="badge">{match.platform}</span>
           {match.skill_tier !== "Open" && <span className="badge accent">{match.skill_tier}</span>}
@@ -465,7 +498,7 @@ function RulesStrip({ match }) {
           <p className="ruleNote inline">{modeRule(match.mode)}</p>
           <p className="ruleNote inline">{seriesRule(match.series)}</p>
           <ul className="roomRules">
-            <li>{match.platform === "PC + Console Mixed" ? "PC and console players share this lobby." : `${match.platform} lobby.`}</li>
+            <li>{match.platform === "PC + Console Mixed" ? "PC and console players share this lobby." : match.platform === "Console Only" ? "Console only — PC players not allowed." : `${match.platform} lobby.`}{match.allowed_input === "Controller Only" ? " Controller only — M&K not allowed." : ""}</li>
             <li>All proof must be <b>video format</b> (VOD, clip, DVR recording). Screenshots alone are insufficient.</li>
             <li>Proof must show the <b>full scoreboard with gamertags</b> clearly visible.</li>
             <li>PC players must stream with past broadcasts enabled. VOD must stay up for 24 hours.</li>
@@ -647,7 +680,7 @@ function VetoPanel({ match, players, userId, onDone }) {
     <section className="roomCard vetoCard">
       <div className="vetoHead">
         <Crosshair size={16} />
-        <h3>Map veto / {match.series}</h3>
+        <h3>Map veto / {seriesLabel(match.series)}</h3>
         <span className="subtle">{remaining.length} left, need {needed}</span>
       </div>
       <p className="ruleNote inline">
@@ -717,7 +750,7 @@ function ChatDock({ matchId, userId, username, isAdmin, isParticipant, matchStat
           <div className="chatDockEmpty">Say GLHF. Everyone in this lobby can see it.</div>
         ) : messages.map((m) => (
           <div className={`chatLine ${m.kind}`} key={m.id}>
-            <div className="chatLineTop"><b>{m.username}</b><small>{shortTime(m.created_at)}</small></div>
+            <div className="chatLineTop"><b>{m.username}</b>{m.profiles?.wagr_member && <WagrBadge size={12} />}<small>{shortTime(m.created_at)}</small></div>
             <p>{m.text}</p>
           </div>
         ))}
@@ -731,13 +764,137 @@ function ChatDock({ matchId, userId, username, isAdmin, isParticipant, matchStat
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// §6b — DISPUTE PANEL
+// ═══════════════════════════════════════════════════════════════════════════
+
+function DisputePanel({ dispute, match, players, userId, isAdmin, isParticipant, onDone }) {
+  const toast = useToast();
+  const [proofUrl, setProofUrl] = useState("");
+  const [proofNotes, setProofNotes] = useState("");
+  const [proofFile, setProofFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [awardWinner, setAwardWinner] = useState(players[0]?.id || "");
+  const [awardNote, setAwardNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const isAssignedAdmin = isAdmin && dispute.assigned_admin_id === userId;
+  const canAward = isAssignedAdmin || (isAdmin && !dispute.assigned_admin_id);
+
+  async function handleSubmitProof() {
+    let url = proofUrl.trim();
+    if (proofFile) {
+      setUploading(true);
+      const { url: uploaded, error } = await uploadEvidence(match.id, userId, proofFile);
+      setUploading(false);
+      if (error) return toast.error("Upload failed: " + error);
+      url = uploaded;
+    }
+    if (!url) return toast.error("Provide a proof URL or upload a file.");
+    setBusy(true);
+    const res = await submitDisputeProof(match.id, url, proofNotes.trim());
+    setBusy(false);
+    if (res.error) return toast.error(res.error);
+    toast.success("Proof submitted.");
+    setProofUrl(""); setProofNotes(""); setProofFile(null);
+    onDone();
+  }
+
+  async function handleAward() {
+    if (!awardWinner) return toast.error("Select a winner.");
+    setBusy(true);
+    const res = await adminAwardMatch(match.id, awardWinner, awardNote.trim());
+    setBusy(false);
+    if (res.error) return toast.error(res.error);
+    toast.success("Match settled. Winner awarded.");
+    onDone();
+  }
+
+  return (
+    <section className="roomCard mrDisputePanel">
+      <div className="mrDisputeHead">
+        <Scale size={18} />
+        <h3>Dispute in progress</h3>
+        <span className="roomStatus s-disputed">Under review</span>
+      </div>
+
+      <div className="mrDisputeInfo">
+        <div className="mrDisputeRow">
+          <span className="mrDisputeLabel">Opened by</span>
+          <span>{dispute.opened_by_name}</span>
+        </div>
+        <div className="mrDisputeRow">
+          <span className="mrDisputeLabel">Reason</span>
+          <span>{dispute.reason}</span>
+        </div>
+        {dispute.evidence_url && (
+          <div className="mrDisputeRow">
+            <span className="mrDisputeLabel">Evidence</span>
+            <a href={dispute.evidence_url} target="_blank" rel="noopener noreferrer" className="mrDisputeLink">
+              <LinkIcon size={12} /> View evidence
+            </a>
+          </div>
+        )}
+        <div className="mrDisputeRow">
+          <span className="mrDisputeLabel">Assigned admin</span>
+          <span className="mrDisputeAdmin">{dispute.assigned_admin_name || "Pending assignment"}</span>
+        </div>
+      </div>
+
+      {/* Proof submission — participants only */}
+      {isParticipant && (
+        <div className="mrDisputeProof">
+          <h4>Submit proof</h4>
+          <div className="evidenceInputGroup">
+            <input className="field" value={proofUrl} onChange={(e) => { setProofUrl(e.target.value); setProofFile(null); }} placeholder="Paste VOD / clip URL" disabled={!!proofFile} />
+            <span className="evidenceOr">or</span>
+            <label className="btn btn-ghost sm evidenceUploadBtn">
+              <Paperclip size={14} /> {proofFile ? proofFile.name.slice(0, 20) : "Upload"}
+              <input type="file" accept="video/*,image/*" style={{ display: "none" }} onChange={(e) => { setProofFile(e.target.files?.[0] || null); setProofUrl(""); }} />
+            </label>
+            {proofFile && <button className="btn btn-ghost sm" onClick={() => setProofFile(null)}><X size={12} /></button>}
+          </div>
+          <input className="field" value={proofNotes} onChange={(e) => setProofNotes(e.target.value)} placeholder="Notes (optional)" style={{ marginTop: 6 }} />
+          <Button variant="primary" className="sm" loading={busy || uploading} onClick={handleSubmitProof} style={{ marginTop: 8 }}>
+            <Upload size={14} /> Submit proof
+          </Button>
+        </div>
+      )}
+
+      {/* Admin award controls — assigned admin only */}
+      {canAward && (
+        <div className="mrDisputeAward">
+          <h4>Award winner</h4>
+          <div className="chipRow wrap">
+            {players.map((p) => (
+              <button key={p.id} className={awardWinner === p.id ? "on" : ""} onClick={() => setAwardWinner(p.id)}>
+                {p.name}
+              </button>
+            ))}
+          </div>
+          <textarea className="field area" rows={2} value={awardNote} onChange={(e) => setAwardNote(e.target.value)} placeholder="Resolution note (optional)" style={{ marginTop: 6 }} />
+          <Button variant="primary" loading={busy} onClick={handleAward} style={{ marginTop: 8 }}>
+            <Scale size={14} /> Award winner & settle
+          </Button>
+          {!isAssignedAdmin && isAdmin && (
+            <p className="modalNote" style={{ marginTop: 6, fontSize: 11 }}>You are not the assigned admin. Supervisor override active.</p>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // MODALS
 // ═══════════════════════════════════════════════════════════════════════════
 
 function ReportModal({ open, onClose, match, players, onDone, toast }) {
+  const { user } = useAuth();
   const [winner, setWinner] = useState(players[0]?.id || "");
   const [score, setScore] = useState("");
   const [evidenceUrl, setEvidenceUrl] = useState("");
+  const [evidenceFile, setEvidenceFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const mapsNeeded = mapsNeededForSeries(match.series);
@@ -750,6 +907,17 @@ function ReportModal({ open, onClose, match, players, onDone, toast }) {
   function buildScoreString() {
     if (mapsNeeded <= 1) return score;
     return mapScores.map((s, i) => `Map ${i + 1}: ${s.a || "?"}-${s.b || "?"}`).join(", ");
+  }
+
+  async function resolveEvidenceUrl() {
+    if (evidenceFile) {
+      setUploading(true);
+      const { url, error } = await uploadEvidence(match.id, user.id, evidenceFile);
+      setUploading(false);
+      if (error) { toast.error("Upload failed: " + error); return null; }
+      return url;
+    }
+    return evidenceUrl || null;
   }
 
   return (
@@ -779,13 +947,23 @@ function ReportModal({ open, onClose, match, players, onDone, toast }) {
         </>
       )}
 
-      <label className="fieldLbl" htmlFor="report-evidence">Evidence (VOD / clip URL)</label>
-      <input id="report-evidence" className="field" value={evidenceUrl} onChange={(e) => setEvidenceUrl(e.target.value)} placeholder="https://twitch.tv/videos/... or YouTube link" />
+      <label className="fieldLbl">Evidence</label>
+      <div className="evidenceInputGroup">
+        <input className="field" value={evidenceUrl} onChange={(e) => { setEvidenceUrl(e.target.value); setEvidenceFile(null); }} placeholder="Paste VOD / clip URL" disabled={!!evidenceFile} />
+        <span className="evidenceOr">or</span>
+        <label className="btn btn-ghost sm evidenceUploadBtn">
+          <Paperclip size={14} /> {evidenceFile ? evidenceFile.name.slice(0, 20) : "Upload file"}
+          <input type="file" accept="video/*,image/*" style={{ display: "none" }} onChange={(e) => { setEvidenceFile(e.target.files?.[0] || null); setEvidenceUrl(""); }} />
+        </label>
+        {evidenceFile && <button className="btn btn-ghost sm" onClick={() => setEvidenceFile(null)}><X size={12} /></button>}
+      </div>
       <p className="modalNote" style={{ marginTop: 4, fontSize: 12 }}>If your opponent doesn't respond within 2 hours, this result stands.</p>
 
-      <Button variant="primary" className="wide" loading={busy} onClick={async () => {
+      <Button variant="primary" className="wide" loading={busy || uploading} onClick={async () => {
         setBusy(true);
-        const res = await reportMatch(match.id, { winnerId: winner, score: buildScoreString(), evidenceUrl: evidenceUrl || null });
+        const finalUrl = await resolveEvidenceUrl();
+        if (evidenceFile && !finalUrl) { setBusy(false); return; }
+        const res = await reportMatch(match.id, { winnerId: winner, score: buildScoreString(), evidenceUrl: finalUrl });
         setBusy(false);
         if (res.error) return toast.error(res.error);
         toast.success("Result reported.");
@@ -796,21 +974,46 @@ function ReportModal({ open, onClose, match, players, onDone, toast }) {
 }
 
 function DisputeModal({ open, onClose, match, onDone, toast }) {
+  const { user } = useAuth();
   const [reason, setReason] = useState("");
   const [evidenceUrl, setEvidenceUrl] = useState("");
+  const [evidenceFile, setEvidenceFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  async function resolveEvidenceUrl() {
+    if (evidenceFile) {
+      setUploading(true);
+      const { url, error } = await uploadEvidence(match.id, user.id, evidenceFile);
+      setUploading(false);
+      if (error) { toast.error("Upload failed: " + error); return null; }
+      return url;
+    }
+    return evidenceUrl || null;
+  }
+
   return (
     <Modal open={open} onClose={onClose} eyebrow="CONTEST RESULT" title="Contest this match result" size="sm">
       <p className="modalNote">Our team will review both sides. Add as much detail as you can.{match.weapon_restriction ? " Include timestamps if this is a weapon-restriction forfeit claim." : ""}</p>
       <p className="modalNote">Match ticket: <b>#{match.match_number}</b></p>
       <label className="fieldLbl" htmlFor="dispute-reason">What happened?</label>
       <textarea id="dispute-reason" className="field area" rows={4} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Describe the issue..." />
-      <label className="fieldLbl" htmlFor="dispute-evidence">Evidence (VOD / clip URL)</label>
-      <input id="dispute-evidence" className="field" value={evidenceUrl} onChange={(e) => setEvidenceUrl(e.target.value)} placeholder="https://twitch.tv/videos/... or YouTube link" />
-      <Button variant="danger" className="wide" loading={busy} onClick={async () => {
+      <label className="fieldLbl">Evidence</label>
+      <div className="evidenceInputGroup">
+        <input className="field" value={evidenceUrl} onChange={(e) => { setEvidenceUrl(e.target.value); setEvidenceFile(null); }} placeholder="Paste VOD / clip URL" disabled={!!evidenceFile} />
+        <span className="evidenceOr">or</span>
+        <label className="btn btn-ghost sm evidenceUploadBtn">
+          <Paperclip size={14} /> {evidenceFile ? evidenceFile.name.slice(0, 20) : "Upload file"}
+          <input type="file" accept="video/*,image/*" style={{ display: "none" }} onChange={(e) => { setEvidenceFile(e.target.files?.[0] || null); setEvidenceUrl(""); }} />
+        </label>
+        {evidenceFile && <button className="btn btn-ghost sm" onClick={() => setEvidenceFile(null)}><X size={12} /></button>}
+      </div>
+      <Button variant="danger" className="wide" loading={busy || uploading} onClick={async () => {
         if (!reason.trim()) return toast.error("Add a reason.");
         setBusy(true);
-        const res = await openDispute(match.id, { reason, evidenceUrl: evidenceUrl || null });
+        const finalUrl = await resolveEvidenceUrl();
+        if (evidenceFile && !finalUrl) { setBusy(false); return; }
+        const res = await openDispute(match.id, { reason, evidenceUrl: finalUrl });
         setBusy(false);
         if (res.error) return toast.error(res.error);
         toast.success("Result contested. Our team will review it.");

@@ -81,6 +81,11 @@ export function gameTag(gameName) {
   return GAME_THEMES[gameName]?.tag || "COD";
 }
 
+export function mapHue(mapName, gameName) {
+  const theme = GAME_THEMES[gameName] || { h: 200, s: 50 };
+  return (theme.h + (MAP_HUE_OFFSETS[mapName] || 0) + 360) % 360;
+}
+
 // Get all unique maps for a game (pass the pools object to avoid circular import)
 export function allMapsFromPools(pools) {
   const set = new Set();

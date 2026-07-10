@@ -2,7 +2,7 @@ import { supabase } from "../lib/supabase";
 
 const MATCH_SELECT =
   "id, code, match_number, game, mode, format, region, entry, kind, status, created_by, winner_id, created_at, " +
-  "platform, skill_tier, series, weapon_restriction, host_region, host_rule, veto_status, veto, team_name, map";
+  "platform, skill_tier, series, weapon_restriction, host_region, host_rule, veto_status, veto, team_name, map, allowed_input";
 
 export async function listOpenMatches({ kind, game } = {}) {
   let q = supabase
@@ -41,7 +41,8 @@ export async function createMatch({
   game, mode, format, region, entry, kind,
   platform = "PC + Console Mixed", skillTier = "Open", series = "Best of 1",
   weaponRestriction = null, hostRule = "auto", teamId = null, map = null,
-  vetoBan = null, mapPool = null
+  vetoBan = null, mapPool = null, allowedInput = "Controller + M&K",
+  roster = null
 }) {
   const params = {
     p_game: game,
@@ -54,12 +55,14 @@ export async function createMatch({
     p_skill_tier: skillTier,
     p_series: series,
     p_weapon_restriction: weaponRestriction,
-    p_host_rule: hostRule
+    p_host_rule: hostRule,
+    p_allowed_input: allowedInput
   };
   if (teamId) params.p_team_id = teamId;
   if (map) params.p_map = map;
   if (vetoBan) params.p_veto_ban = vetoBan;
   if (mapPool) params.p_map_pool = mapPool;
+  if (roster && roster.length > 0) params.p_roster = roster;
   const { data, error } = await supabase.rpc("create_match", params);
   return { data, error: error?.message };
 }
@@ -102,9 +105,10 @@ export function subscribeToCancelRequests(matchId, onChange) {
   return () => supabase.removeChannel(channel);
 }
 
-export async function joinMatch(matchId, vetoBan) {
+export async function joinMatch(matchId, vetoBan, roster) {
   const params = { p_match: matchId };
   if (vetoBan) params.p_veto_ban = vetoBan;
+  if (roster && roster.length > 0) params.p_roster = roster;
   const { error } = await supabase.rpc("join_match", params);
   return { error: error?.message };
 }
@@ -120,10 +124,33 @@ export async function reportMatch(matchId, { winnerId, score, evidenceUrl }) {
 }
 
 export async function openDispute(matchId, { reason, evidenceUrl }) {
-  const { error } = await supabase.rpc("open_dispute", {
+  const { data, error } = await supabase.rpc("open_dispute", {
     p_match: matchId,
     p_reason: reason,
     p_evidence_url: evidenceUrl || null
+  });
+  return { data, error: error?.message };
+}
+
+export async function getMatchDispute(matchId) {
+  const { data, error } = await supabase.rpc("get_match_dispute", { p_match: matchId });
+  return { data: data?.[0] || null, error: error?.message };
+}
+
+export async function submitDisputeProof(matchId, evidenceUrl, notes) {
+  const { error } = await supabase.rpc("submit_dispute_proof", {
+    p_match: matchId,
+    p_evidence_url: evidenceUrl,
+    p_notes: notes || null
+  });
+  return { error: error?.message };
+}
+
+export async function adminAwardMatch(matchId, winnerId, note) {
+  const { error } = await supabase.rpc("admin_award_match", {
+    p_match: matchId,
+    p_winner: winnerId,
+    p_note: note || null
   });
   return { error: error?.message };
 }
