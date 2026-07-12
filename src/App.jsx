@@ -36,6 +36,7 @@ const SupportPage = lazy(() => import("./pages/SupportPage").then(m => ({ defaul
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
 const LivePage = lazy(() => import("./pages/LivePage").then(m => ({ default: m.LivePage })));
 const BettingPage = lazy(() => import("./pages/BettingPage").then(m => ({ default: m.BettingPage })));
+const LfgPage = lazy(() => import("./pages/LfgPage").then(m => ({ default: m.LfgPage })));
 
 // Admin pages — most users never hit these
 const AdminWithdrawalsPage = lazy(() => import("./pages/AdminWithdrawalsPage").then(m => ({ default: m.AdminWithdrawalsPage })));
@@ -47,6 +48,7 @@ const AdminSideBetsPage = lazy(() => import("./pages/AdminSideBetsPage").then(m 
 const AdminMatchSupportPage = lazy(() => import("./pages/AdminMatchSupportPage").then(m => ({ default: m.AdminMatchSupportPage })));
 const AdminRevenuePage = lazy(() => import("./pages/AdminRevenuePage").then(m => ({ default: m.AdminRevenuePage })));
 const AdminSeasonsPage = lazy(() => import("./pages/AdminSeasonsPage").then(m => ({ default: m.AdminSeasonsPage })));
+const AdminEscalationsPage = lazy(() => import("./pages/AdminEscalationsPage").then(m => ({ default: m.AdminEscalationsPage })));
 
 function PageSkeleton() {
   return <main className="page"><Skeleton w="40%" h={28} /><div style={{ height: 16 }} /><Skeleton h={200} r={14} /></main>;
@@ -59,7 +61,9 @@ const ROUTE_PATHS = {
   "admin-withdrawals": "/admin/withdrawals", "admin-shop": "/admin/shop",
   "admin-bans": "/admin/bans", "admin-disputes": "/admin/disputes",
   "admin-tournaments": "/admin/tournaments", "admin-sidebets": "/admin/sidebets",
-  "admin-support": "/admin/support", "admin-revenue": "/admin/revenue", "admin-seasons": "/admin/seasons",
+  lfg: "/lfg",
+  "admin-support": "/admin/support", "admin-revenue": "/admin/revenue",
+  "admin-seasons": "/admin/seasons", "admin-escalations": "/admin/escalations",
 };
 
 // Prefetch map: route name → dynamic import thunk
@@ -214,6 +218,7 @@ export function App() {
           {route.name === "tournaments" && <TournamentsPage onLogin={() => setAuthOpen(true)} onNavigate={navigate} />}
           {route.name === "betting" && <BettingPage onLogin={() => setAuthOpen(true)} />}
           {route.name === "teams" && requireAuth(<TeamsPage onNavigate={navigate} />)}
+          {route.name === "lfg" && <LfgPage onLogin={() => setAuthOpen(true)} onNavigate={navigate} />}
           {route.name === "leaderboard" && <LeaderboardPage onOpenProfile={(u) => navigate("profile", u)} />}
           {route.name === "wallet" && requireAuth(<WalletPage />)}
           {route.name === "shop" && <ShopPage onLogin={() => setAuthOpen(true)} onNavigate={navigate} />}
@@ -230,6 +235,7 @@ export function App() {
           {route.name === "admin-support" && requireAuth(<AdminMatchSupportPage onNavigate={navigate} />)}
           {route.name === "admin-revenue" && requireAuth(<AdminRevenuePage />)}
           {route.name === "admin-seasons" && requireAuth(<AdminSeasonsPage />)}
+          {route.name === "admin-escalations" && requireAuth(<AdminEscalationsPage onNavigate={navigate} />)}
           {route.name === "notifications" && requireAuth(<NotificationsPage onNavigate={navigate} />)}
           {route.name === "profile" && <ProfilePage username={route.param || profile?.username} />}
           </Suspense>
@@ -245,6 +251,7 @@ export function App() {
               <button onClick={() => navigate("tournaments")} onMouseEnter={() => prefetchRoute("tournaments")}>Tournaments</button>
               <button onClick={() => navigate("teams")} onMouseEnter={() => prefetchRoute("teams")}>Teams</button>
               <button onClick={() => navigate("leaderboard")} onMouseEnter={() => prefetchRoute("leaderboard")}>Leaderboard</button>
+              <button onClick={() => navigate("lfg")} onMouseEnter={() => prefetchRoute("lfg")}>Find Teammates</button>
             </div>
             <div className="footerCol">
               <b>Games</b>

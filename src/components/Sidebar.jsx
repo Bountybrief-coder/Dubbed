@@ -3,7 +3,7 @@ import {
   Home, Crosshair, Trophy, Users, BarChart3, Radio, ShoppingBag,
   BookOpen, Wallet, ChevronLeft, ChevronRight, Gamepad2, Shield,
   AlertTriangle, Ban, CreditCard, Swords, Gavel, DollarSign,
-  HelpCircle, FileText, Calendar
+  HelpCircle, FileText, Calendar, TicketCheck, UserSearch
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { CURRENT_GAMES, THROWBACK_GAMES } from "../utils/games";
@@ -18,6 +18,7 @@ const MAIN_NAV = [
 
 const COMMUNITY_NAV = [
   { key: "leaderboard", label: "Leaderboard", icon: BarChart3 },
+  { key: "lfg", label: "Find Teammates", icon: UserSearch },
   { key: "betting", label: "Betting", icon: Swords },
   { key: "live", label: "Live", icon: Radio },
 ];
@@ -40,6 +41,7 @@ const ADMIN_NAV = [
   { key: "admin-sidebets", label: "Side Bets", icon: Swords },
   { key: "admin-support", label: "Support", icon: Gavel },
   { key: "admin-seasons", label: "Seasons", icon: Calendar },
+  { key: "admin-escalations", label: "Escalations", icon: TicketCheck },
 ];
 
 export function Sidebar({ view, onNavigate, collapsed, onToggle, onHoverRoute, inviteCount = 0 }) {

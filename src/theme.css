@@ -1889,6 +1889,60 @@ html{scroll-behavior:smooth}
 .adminSeasonFormRow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:500px){.adminSeasonFormRow{grid-template-columns:1fr}}
 
+/* ── LFG page ── */
+.lfgControls{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.lfgFilters{display:flex;gap:8px;flex-wrap:wrap}
+.lfgSelect{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px;color:var(--fg);font-size:13px;font-weight:600;cursor:pointer;outline:none}
+.lfgSelect:focus{border-color:var(--neon)}
+.lfgGrid{display:grid;gap:12px}
+.lfgCard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 22px;display:flex;flex-direction:column;gap:12px;transition:border-color .15s}
+.lfgCard:hover{border-color:rgba(34,197,251,.3)}
+.lfgCard.mine{border-color:rgba(124,92,255,.3);background:linear-gradient(135deg,rgba(124,92,255,.04),var(--panel))}
+.lfgCardTop{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.lfgCardUser{display:flex;align-items:center;gap:10px;cursor:pointer}
+.lfgAvatar{width:38px;height:38px;border-radius:50%;border:2px solid var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--panel3);font-weight:800;font-size:12px;color:var(--muted);flex-shrink:0}
+.lfgAvatar img{width:100%;height:100%;object-fit:cover}
+.lfgCardUser b{font-size:14px;display:flex;align-items:center;gap:4px}
+.lfgRank{font-size:11px;font-weight:700;display:flex;align-items:center;gap:3px}
+.lfgCardMeta{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0}
+.lfgTime{font-size:11px;color:var(--muted);display:flex;align-items:center;gap:3px;font-weight:600}
+.lfgExpires{font-size:10px;color:var(--muted);font-weight:700;opacity:.6}
+.lfgCardTags{display:flex;gap:6px;flex-wrap:wrap}
+.lfgTag{display:flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:6px;background:var(--panel3);border:1px solid var(--line);color:var(--muted)}
+.lfgTag.game{color:var(--neon);border-color:rgba(34,197,251,.2);background:rgba(34,197,251,.06)}
+.lfgTag.mic-on{color:var(--win);border-color:rgba(62,207,110,.2);background:rgba(62,207,110,.06)}
+.lfgTag.mic-off{opacity:.5}
+.lfgMessage{font-size:13px;color:var(--fg);line-height:1.5}
+.lfgCardActions{display:flex;gap:8px}
+.lfgForm{display:flex;flex-direction:column;gap:14px}
+.lfgForm label{display:flex;flex-direction:column;gap:4px}
+.lfgForm label span{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.lfgForm select,.lfgForm textarea{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--fg);font-size:14px;font-family:inherit}
+.lfgForm select:focus,.lfgForm textarea:focus{border-color:var(--neon);outline:none}
+.lfgFormRow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.lfgMicToggle{display:flex;align-items:center;gap:6px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 14px;color:var(--muted);font-weight:700;font-size:13px;cursor:pointer;transition:all .15s}
+.lfgMicToggle.on{color:var(--win);border-color:rgba(62,207,110,.3);background:rgba(62,207,110,.06)}
+@media(max-width:500px){.lfgFormRow{grid-template-columns:1fr}.lfgControls{flex-direction:column;align-items:stretch}}
+
+/* ── Escalation strip in match room ── */
+.mrEscalation{display:flex;align-items:center;justify-content:space-between;gap:12px;background:linear-gradient(135deg,rgba(255,194,60,.06),rgba(255,194,60,.02),var(--panel));border:1px solid rgba(255,194,60,.2);border-radius:var(--radius);padding:14px 18px;margin-bottom:16px;flex-wrap:wrap}
+.mrEscInfo{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);flex:1;min-width:200px}
+.mrEscInfo svg{color:var(--gold);flex-shrink:0}
+
+/* ── Admin escalation tickets ── */
+.escList{display:flex;flex-direction:column;gap:12px}
+.escCard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px 20px;display:flex;flex-direction:column;gap:10px}
+.escHead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.escStatus{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em}
+.escUser{font-size:14px}
+.escMatch{font-size:12px;color:var(--neon);cursor:pointer;font-weight:600}
+.escMatch:hover{text-decoration:underline}
+.escEntry{display:flex;align-items:center;gap:2px;font-size:12px;color:var(--win);font-weight:700}
+.escTime{margin-left:auto;font-size:11px;color:var(--muted);font-weight:600}
+.escReason{font-size:13px;color:var(--fg);background:var(--panel2);padding:10px 14px;border-radius:8px;line-height:1.5}
+.escNotes{font-size:12px;color:var(--muted);font-style:italic}
+.escActions{display:flex;gap:8px}
+
 /* ==========================================================================
    A11y: reduced motion — kill all transforms, transitions, and animations
    ========================================================================== */

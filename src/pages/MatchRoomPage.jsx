@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Flag, AlertTriangle, Upload, ChevronLeft, Crosshair, Send, XCircle, Check, X, Gamepad2, Monitor, Tv, ExternalLink, Shield, Copy, ChevronDown, UserX, Headphones, Paperclip, Scale, Link as LinkIcon } from "lucide-react";
+import { Flag, AlertTriangle, Upload, ChevronLeft, Crosshair, Send, XCircle, Check, X, Gamepad2, Monitor, Tv, ExternalLink, Shield, Copy, ChevronDown, UserX, Headphones, Paperclip, Scale, Link as LinkIcon, TicketCheck } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import {
@@ -18,6 +18,7 @@ import { TrophyIcon } from "../components/TrophyIcon";
 import { money, shortTime } from "../utils/format";
 import { modeRule, seriesRule, formatLabel, RAKE_CONFIG, mapsForGameMode, mapsNeededForSeries, seriesLabel, pcPlayersFromPlatform, isConsoleOnlyGame, NO_SHOW_MINUTES } from "../utils/games";
 import { uploadEvidence } from "../utils/storage";
+import { canEscalateMatch, escalateMatch } from "../services/escalationService";
 import { MapCard } from "../components/MapCard";
 import { mapHue as getMapHue } from "../utils/mapImages";
 import { rankForXp } from "../utils/ranks";
@@ -47,6 +48,14 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
   const [cancelReq, setCancelReq] = useState(null);
   const [trophyCounts, setTrophyCounts] = useState({});
   const [dispute, setDispute] = useState(null);
+  const [escalation, setEscalation] = useState({ can: false, reason: "" });
+  const [escOpen, setEscOpen] = useState(false);
+
+  async function loadEscalation() {
+    if (!user) return;
+    const { data } = await canEscalateMatch(matchId);
+    setEscalation(data || { can_escalate: false, reason: "" });
+  }
 
   async function loadDispute() {
     const { data } = await getMatchDispute(matchId);
@@ -88,7 +97,7 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
     setTournamentCtx(data);
   }
 
-  useEffect(() => { load(); loadCancel(); loadTournamentCtx(); loadDispute(); }, [matchId]); // eslint-disable-line
+  useEffect(() => { load(); loadCancel(); loadTournamentCtx(); loadDispute(); loadEscalation(); }, [matchId]); // eslint-disable-line
   useEffect(() => subscribeToMatch(matchId, () => { load(); loadDispute(); }), [matchId]); // eslint-disable-line
   useEffect(() => subscribeToCancelRequests(matchId, loadCancel), [matchId]); // eslint-disable-line
 
@@ -257,6 +266,19 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
         />
       )}
 
+      {/* §6c — Escalation (settled/disputed cash matches only) */}
+      {isParticipant && escalation.can_escalate && (match.status === "settled" || match.status === "disputed") && (
+        <div className="mrEscalation">
+          <div className="mrEscInfo">
+            <TicketCheck size={16} />
+            <span>Unhappy with the outcome? You can escalate this match for an admin review within 24 hours.</span>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => setEscOpen(true)}>
+            <TicketCheck size={14} /> Escalate
+          </Button>
+        </div>
+      )}
+
       {/* §7 — Chat dock */}
       {(isParticipant || isAdmin) && (
         <ChatDock
@@ -284,6 +306,7 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
       <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} match={match} players={players} onDone={load} toast={toast} />
       <DisputeModal open={disputeOpen} onClose={() => setDisputeOpen(false)} match={match} onDone={() => { load(); loadDispute(); }} toast={toast} />
       <CancelModal open={cancelOpen} onClose={() => setCancelOpen(false)} match={match} onDone={() => { loadCancel(); load(); }} toast={toast} />
+      <EscalateModal open={escOpen} onClose={() => setEscOpen(false)} matchId={matchId} onDone={() => { setEscOpen(false); loadEscalation(); }} />
     </main>
   );
 }
@@ -1098,6 +1121,43 @@ function CancelModal({ open, onClose, match, onDone, toast }) {
         toast.success("Cancel request sent.");
         onDone(); onClose();
       }}>Send cancel request</Button>
+    </Modal>
+  );
+}
+
+function EscalateModal({ open, onClose, matchId, onDone }) {
+  const toast = useToast();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  if (!open) return null;
+  return (
+    <Modal title="Escalate Match" onClose={onClose}>
+      <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
+        This creates a ticket that an admin will manually review. You can only escalate once per match, within 24 hours of settlement. Cash matches only.
+      </p>
+      <textarea
+        className="inputBlock"
+        placeholder="Explain why you're escalating this match..."
+        value={reason}
+        onChange={e => setReason(e.target.value)}
+        rows={4}
+        maxLength={1000}
+        style={{ marginBottom: 12, width: "100%", resize: "vertical" }}
+      />
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" loading={busy} disabled={!reason.trim()} onClick={async () => {
+          setBusy(true);
+          const res = await escalateMatch(matchId, reason.trim());
+          setBusy(false);
+          if (res.error) return toast.error(res.error);
+          toast.success("Escalation ticket created. An admin will review your case.");
+          onDone();
+        }}>
+          <TicketCheck size={14} /> Submit Escalation
+        </Button>
+      </div>
     </Modal>
   );
 }

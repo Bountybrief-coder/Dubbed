@@ -1,0 +1,269 @@
+import React, { useState, useCallback } from "react";
+import { Users, Plus, Mic, MicOff, Clock, Gamepad2, Monitor, Globe, X, Trash2 } from "lucide-react";
+import { useAuth } from "../hooks/useAuth.jsx";
+import { useToast } from "../hooks/useToast.jsx";
+import { useAsync } from "../hooks/useAsync";
+import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
+import { listLfgPosts, createLfgPost, fillLfgPost, deleteLfgPost } from "../services/lfgService";
+import { Button } from "../components/Button";
+import { Modal } from "../components/Modal";
+import { SkeletonRows } from "../components/Skeleton";
+import { EmptyState } from "../components/EmptyState";
+import { WagrBadge } from "../components/WagrBadge";
+import { RankStar } from "../components/RankStar";
+import { rankForXp } from "../utils/ranks";
+import { CURRENT_GAMES } from "../utils/games";
+
+const REGIONS   = ["NA", "EU"];
+const PLATFORMS = ["PC", "Console"];
+
+function timeAgo(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function expiresIn(iso) {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (ms <= 0) return "expired";
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return `${m}m left`;
+  return `${Math.floor(m / 60)}h ${m % 60}m left`;
+}
+
+export function LfgPage({ onLogin, onNavigate }) {
+  const { user, profile } = useAuth();
+  const toast = useToast();
+  const [gameFilter, setGameFilter] = useState(null);
+  const [platFilter, setPlatFilter] = useState(null);
+  const [regionFilter, setRegionFilter] = useState(null);
+  const [createOpen, setCreateOpen] = useState(false);
+
+  const filters = { game: gameFilter, platform: platFilter, region: regionFilter };
+  const fetchPosts = useCallback(() => listLfgPosts(filters), [gameFilter, platFilter, regionFilter]);
+  const { data, loading, error, reload } = useAsync(fetchPosts, [gameFilter, platFilter, regionFilter]);
+  useVisibilityRefresh(reload, [gameFilter, platFilter, regionFilter]);
+
+  const posts = data || [];
+  const myPosts = posts.filter(p => p.user_id === user?.id);
+
+  async function handleFill(postId) {
+    const res = await fillLfgPost(postId);
+    if (res.error) return toast.error(res.error);
+    toast.success("Post marked as filled.");
+    reload();
+  }
+
+  async function handleDelete(postId) {
+    const res = await deleteLfgPost(postId);
+    if (res.error) return toast.error(res.error);
+    reload();
+  }
+
+  return (
+    <main className="page">
+      <div className="pageHead">
+        <div className="eyebrow">FIND TEAMMATES</div>
+        <h1>Looking for Group</h1>
+        <p className="sub">Post or browse to find players for your next match.</p>
+      </div>
+
+      {/* ── Filters + Create ── */}
+      <div className="lfgControls">
+        <div className="lfgFilters">
+          <div className="lfgFilterGroup">
+            <select className="lfgSelect" value={gameFilter || ""} onChange={e => setGameFilter(e.target.value || null)}>
+              <option value="">All Games</option>
+              {CURRENT_GAMES.map(g => <option key={g.slug} value={g.slug}>{g.label}</option>)}
+            </select>
+          </div>
+          <div className="lfgFilterGroup">
+            <select className="lfgSelect" value={platFilter || ""} onChange={e => setPlatFilter(e.target.value || null)}>
+              <option value="">All Platforms</option>
+              {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div className="lfgFilterGroup">
+            <select className="lfgSelect" value={regionFilter || ""} onChange={e => setRegionFilter(e.target.value || null)}>
+              <option value="">All Regions</option>
+              {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+        </div>
+        <Button
+          icon={Plus}
+          onClick={() => user ? setCreateOpen(true) : onLogin?.()}
+        >
+          Post LFG
+        </Button>
+      </div>
+
+      {/* ── Posts ── */}
+      {loading ? <SkeletonRows rows={5} /> : error ? (
+        <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
+      ) : posts.length === 0 ? (
+        <EmptyState icon={Users} title="No active LFG posts">
+          {gameFilter || platFilter || regionFilter
+            ? "Try removing a filter or post your own."
+            : "Be the first — post an LFG and find your squad."}
+        </EmptyState>
+      ) : (
+        <div className="lfgGrid">
+          {posts.map(post => {
+            const rank = rankForXp(post.xp || 0);
+            const isMine = user && post.user_id === user.id;
+            const gameObj = CURRENT_GAMES.find(g => g.slug === post.game);
+            return (
+              <div key={post.id} className={`lfgCard ${isMine ? "mine" : ""}`}>
+                <div className="lfgCardTop">
+                  <div className="lfgCardUser" onClick={() => onNavigate?.("profile", post.username)}>
+                    <div className="lfgAvatar" style={{ borderColor: rank.glow }}>
+                      {post.avatar_url ? <img src={post.avatar_url} alt="" /> : <span>{(post.username || "?").slice(0, 2)}</span>}
+                    </div>
+                    <div>
+                      <b>{post.username}{post.wagr_member && <WagrBadge size={12} />}</b>
+                      <div className="lfgRank" style={{ color: rank.glow }}>
+                        <RankStar rank={rank} size={14} /> {rank.name}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="lfgCardMeta">
+                    <span className="lfgTime"><Clock size={12} /> {timeAgo(post.created_at)}</span>
+                    <span className="lfgExpires">{expiresIn(post.expires_at)}</span>
+                  </div>
+                </div>
+
+                <div className="lfgCardTags">
+                  {gameObj && <span className="lfgTag game"><Gamepad2 size={12} /> {gameObj.label}</span>}
+                  {post.mode && <span className="lfgTag">{post.mode}</span>}
+                  {post.platform && <span className="lfgTag"><Monitor size={12} /> {post.platform}</span>}
+                  {post.region && <span className="lfgTag"><Globe size={12} /> {post.region}</span>}
+                  <span className="lfgTag"><Users size={12} /> {post.team_size}v{post.team_size}</span>
+                  <span className={`lfgTag ${post.mic_required ? "mic-on" : "mic-off"}`}>
+                    {post.mic_required ? <><Mic size={12} /> Mic</>: <><MicOff size={12} /> No mic</>}
+                  </span>
+                </div>
+
+                {post.message && <p className="lfgMessage">{post.message}</p>}
+
+                {isMine && (
+                  <div className="lfgCardActions">
+                    <Button size="sm" variant="primary" onClick={() => handleFill(post.id)}>Mark Filled</Button>
+                    <Button size="sm" variant="ghost" onClick={() => handleDelete(post.id)}><Trash2 size={13} /></Button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {createOpen && (
+        <CreateLfgModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => { setCreateOpen(false); reload(); }}
+          profile={profile}
+        />
+      )}
+    </main>
+  );
+}
+
+function CreateLfgModal({ onClose, onCreated, profile }) {
+  const toast = useToast();
+  const [form, setForm] = useState({
+    game: CURRENT_GAMES[0]?.slug || "bo7",
+    mode: "",
+    platform: profile?.platform || "",
+    region: profile?.region || "",
+    mic: false,
+    teamSize: "2",
+    message: "",
+  });
+  const [saving, setSaving] = useState(false);
+
+  function set(k, v) { setForm(p => ({ ...p, [k]: v })); }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.game) return toast.error("Select a game");
+    setSaving(true);
+    const res = await createLfgPost({
+      game: form.game,
+      mode: form.mode || null,
+      platform: form.platform || null,
+      region: form.region || null,
+      mic: form.mic,
+      teamSize: parseInt(form.teamSize) || 2,
+      message: form.message.trim(),
+    });
+    setSaving(false);
+    if (res.error) return toast.error(res.error);
+    toast.success("LFG post created! Expires in 4 hours.");
+    onCreated();
+  }
+
+  return (
+    <Modal title="Post LFG" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="lfgForm">
+        <label>
+          <span>Game</span>
+          <select value={form.game} onChange={e => set("game", e.target.value)}>
+            {CURRENT_GAMES.map(g => <option key={g.slug} value={g.slug}>{g.label}</option>)}
+          </select>
+        </label>
+        <div className="lfgFormRow">
+          <label>
+            <span>Platform</span>
+            <select value={form.platform} onChange={e => set("platform", e.target.value)}>
+              <option value="">Any</option>
+              {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Region</span>
+            <select value={form.region} onChange={e => set("region", e.target.value)}>
+              <option value="">Any</option>
+              {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="lfgFormRow">
+          <label>
+            <span>Team Size</span>
+            <select value={form.teamSize} onChange={e => set("teamSize", e.target.value)}>
+              <option value="1">1v1</option>
+              <option value="2">2v2</option>
+              <option value="3">3v3</option>
+              <option value="4">4v4</option>
+            </select>
+          </label>
+          <label className="lfgMicLabel">
+            <span>Mic Required</span>
+            <button type="button" className={`lfgMicToggle ${form.mic ? "on" : ""}`} onClick={() => set("mic", !form.mic)}>
+              {form.mic ? <><Mic size={14} /> Yes</> : <><MicOff size={14} /> No</>}
+            </button>
+          </label>
+        </div>
+        <label>
+          <span>Message (optional)</span>
+          <textarea
+            value={form.message}
+            onChange={e => set("message", e.target.value)}
+            placeholder="Looking for cracked teammates for ranked 8s..."
+            maxLength={280}
+            rows={3}
+          />
+        </label>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+          <Button variant="ghost" onClick={onClose} type="button">Cancel</Button>
+          <Button type="submit" loading={saving}>Post LFG</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
