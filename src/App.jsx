@@ -46,6 +46,7 @@ const AdminTournamentsPage = lazy(() => import("./pages/AdminTournamentsPage").t
 const AdminSideBetsPage = lazy(() => import("./pages/AdminSideBetsPage").then(m => ({ default: m.AdminSideBetsPage })));
 const AdminMatchSupportPage = lazy(() => import("./pages/AdminMatchSupportPage").then(m => ({ default: m.AdminMatchSupportPage })));
 const AdminRevenuePage = lazy(() => import("./pages/AdminRevenuePage").then(m => ({ default: m.AdminRevenuePage })));
+const AdminSeasonsPage = lazy(() => import("./pages/AdminSeasonsPage").then(m => ({ default: m.AdminSeasonsPage })));
 
 function PageSkeleton() {
   return <main className="page"><Skeleton w="40%" h={28} /><div style={{ height: 16 }} /><Skeleton h={200} r={14} /></main>;
@@ -58,7 +59,7 @@ const ROUTE_PATHS = {
   "admin-withdrawals": "/admin/withdrawals", "admin-shop": "/admin/shop",
   "admin-bans": "/admin/bans", "admin-disputes": "/admin/disputes",
   "admin-tournaments": "/admin/tournaments", "admin-sidebets": "/admin/sidebets",
-  "admin-support": "/admin/support", "admin-revenue": "/admin/revenue",
+  "admin-support": "/admin/support", "admin-revenue": "/admin/revenue", "admin-seasons": "/admin/seasons",
 };
 
 // Prefetch map: route name → dynamic import thunk
@@ -228,6 +229,7 @@ export function App() {
           {route.name === "admin-sidebets" && requireAuth(<AdminSideBetsPage />)}
           {route.name === "admin-support" && requireAuth(<AdminMatchSupportPage onNavigate={navigate} />)}
           {route.name === "admin-revenue" && requireAuth(<AdminRevenuePage />)}
+          {route.name === "admin-seasons" && requireAuth(<AdminSeasonsPage />)}
           {route.name === "notifications" && requireAuth(<NotificationsPage onNavigate={navigate} />)}
           {route.name === "profile" && <ProfilePage username={route.param || profile?.username} />}
           </Suspense>

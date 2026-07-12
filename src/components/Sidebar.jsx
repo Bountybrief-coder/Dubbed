@@ -3,7 +3,7 @@ import {
   Home, Crosshair, Trophy, Users, BarChart3, Radio, ShoppingBag,
   BookOpen, Wallet, ChevronLeft, ChevronRight, Gamepad2, Shield,
   AlertTriangle, Ban, CreditCard, Swords, Gavel, DollarSign,
-  HelpCircle, FileText
+  HelpCircle, FileText, Calendar
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { CURRENT_GAMES, THROWBACK_GAMES } from "../utils/games";
@@ -39,6 +39,7 @@ const ADMIN_NAV = [
   { key: "admin-tournaments", label: "Tournaments", icon: Trophy },
   { key: "admin-sidebets", label: "Side Bets", icon: Swords },
   { key: "admin-support", label: "Support", icon: Gavel },
+  { key: "admin-seasons", label: "Seasons", icon: Calendar },
 ];
 
 export function Sidebar({ view, onNavigate, collapsed, onToggle, onHoverRoute, inviteCount = 0 }) {

@@ -1,9 +1,10 @@
 import React, { useState, useRef, useCallback } from "react";
-import { Trophy, Crown, Flame, TrendingUp, DollarSign, Percent, Filter, ChevronRight } from "lucide-react";
+import { Trophy, Crown, Flame, TrendingUp, DollarSign, Percent, Filter, ChevronRight, Calendar } from "lucide-react";
 import { useAsync, useCountdown } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { getLeaderboard, getMyRank, getWeeklyRewards, getTimedLeaderboard, getMyTimedRank } from "../services/leaderboardService";
+import { getCurrentSeason, getSeasonLeaderboard, getMySeasonRank, listSeasons } from "../services/seasonService";
 import { SkeletonRows } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
 import { RankStar } from "../components/RankStar";
@@ -20,6 +21,7 @@ const BOARDS = [
 
 const SCOPES = [
   { key: "alltime", label: "All-Time" },
+  { key: "season",  label: "Season" },
   { key: "30d",     label: "30 Days" },
   { key: "7d",      label: "7 Days" },
 ];
@@ -81,27 +83,39 @@ export function LeaderboardPage({ onOpenProfile }) {
   const youRowRef = useRef(null);
 
   const weeklyCountdown = useCountdown(nextSunday());
+  const { data: currentSeason } = useAsync(() => getCurrentSeason(), []);
+  const { data: allSeasons } = useAsync(() => listSeasons(), []);
+  const [selectedSeasonId, setSelectedSeasonId] = useState(null);
+  const activeSeason = currentSeason || null;
+  const seasonId = selectedSeasonId || activeSeason?.id;
+
   const filters = { region, platform };
   const isTimed = scope === "7d" || scope === "30d";
-  const boardMetric = isTimed && metric === "streak" ? "xp" : metric;
+  const isSeason = scope === "season";
+  const boardMetric = (isTimed || isSeason) && metric === "streak" ? "xp" : metric;
   const since = isTimed ? sinceDate(scope) : null;
   const fetchBoard = useCallback(
-    () => isTimed
-      ? getTimedLeaderboard(boardMetric, since, filters)
-      : getLeaderboard(boardMetric, filters),
-    [boardMetric, region, platform, scope]
+    () => {
+      if (isSeason && seasonId) return getSeasonLeaderboard(seasonId, boardMetric, filters);
+      if (isTimed) return getTimedLeaderboard(boardMetric, since, filters);
+      return getLeaderboard(boardMetric, filters);
+    },
+    [boardMetric, region, platform, scope, seasonId]
   );
-  const { data, loading, error, reload } = useAsync(fetchBoard, [boardMetric, region, platform, scope]);
+  const { data, loading, error, reload } = useAsync(fetchBoard, [boardMetric, region, platform, scope, seasonId]);
 
   const fetchMyRank = useCallback(
-    () => me
-      ? (isTimed ? getMyTimedRank(boardMetric, since, filters) : getMyRank(boardMetric, filters))
-      : Promise.resolve({ data: null }),
-    [boardMetric, region, platform, me?.id, scope]
+    () => {
+      if (!me) return Promise.resolve({ data: null });
+      if (isSeason && seasonId) return getMySeasonRank(seasonId, boardMetric);
+      if (isTimed) return getMyTimedRank(boardMetric, since, filters);
+      return getMyRank(boardMetric, filters);
+    },
+    [boardMetric, region, platform, me?.id, scope, seasonId]
   );
-  const { data: myRankData } = useAsync(fetchMyRank, [boardMetric, region, platform, me?.id, scope]);
+  const { data: myRankData } = useAsync(fetchMyRank, [boardMetric, region, platform, me?.id, scope, seasonId]);
 
-  useVisibilityRefresh(reload, [boardMetric, region, platform, scope]);
+  useVisibilityRefresh(reload, [boardMetric, region, platform, scope, seasonId]);
 
   const rows = data || [];
   const topVal = rows[0];
@@ -115,7 +129,7 @@ export function LeaderboardPage({ onOpenProfile }) {
   return (
     <main className="page">
       <div className="pageHead">
-        <div className="eyebrow">SEASON RANKINGS</div>
+        <div className="eyebrow">{activeSeason ? activeSeason.name.toUpperCase() : "RANKINGS"}</div>
         <h1>Leaderboard</h1>
         <p className="sub">Compete, climb, get rewarded. Top weekly players earn credits.</p>
       </div>
@@ -193,6 +207,17 @@ export function LeaderboardPage({ onOpenProfile }) {
       {/* ── Players of the Week ── */}
       <PlayersOfTheWeek />
 
+      {/* ── Season banner ── */}
+      {isSeason && activeSeason && (
+        <SeasonBanner season={activeSeason} allSeasons={allSeasons || []} selectedId={seasonId} onSelectSeason={setSelectedSeasonId} />
+      )}
+      {isSeason && !activeSeason && (
+        <div className="lbWeeklyBanner">
+          <Calendar size={14} />
+          <span>No active season right now. Check back soon!</span>
+        </div>
+      )}
+
       {/* ── Timed info banner ── */}
       {isTimed && (
         <div className="lbWeeklyBanner">
@@ -216,14 +241,21 @@ export function LeaderboardPage({ onOpenProfile }) {
       ) : error ? (
         <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : rows.length === 0 ? (
-        <EmptyState icon={Trophy} title={isTimed ? `No matches in the last ${scope === "7d" ? "7 days" : "30 days"}` : boardMetric === "winpct" ? "No players with 10+ matches yet" : "No ranked players yet"}>
-          {isTimed
-            ? scope === "7d"
-              ? "Play a match this week to get on the board. Top 3 earn credits every Monday."
-              : "No match activity in the last 30 days. Play a match to appear here."
-            : boardMetric === "winpct"
-              ? "Play at least 10 matches to qualify for the Win % board."
-              : "Play a match to get on the board."}
+        <EmptyState icon={Trophy} title={
+          isSeason ? "No season activity yet"
+          : isTimed ? `No matches in the last ${scope === "7d" ? "7 days" : "30 days"}`
+          : boardMetric === "winpct" ? "No players with 10+ matches yet"
+          : "No ranked players yet"
+        }>
+          {isSeason
+            ? "Play matches during the season to climb the standings and qualify for playoffs."
+            : isTimed
+              ? scope === "7d"
+                ? "Play a match this week to get on the board. Top 3 earn credits every Monday."
+                : "No match activity in the last 30 days. Play a match to appear here."
+              : boardMetric === "winpct"
+                ? "Play at least 10 matches to qualify for the Win % board."
+                : "Play a match to get on the board."}
         </EmptyState>
       ) : (
         <>
@@ -368,6 +400,64 @@ function YouAnchor({ me, metric, myRankPos, myIdx, rows, onScroll, onOpenProfile
           Jump to row
         </button>
       )}
+    </div>
+  );
+}
+
+/* ── Season Banner ── */
+function SeasonBanner({ season, allSeasons, selectedId, onSelectSeason }) {
+  const isViewing = selectedId && selectedId !== season.id;
+  const viewedSeason = isViewing ? allSeasons.find(s => s.id === selectedId) : season;
+  const pastSeasons = allSeasons.filter(s => s.status === "completed");
+
+  return (
+    <div className="seasonBanner">
+      <div className="seasonBannerTop">
+        <Calendar size={16} />
+        <div className="seasonBannerInfo">
+          <b>{viewedSeason?.name || season.name}</b>
+          {viewedSeason && (
+            <span className="seasonDates">
+              {new Date(viewedSeason.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              {" — "}
+              {new Date(viewedSeason.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </span>
+          )}
+        </div>
+        {!isViewing && season.status === "active" && (
+          <span className="seasonDaysLeft">
+            {season.days_remaining}d left
+          </span>
+        )}
+        {isViewing && viewedSeason?.status === "completed" && (
+          <span className="seasonCompleted">Completed</span>
+        )}
+      </div>
+
+      {!isViewing && season.status === "active" && (
+        <div className="seasonProgress">
+          <div className="seasonProgressBar">
+            <div className="seasonProgressFill" style={{ width: `${season.progress_pct}%` }} />
+          </div>
+          <span className="seasonProgressLabel">{Math.round(season.progress_pct)}%</span>
+        </div>
+      )}
+
+      <div className="seasonBannerBottom">
+        <span className="seasonQualify">Top {season.playoff_size} qualify for playoffs</span>
+        {pastSeasons.length > 0 && (
+          <select
+            className="seasonPicker"
+            value={selectedId || season.id}
+            onChange={(e) => onSelectSeason(e.target.value === season.id ? null : e.target.value)}
+          >
+            {season.status === "active" && <option value={season.id}>{season.name} (Current)</option>}
+            {pastSeasons.map(s => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
     </div>
   );
 }

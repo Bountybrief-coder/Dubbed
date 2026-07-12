@@ -474,6 +474,24 @@ select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .lbPotwAvatar{width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,194,60,.3);overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--panel3);font-weight:800;font-size:11px;color:var(--muted)}
 .lbPotwAvatar img{width:100%;height:100%;object-fit:cover}
 .lbPotwCredits{color:var(--win);font-weight:800;font-size:13px}
+/* ── season banner ── */
+.seasonBanner{background:linear-gradient(135deg,rgba(124,92,255,.08),rgba(124,92,255,.02),var(--panel));border:1px solid rgba(124,92,255,.25);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;display:flex;flex-direction:column;gap:10px}
+.seasonBannerTop{display:flex;align-items:center;gap:10px;color:var(--violet)}
+.seasonBannerInfo{display:flex;flex-direction:column;gap:2px;flex:1}
+.seasonBannerInfo b{color:var(--fg);font-size:14px}
+.seasonDates{font-size:11px;color:var(--muted);font-weight:600}
+.seasonDaysLeft{font-size:12px;font-weight:800;color:var(--violet);background:rgba(124,92,255,.12);padding:4px 10px;border-radius:8px;white-space:nowrap}
+.seasonCompleted{font-size:11px;font-weight:800;color:var(--muted);background:var(--panel3);padding:4px 10px;border-radius:8px;text-transform:uppercase;letter-spacing:.05em}
+.seasonProgress{display:flex;align-items:center;gap:8px}
+.seasonProgressBar{flex:1;height:6px;background:var(--panel3);border-radius:3px;overflow:hidden}
+.seasonProgressFill{height:100%;background:linear-gradient(90deg,var(--violet),rgba(124,92,255,.6));border-radius:3px;transition:width .5s var(--ease-out-expo)}
+.seasonProgressLabel{font-size:11px;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums;min-width:32px;text-align:right}
+.seasonBannerBottom{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.seasonQualify{font-size:12px;font-weight:700;color:var(--muted)}
+.seasonQualify::before{content:"🏆 "}
+.seasonPicker{background:var(--panel3);border:1px solid var(--line);border-radius:8px;padding:5px 10px;color:var(--fg);font-size:12px;font-weight:700;cursor:pointer;outline:none}
+.seasonPicker:focus{border-color:var(--violet)}
+
 .lbWeeklyBanner{display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,rgba(34,197,251,.06),rgba(34,197,251,.02),var(--panel));border:1px solid rgba(34,197,251,.2);border-radius:var(--radius);padding:12px 18px;margin-bottom:20px;font-size:13px;color:var(--muted);flex-wrap:wrap}
 .lbWeeklyBanner b{color:var(--fg)}
 .lbWeeklyBanner svg{color:var(--neon);flex-shrink:0}
@@ -1850,6 +1868,26 @@ html{scroll-behavior:smooth}
 .adminAutoToggle{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:16px;flex-wrap:wrap}
 .adminAutoToggle>span:first-child{font-weight:600;font-size:14px}
 .adminAutoToggle .subtle{color:var(--muted);font-size:11px}
+
+/* ── admin seasons ── */
+.adminSeasonsList{display:flex;flex-direction:column;gap:12px}
+.adminSeasonCard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 22px;display:flex;flex-direction:column;gap:12px}
+.adminSeasonHead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.adminSeasonStatus{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;background:var(--panel3);padding:3px 10px;border-radius:6px}
+.adminSeasonName{font-size:15px;flex:1}
+.adminSeasonDates{font-size:12px;color:var(--muted);font-weight:600}
+.adminSeasonStats{display:flex;gap:20px;flex-wrap:wrap}
+.adminSeasonStat{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);font-weight:600}
+.adminSeasonStat svg{color:var(--violet)}
+.adminSeasonActions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.adminSeasonPlayoff{font-size:11px;color:var(--win);font-weight:700}
+.adminSeasonForm{display:flex;flex-direction:column;gap:14px}
+.adminSeasonForm label{display:flex;flex-direction:column;gap:4px}
+.adminSeasonForm label span{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.adminSeasonForm input,.adminSeasonForm select{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--fg);font-size:14px}
+.adminSeasonForm input:focus,.adminSeasonForm select:focus{border-color:var(--violet);outline:none}
+.adminSeasonFormRow{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:500px){.adminSeasonFormRow{grid-template-columns:1fr}}
 
 /* ==========================================================================
    A11y: reduced motion — kill all transforms, transitions, and animations
