@@ -5,8 +5,8 @@ import { getProfile } from "../services/profileService";
 
 const AuthContext = createContext(null);
 
-const BOOT_TIMEOUT = 8000;
-const FAILSAFE_TIMEOUT = 9000;
+const BOOT_TIMEOUT = 4000;
+const FAILSAFE_TIMEOUT = 5000;
 
 function withTimeout(promise, ms, label) {
   return new Promise((resolve, reject) => {
@@ -35,6 +35,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [bootError, setBootError] = useState(null);
   const cancelled = useRef(false);
+  const bootStart = useRef(Date.now());
 
   const loadProfile = useCallback(async (userId) => {
     if (!userId) { setProfile(null); setIsAdmin(false); return; }
@@ -49,9 +50,7 @@ export function AuthProvider({ children }) {
     }
 
     if (data?.banned) {
-      await auth.signOut();
-      setSession(null);
-      setProfile(null);
+      if (!cancelled.current) setProfile(data);
       setIsAdmin(false);
       return;
     }
@@ -76,6 +75,12 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     cancelled.current = false;
+    bootStart.current = Date.now();
+
+    // Quick-boot: show the app after 2s even if auth hasn't resolved
+    const quickBoot = setTimeout(() => {
+      if (!cancelled.current) setLoading(false);
+    }, 2000);
 
     // Absolute failsafe: no matter what, stop loading
     const failsafe = setTimeout(() => {
@@ -108,6 +113,7 @@ export function AuthProvider({ children }) {
         }
       } finally {
         clearTimeout(failsafe);
+        clearTimeout(quickBoot);
         if (!cancelled.current) setLoading(false);
       }
     })();
@@ -122,6 +128,7 @@ export function AuthProvider({ children }) {
     return () => {
       cancelled.current = true;
       clearTimeout(failsafe);
+      clearTimeout(quickBoot);
       unsub();
     };
   }, [loadProfile]);
@@ -137,9 +144,7 @@ export function AuthProvider({ children }) {
         { event: "UPDATE", schema: "public", table: "profiles", filter: `id=eq.${uid}` },
         (payload) => {
           if (payload.new?.banned) {
-            auth.signOut();
-            setSession(null);
-            setProfile(null);
+            setProfile(payload.new);
             setIsAdmin(false);
             return;
           }

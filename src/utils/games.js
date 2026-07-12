@@ -52,7 +52,29 @@ export const GAMES = [
     description: "Boots-on-the-ground classic. Search & Destroy and Hardpoint on CWL maps. PSN and Xbox only — no PC.",
     formats: ["1v1", "2v2", "3v3", "4v4"],
     platforms: ["PlayStation Only", "Xbox Only"],
-    modes: ["Search & Destroy", "Hardpoint", "Variant"]
+    modes: ["Search & Destroy", "Hardpoint"]
+  },
+
+  // --- THROWBACK TITLES (PS5 only) ---
+  {
+    name: "Call of Duty: Black Ops",
+    short: "BO1",
+    slug: "bo1",
+    category: "throwback",
+    description: "The original Black Ops. Competitive Search & Destroy and Hardpoint on PS5 with restricted loadouts.",
+    formats: ["1v1", "2v2", "3v3", "4v4"],
+    platforms: ["PlayStation Only"],
+    modes: ["Search & Destroy", "Hardpoint"]
+  },
+  {
+    name: "Call of Duty: Black Ops II",
+    short: "BO2",
+    slug: "bo2",
+    category: "throwback",
+    description: "Black Ops 2 throwback. Competitive Search & Destroy and Hardpoint on PS5 — strict loadout and perk restrictions.",
+    formats: ["1v1", "2v2", "3v3", "4v4"],
+    platforms: ["PlayStation Only"],
+    modes: ["Search & Destroy", "Hardpoint"]
   },
 ];
 
@@ -64,7 +86,14 @@ export const REGIONS = ["NA", "EU", "NA + EU", "Latin America", "Worldwide"];
 
 export const PLATFORMS = ["Console Only", "PC Only", "PC + Console Mixed"];
 export const SKILL_TIERS = ["Open", "Rookie Only", "Elite+", "Legend+", "Master Only"];
-export const SERIES_OPTIONS = ["Best of 1", "Best of 3", "1 and Done"];
+export const SERIES_OPTIONS = ["Best of 1", "Best of 3"];
+
+export const SERIES_LABELS = { "Best of 1": "1nD", "Best of 3": "Bo3", "1 and Done": "1nD" };
+export const seriesLabel = (s) => SERIES_LABELS[s] || s;
+export const SERIES_HELPTEXT = { "Best of 1": "One map, winner takes it", "Best of 3": "First to 2 maps" };
+
+export const INPUT_OPTIONS = ["Controller + M&K", "Controller Only"];
+export const pcPlayersFromPlatform = (p) => p === "Console Only" ? "Not Allowed" : "Allowed";
 
 export const WEAPON_RESTRICTIONS = ["None", "M15 / Dravec Only"];
 export const WEAPON_RESTRICTION_RULE =
@@ -159,6 +188,14 @@ export const GAME_MAP_POOLS = {
     "Hardpoint":        ["Ardennes Forest", "Gibraltar", "London Docks", "Sainte Marie du Mont"],
     "Variant":          ["Ardennes Forest", "Flak Tower", "Gibraltar", "London Docks", "Sainte Marie du Mont", "USS Texas"]
   },
+  "Call of Duty: Black Ops": {
+    "Search & Destroy": ["Hanoi", "Firing Range", "Grid", "Havana", "Villa"],
+    "Hardpoint":        ["Firing Range", "Grid", "Havana", "Villa", "Summit"]
+  },
+  "Call of Duty: Black Ops II": {
+    "Search & Destroy": ["Cargo", "Express", "Raid", "Slums", "Standoff"],
+    "Hardpoint":        ["Raid", "Slums", "Standoff", "Yemen", "Meltdown"]
+  },
 };
 
 export const mapsForGameMode = (game, mode) => GAME_MAP_POOLS[game]?.[mode] || [];
@@ -215,9 +252,9 @@ export const MODE_RULES = {
 export const modeRule = (mode) => MODE_RULES[mode] || "";
 
 export const SERIES_RULES = {
-  "Best of 1": "One map. Whoever wins it wins the match.",
+  "Best of 1": "1 and Done — one map, whoever wins it wins the match. No rematch.",
   "Best of 3": "First team to win 2 maps takes the match.",
-  "1 and Done": "Single map, sudden-death elimination — no rematch, no map 2."
+  "1 and Done": "1 and Done — one map, whoever wins it wins the match. No rematch."
 };
 
 export const seriesRule = (series) => SERIES_RULES[series] || "";
@@ -273,11 +310,28 @@ export const modesForGameByCategory = (gameName) => {
 // ---------------------------------------------------------------------------
 export const RAKE_CONFIG = {
   standard: 0.05,
-  wagr: 0.02,
+  wagr: 0,
   tournament: 0.02,
   sideBet: 0.05,
   minimum: 0.25,
 };
+
+export const WITHDRAWAL_FEE = {
+  percent: 0.02,
+  flat: 0.25,
+};
+
+export const calculateWithdrawalFee = (amount) => {
+  const n = Number(amount) || 0;
+  return Math.round((n * WITHDRAWAL_FEE.percent + WITHDRAWAL_FEE.flat) * 100) / 100;
+};
+
+export const calculateWithdrawalNet = (amount) => {
+  const n = Number(amount) || 0;
+  return Math.round((n - calculateWithdrawalFee(n)) * 100) / 100;
+};
+
+export const NO_SHOW_MINUTES = 5;
 
 export const calculateRake = (pot, isWagrMember = false) => {
   const rate = isWagrMember ? RAKE_CONFIG.wagr : RAKE_CONFIG.standard;
@@ -337,7 +391,9 @@ const ACTIVISION_GAMES = new Set([
   "Call of Duty: Black Ops 7", "Warzone", "Black Ops Royale",
   "Call of Duty: Modern Warfare 4",
 ]);
-const CONSOLE_ONLY_GAMES = new Set(["Call of Duty: WWII"]);
+const CONSOLE_ONLY_GAMES = new Set([
+  "Call of Duty: WWII", "Call of Duty: Black Ops", "Call of Duty: Black Ops II"
+]);
 const ACTIVISION_RE = /^\S+#\d{4,10}$/;
 
 export function requiredAccountForGame(game) {
@@ -348,6 +404,7 @@ export function requiredAccountForGame(game) {
 
 export const isConsoleOnlyGame = (game) => CONSOLE_ONLY_GAMES.has(game);
 export const WWII_PLATFORMS = ["PlayStation Only", "Xbox Only"];
+export const platformsForGame = (game) => GAMES.find((g) => g.name === game)?.platforms || null;
 
 export function checkGameEligibility(game, profile, teams, { platform, type } = {}) {
   if (!profile) return { eligible: false, reason: "Log in to play", cta: "login" };
@@ -368,10 +425,11 @@ export function checkGameEligibility(game, profile, teams, { platform, type } = 
       return { eligible: false, reason: "Link your Activision ID to play", cta: "account" };
   } else if (req === "console") {
     if (isConsoleOnlyGame(game) && platform) {
+      const gShort = shortForGame(game) || game;
       if (platform === "PlayStation Only" && !(profile.psn || "").trim())
-        return { eligible: false, reason: "Link your PSN account to play WWII on PlayStation", cta: "account" };
+        return { eligible: false, reason: `Link your PSN account to play ${gShort} on PlayStation`, cta: "account" };
       if (platform === "Xbox Only" && !(profile.xbox || "").trim())
-        return { eligible: false, reason: "Link your Xbox account to play WWII on Xbox", cta: "account" };
+        return { eligible: false, reason: `Link your Xbox account to play ${gShort} on Xbox`, cta: "account" };
     } else {
       if (!(profile.psn || "").trim() && !(profile.xbox || "").trim())
         return { eligible: false, reason: "Link an Xbox or PSN account to play", cta: "account" };
@@ -388,3 +446,114 @@ export function getEligibleTeam(game, teams, { platform, type } = {}) {
   }
   return list.find((t) => t.game === game && (!type || t.type === type));
 }
+
+// ---------------------------------------------------------------------------
+// Throwback game rulesets (Section 2 — stored as data)
+// ---------------------------------------------------------------------------
+
+export const THROWBACK_RULESETS = {
+  "Call of Duty: Black Ops": {
+    platform: "PlayStation matches run on the PS5 version only.",
+    scoring: "1nD = one map decides it; Bo3 = first to 2 maps.",
+    settings: [
+      { label: "Round Timer", value: "1:30" },
+      { label: "Defuse Time", value: "7.5s" },
+      { label: "Side Switching", value: "Every round" },
+      { label: "Round Win Limit", value: "6" },
+      { label: "Friendly Fire", value: "On" },
+      { label: "Killstreaks", value: "Disabled (Killstreak Editor → none)" },
+      { label: "Game Recording", value: "On" },
+    ],
+    maps: ["Hanoi", "Firing Range", "Grid", "Havana", "Villa"],
+    restrictions: {
+      bannedWeapons: "All shotguns, all LMGs, all sniper rifles, FN FAL, G11, M14",
+      bannedAttachments: "All under-barrel attachments, dual wield, rapid fire",
+      allowedLethals: "Frag, Semtex",
+      bannedLethals: "Everything else",
+      allowedTacticals: "Stun",
+      bannedTacticals: "Everything else",
+      equipment: "All banned",
+      allowedPerks: [
+        { slot: "Perk 1", perks: "Lightweight Pro" },
+        { slot: "Perk 2", perks: "Sleight of Hand Pro, Steady Aim Pro" },
+        { slot: "Perk 3", perks: "Marathon Pro, Ninja Pro, Tac Mask Pro" },
+      ],
+    },
+  },
+  "Call of Duty: Black Ops II": {
+    platform: "PlayStation matches run on the PS5 version only.",
+    scoring: "1nD = one map decides it; Bo3 = first to 2 maps.",
+    settings: [
+      { label: "Round Timer", value: "1:30" },
+      { label: "Round Limit", value: "6" },
+      { label: "Defuse Time", value: "7.5s" },
+      { label: "Side Switching", value: "Every round" },
+      { label: "Silent Plant", value: "On" },
+      { label: "Scorestreaks", value: "Off" },
+      { label: "In-Game Team Change", value: "Off" },
+      { label: "Dynamic Map Elements", value: "Off" },
+      { label: "3rd-Person Spectating", value: "Off" },
+      { label: "Revenge Voice", value: "Off" },
+      { label: "Battlechatter", value: "Off" },
+      { label: "Explosive Delay", value: "0s" },
+      { label: "Friendly Fire", value: "On" },
+    ],
+    maps: ["Cargo", "Express", "Raid", "Slums", "Standoff"],
+    restrictions: {
+      allowedPrimaries: "M8A1, MSMC",
+      allowedSecondary: "B23R",
+      allowedPerks: [
+        { slot: "Perk 1", perks: "Lightweight" },
+        { slot: "Perk 2", perks: "Toughness" },
+        { slot: "Perk 3", perks: "Dexterity, Extreme Conditioning, Dead Silence" },
+      ],
+      allowedLethals: "Semtex, Grenade",
+      allowedTacticals: "Concussion (max 1 — two concussions not allowed)",
+      allowedWildcards: "Perk 1/2/3 Greed, Primary Gunfighter, Secondary Gunfighter",
+      allowedAttachments: "Ballistic CPU, EOTech, Reflex, Quickdraw, Fore Grip, Adjustable Stock, Long Barrel, Extended Mag, FMJ, Laser Sight",
+    },
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Shared throwback rules (Section 3 — applies to BO1 + BO2)
+// ---------------------------------------------------------------------------
+
+export const THROWBACK_SHARED_RULES = [
+  {
+    title: "Host",
+    text: "Each map's host is shown on the match details page; the non-hosting team picks its starting side. In Bo3/Bo5 the team with more total rounds won across prior maps hosts the last map; if tied, whoever hosted map 1 hosts the decider."
+  },
+  {
+    title: "Gamertags",
+    text: "Your PSN tag must match exactly what's on your match details page. Admins may approve a mismatch in some cases (opponents notified in match chat). If a match is completed on a wrong tag, the result stands."
+  },
+  {
+    title: "Proof",
+    text: "Video only; console DVR strongly recommended. Valid proof shows the full scoreboard with gamertags and game info, legible. Outside-platform messages (Twitter, PSN DMs, etc.) don't count. No valid proof of a win risks a loss or replay."
+  },
+  {
+    title: "No-Shows / Timers",
+    text: "10 minutes from scheduled start to join or host. Live-supported: mark \"no show\" then \"request an administrator.\" Ticket-supported: submit timestamped video proof covering the wait window (per-map for multi-map series)."
+  },
+  {
+    title: "Disconnects",
+    text: "A disconnected player must be re-invited; a game can't be ended unless there's proof they can't rejoin. Ending or forcing an end without proof forfeits 1 round."
+  },
+  {
+    title: "Glitches / Exploits",
+    text: "Using a glitch forfeits the round or map by severity; if you see one, leave the next round and request an admin. Banned: plant/defuse through walls, out-of-map or wall-bounce spots, hiding your model inside objects, see-through-wall name or diamond spots, snaking, stair glitching, and ledge-peek prone spots that hide you."
+  },
+  {
+    title: "Wrong Rules",
+    text: "If the host sets wrong rules and it's proven, penalties apply (live: round forfeit; ticket: map forfeit) at admin discretion."
+  },
+  {
+    title: "Controller Adapters",
+    text: "Only the Brook Wingman is approved; any other adapter forfeits."
+  },
+  {
+    title: "Handcams",
+    text: "If enabled: must be approved by an admin in match chat before play; VODs saved after, including the full lobby with all players."
+  },
+];

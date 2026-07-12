@@ -8,7 +8,7 @@ export async function listTournaments() {
   const { data, error } = await supabase
     .from("tournaments")
     .select(`${T_SELECT}, tournament_entries(count)`)
-    .in("status", ["upcoming", "live", "completed"])
+    .in("status", ["upcoming", "live", "completed", "registration", "starting"])
     .order("starts_at", { ascending: true });
   const rows = (data || []).map((t) => ({
     ...t,
@@ -20,7 +20,7 @@ export async function listTournaments() {
 export async function getTournament(id) {
   const { data, error } = await supabase
     .from("tournaments")
-    .select(`${T_SELECT}, tournament_entries(entrant_name, user_id, paid, placed)`)
+    .select(`${T_SELECT}, tournament_entries(entrant_name, user_id, paid, placed, checked_in)`)
     .eq("id", id)
     .maybeSingle();
   return { data, error: error?.message };
@@ -75,13 +75,28 @@ export async function startTournamentMatch(tmId) {
   return { matchId: data, error: error?.message };
 }
 
-export function subscribeToTournamentMatches(tournamentId, onChange) {
+export function subscribeToTournament(tournamentId, onChange) {
   const channel = supabase
-    .channel(`tourney-matches:${tournamentId}`)
+    .channel(`tourney:${tournamentId}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "tournament_matches", filter: `tournament_id=eq.${tournamentId}` }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "tournament_entries", filter: `tournament_id=eq.${tournamentId}` }, onChange)
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "tournaments", filter: `id=eq.${tournamentId}` }, onChange)
     .subscribe();
   return () => supabase.removeChannel(channel);
+}
+
+export const subscribeToTournamentMatches = subscribeToTournament;
+
+export async function checkinTournament(tournamentId) {
+  const { error } = await supabase.rpc("checkin_tournament", { p_tournament: tournamentId });
+  return { error: error?.message };
+}
+
+export async function fundTournamentEntry(tournamentId, forUserId, entrantName, teamId = null) {
+  const params = { p_tournament: tournamentId, p_for_user: forUserId, p_entrant: entrantName };
+  if (teamId) params.p_team_id = teamId;
+  const { error } = await supabase.rpc("fund_tournament_entry", params);
+  return { error: error?.message };
 }
 
 export async function adminCreateTournament(params) {

@@ -4,7 +4,7 @@ import { sanitizeMessage } from "../utils/format";
 export async function getMessages(channel, limit = 60) {
   const { data, error } = await supabase
     .from("chat_messages")
-    .select("id, channel, user_id, username, text, kind, created_at")
+    .select("id, channel, user_id, username, text, kind, created_at, profiles(wagr_member)")
     .eq("channel", channel)
     .order("created_at", { ascending: false })
     .limit(limit);

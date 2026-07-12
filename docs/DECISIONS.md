@@ -147,6 +147,64 @@ friendly "Slow down" error to the client — never a crash.
 - Limits are constants in SQL. To change, update the `check_rate_limit`
   call in the respective RPC and re-run the SQL.
 
+## Auto-Approval Engine (Prompt Withdrawals)
+
+Withdrawals that pass all risk checks are auto-approved and the Stripe
+transfer fires immediately — no admin click needed. The admin queue only
+sees held requests that need human judgment.
+
+### Auto-approve rules (all must pass)
+
+| Check | Threshold | Reason |
+|-------|-----------|--------|
+| `withdrawal_block_reason` | null | Existing gates: disputes, unsettled bets, unverified, suspended, incomplete Stripe |
+| `stripe_payouts_enabled` | true | Can't pay out without a verified account |
+| Amount ceiling | ≤ $500 | Limits blast radius of a compromised account |
+| Account age | ≥ 7 days | New accounts always reviewed |
+| Settled matches | ≥ 3 (wins + losses) | Must have actually played |
+| First withdrawal | always held | First-ever withdrawal gets human eyes |
+| Daily rolling cap | ≤ $1,000 / 24h (all withdrawals combined) | Rate-limits rapid drain |
+| Rapid deposit→withdraw | withdrawals in 48h ≤ 50% of deposits in 48h | Chip-dump / money-laundering signal |
+| Kill switch | `app_settings.auto_payouts_enabled` = true | Admin can pause all auto-approvals instantly |
+
+If any check fails, the withdrawal stays `pending` with the specific
+reason stored in `withdrawal_requests.meta.hold_reason`.
+
+### Flow
+
+1. User calls `request_withdrawal` → funds move to `pending_balance`
+2. `auto_withdrawal_decision(withdrawal_id)` evaluates all rules
+3. If `auto_approve`: status set to `processing`, client fires `stripe-payout`
+   edge function (owner-authorized for auto-approved), Stripe Transfer
+   created, webhook marks `paid` on `transfer.created`
+4. If `hold_for_review`: stays `pending`, admin reviews in the queue
+
+### Safety
+
+- **Idempotency**: withdrawal id = Stripe idempotency key. Retries/double-triggers
+  can never double-pay.
+- **Kill switch**: `admin_toggle_auto_payouts(false)` immediately pauses all
+  auto-approvals. Every subsequent withdrawal is held for manual review.
+- **Audit trail**: every decision is logged in `withdrawal_requests.meta`
+  with `auto_approved` (bool), `auto_reason` or `hold_reason` (text).
+- **Fallback**: if the client fails to fire the edge function (tab close,
+  network error), the withdrawal stays `processing` and appears in the
+  admin queue for manual dispatch.
+- **No weakening**: auto-approval sits ON TOP of existing gates. The
+  `withdrawal_block_reason` check runs first and blocks disputes,
+  unsettled obligations, suspended accounts, unverified email, incomplete
+  Stripe onboarding — none of that is bypassed.
+
+### Compliance notes
+
+- KYC: Stripe Express handles identity verification. `stripe_payouts_enabled`
+  is only true after Stripe's own KYC clears.
+- Chargeback reserve: deposit funds are only withdrawable after the
+  existing obligation-clearing logic runs. The rapid deposit→withdraw
+  check adds a second layer.
+- Instant Payouts: not enabled in v1. Standard payouts (1–2 business days)
+  only. Can add as a toggle later (platform absorbs instant fee).
+
 ## Smoothness Extras (Section 5)
 
 ### Offline Banner
@@ -246,3 +304,27 @@ upcoming → live → completed
 upcoming → archived                     (auto: under-filled / stale)
 upcoming → live (auto-start at starts_at with >= 2 entries)
 ```
+
+## Earnings Definition (Uniform)
+
+**`earnings` = profit after rake.** This is the amount the user actually won
+beyond getting their own money back. It is the single definition used across
+all five settle functions.
+
+| Settle function | `balance` gets | `earnings` gets |
+|---|---|---|
+| `settle_match` | `v_payout` (pot − rake) | `v_payout − entry` (profit) |
+| `settle_tournament` | `v_pN` (placement prize) | `v_pN − entry` (prize − buy-in) |
+| `settle_bet` (solo) | `v_net` (gross − rake) | `v_profit − v_rake` |
+| `settle_bet_event` (pool) | `v_net` (gross − rake) | `v_profit − v_rake` |
+| `settle_bet_offer` (P2P) | `v_payout` (pot − rake) | `v_profit − v_rake` |
+
+- `balance` always gets the full spendable/withdrawable return (stake back + winnings − rake).
+- `earnings` always gets profit only (what was won minus what was risked, after rake).
+- WAGR members: rake = 0, so their earnings = full profit.
+- Void/refund: returns stake to `balance` only, **no** `earnings` change.
+- Team `earnings` in `teams` and `team_match_history` use the same profit definition.
+- `greatest(..., 0)` guards tournament placements where 2nd/3rd prize may be less than entry.
+
+This feeds the player card "Earnings" stat and the earnings leaderboard.
+A $10 entry, 2-player match with no rake: winner's balance += $20, earnings += $10.

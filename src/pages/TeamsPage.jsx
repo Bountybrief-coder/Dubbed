@@ -4,12 +4,12 @@ import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
-import { getMyTeams, getMyInvites, createTeam, inviteToTeam, acceptInvite, declineInvite, leaveTeam, disbandTeam, getTeamActiveMatches, getTeamMatchHistory, subscribeToTeamMatches } from "../services/teamService";
+import { getMyTeams, getMyInvites, createTeam, inviteToTeam, acceptInvite, declineInvite, leaveTeam, disbandTeam, getTeamActiveMatches, getTeamMatchHistory, subscribeToTeamMatches, subscribeToInvites } from "../services/teamService";
 import { Modal } from "../components/Modal";
 import { Button } from "../components/Button";
 import { SkeletonRows } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
-import { GAME_NAMES, isConsoleOnlyGame, WWII_PLATFORMS, shortForGame } from "../utils/games";
+import { GAME_NAMES, isConsoleOnlyGame, WWII_PLATFORMS, platformsForGame, shortForGame, seriesLabel } from "../utils/games";
 import { money } from "../utils/format";
 import { supabase } from "../lib/supabase";
 
@@ -21,6 +21,11 @@ export function TeamsPage({ onNavigate }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [inviteFor, setInviteFor] = useState(null);
   const [detail, setDetail] = useState(null);
+
+  useEffect(() => {
+    const unsub = subscribeToInvites(user.id, () => reloadInv());
+    return unsub;
+  }, [user.id, reloadInv]);
 
   if (detail) {
     return <TeamDetailPage team={detail} onBack={() => setDetail(null)} onNavigate={onNavigate} onReload={reload} />;
@@ -55,7 +60,9 @@ export function TeamsPage({ onNavigate }) {
       ) : error ? (
         <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : !teams || teams.length === 0 ? (
-        <EmptyState icon={Users} title="No teams yet">Create a team and invite teammates to run duos, trios or squads.</EmptyState>
+        <EmptyState icon={Users} title="No teams yet" action={
+          <Button variant="primary" onClick={() => setCreateOpen(true)}><UserPlus size={16} /> Create your first team</Button>
+        }>Squad up with your crew. Create a team, invite teammates, and compete together in matches and tournaments.</EmptyState>
       ) : (
         <div className="teamGrid2">
           {teams.map((t) => {
@@ -110,7 +117,7 @@ export function TeamsPage({ onNavigate }) {
           <>
             <label className="fieldLbl">Platform</label>
             <div className="segRow">
-              {WWII_PLATFORMS.map((p) => (
+              {(platformsForGame(game) || WWII_PLATFORMS).map((p) => (
                 <button key={p} className={platform === p ? "on" : ""} onClick={() => setPlatform(p)}>
                   {p === "PlayStation Only" ? "PSN" : "Xbox"}
                 </button>
@@ -119,7 +126,7 @@ export function TeamsPage({ onNavigate }) {
           </>
         )}
         <label className="fieldLbl">Type</label>
-        <div className="segRow"><button className={type === "xp" ? "on" : ""} onClick={() => setType("xp")}>XP</button><button className={type === "cash" ? "on" : ""} onClick={() => setType("cash")}>Cash</button></div>
+        <div className="segRow"><button className={type === "xp" ? "on" : ""} onClick={() => setType("xp")}>XP</button><button className={type === "cash" ? "on" : ""} onClick={() => setType("cash")}>Cash</button><button className={type === "tournament" ? "on" : ""} onClick={() => setType("tournament")}>Tournament</button></div>
         <Button variant="primary" className="wide" loading={busy} onClick={async () => {
           if (!name.trim()) return toast.error("Team name required.");
           setBusy(true);
@@ -338,7 +345,7 @@ function ActiveMatchCard({ match, onGo }) {
       </div>
       <div className="activeMatchMeta">
         <b>{shortForGame(m.game) || m.game}</b>
-        <small>{m.format} · {m.mode} · {m.series}</small>
+        <small>{m.format} · {m.mode} · {seriesLabel(m.series)}</small>
         <small>{m.platform} · {m.region}</small>
       </div>
       <div className="activeMatchPlayers">

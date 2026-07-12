@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { Trophy, ChevronLeft, Users, Swords, BookOpen, Crown } from "lucide-react";
+import { Trophy, ChevronLeft, Users, Swords, BookOpen, Crown, Clock, CheckCircle, AlertCircle, Info } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
-import { listTournaments, getTournament, joinTournament, pooledPrize, getTournamentBracket, adminGenerateBracket, startTournamentMatch, subscribeToTournamentMatches } from "../services/tournamentService";
+import { listTournaments, getTournament, joinTournament, fundTournamentEntry, checkinTournament, pooledPrize, getTournamentBracket, adminGenerateBracket, startTournamentMatch, subscribeToTournament } from "../services/tournamentService";
 import { getMyTeams } from "../services/teamService";
+import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { Countdown } from "../components/Countdown";
 import { Bracket } from "../components/Bracket";
 import { Button } from "../components/Button";
@@ -16,10 +17,14 @@ import { modeRule, seriesRule, shortForGame, RAKE_CONFIG } from "../utils/games"
 import bo7 from "../assets/black-ops-7.png";
 import wz from "../assets/warzone.png";
 import mw4Img from "../assets/mw4.png";
+import wwiiImg from "../assets/wwii.png";
+import bo1Img from "../assets/bo1.png";
+import bo2Img from "../assets/bo2.png";
 
 const GAME_COVERS = {
   "Call of Duty: Black Ops 7": bo7, "Warzone": wz, "Black Ops Royale": wz,
-  "Call of Duty: Modern Warfare 4": mw4Img,
+  "Call of Duty: Modern Warfare 4": mw4Img, "Call of Duty: WWII": wwiiImg,
+  "Call of Duty: Black Ops": bo1Img, "Call of Duty: Black Ops II": bo2Img,
 };
 const cover = (g) => GAME_COVERS[g] || bo7;
 
@@ -107,8 +112,8 @@ export function TournamentsPage({ onLogin, onNavigate }) {
       ) : error ? (
         <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : visible.length === 0 ? (
-        <EmptyState icon={Trophy} title={listTab === "results" ? "No recent results" : "No tournaments right now"}>
-          {listTab === "results" ? "Completed tournaments show up here." : "Check back soon. Hosted brackets appear here."}
+        <EmptyState icon={Trophy} title={listTab === "results" ? "No recent results" : "Tournaments coming soon"}>
+          {listTab === "results" ? "Completed tournaments and final standings show up here." : "Brackets with real prize pools are on the way. SND, Hardpoint, Kill Race, and BR — solo to full squads."}
         </EmptyState>
       ) : (
         <>
@@ -163,15 +168,22 @@ function JoinModal({ t, onClose, onDone, onLogin }) {
   const toast = useToast();
   const { profile, refreshProfile } = useAuth();
   const { data: teams } = useAsync(() => getMyTeams(profile.id), [profile.id]);
+  const { data: fullT } = useAsync(() => getTournament(t.id), [t.id]);
   const eligibleTeams = (teams || []).filter((x) => x.game === t.game);
   const [selectedTeamId, setSelectedTeamId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [coverUser, setCoverUser] = useState(null);
   const potNow = pooledPrize(t.entry, t.entries_count);
   const potAfter = pooledPrize(t.entry, t.entries_count + 1);
   const needsTeam = eligibleTeams.length === 0;
 
   const selectedTeam = eligibleTeams.find((x) => x.id === selectedTeamId) || eligibleTeams[0];
   const entrantName = t.format === "1v1" ? profile.username : (selectedTeam?.name || "");
+
+  const teammates = (selectedTeam?.team_members || []).filter(m => m.user_id !== profile.id);
+  const enteredIds = (fullT?.tournament_entries || t.tournament_entries || []).map(e => e.user_id);
+  const coverableTeammates = teammates.filter(m => !enteredIds.includes(m.user_id));
+  const totalCost = coverUser ? t.entry * 2 : t.entry;
 
   return (
     <Modal open onClose={onClose} eyebrow="JOIN TOURNAMENT" title={t.name} size="sm">
@@ -213,15 +225,45 @@ function JoinModal({ t, onClose, onDone, onLogin }) {
       {!needsTeam && eligibleTeams.length === 1 && (
         <p className="modalNote">Entering as <b>{selectedTeam?.name}</b></p>
       )}
-      <Button variant="primary" className="wide" disabled={needsTeam || profile.balance < t.entry} loading={busy} onClick={async () => {
+
+      {/* Section 5: Cover a teammate's entry */}
+      {t.entry > 0 && coverableTeammates.length > 0 && (
+        <div className="cmCoverSection">
+          <label className="fieldLbl"><Users size={13} /> Cover a teammate's entry</label>
+          <p className="modalNote">Pay their entry fee from your wallet. They still need a linked account and team membership.</p>
+          <div className="cmCoverList">
+            <button className={`cmCoverOption ${!coverUser ? "on" : ""}`} onClick={() => setCoverUser(null)}>
+              Just me
+            </button>
+            {coverableTeammates.map(m => (
+              <button key={m.user_id} className={`cmCoverOption ${coverUser === m.user_id ? "on" : ""}`}
+                onClick={() => setCoverUser(coverUser === m.user_id ? null : m.user_id)}>
+                Cover {m.profiles?.username || "teammate"}
+              </button>
+            ))}
+          </div>
+          {coverUser && (
+            <small className="subtle">You'll pay <b>{money(totalCost)}</b> total — {money(t.entry)} for you + {money(t.entry)} for {coverableTeammates.find(m => m.user_id === coverUser)?.profiles?.username}.</small>
+          )}
+        </div>
+      )}
+
+      <Button variant="primary" className="wide" disabled={needsTeam || profile.balance < totalCost} loading={busy} onClick={async () => {
         setBusy(true);
         const res = await joinTournament(t.id, entrantName, selectedTeam?.id);
+        if (res.error) { setBusy(false); return toast.error(res.error); }
+        if (coverUser) {
+          const coveredName = coverableTeammates.find(m => m.user_id === coverUser)?.profiles?.username || "teammate";
+          const fundRes = await fundTournamentEntry(t.id, coverUser, t.format === "1v1" ? coveredName : entrantName, selectedTeam?.id);
+          if (fundRes.error) { setBusy(false); return toast.error(`Entered, but failed to cover teammate: ${fundRes.error}`); }
+          toast.success(`Entered and covered ${coveredName}'s entry.`);
+        } else {
+          toast.success("Entered. Good luck.");
+        }
         setBusy(false);
-        if (res.error) return toast.error(res.error);
-        toast.success("Entered. Good luck.");
         refreshProfile(); onDone(); onClose();
       }}>
-        {profile.balance < t.entry ? "Insufficient balance" : `Pay ${money(t.entry)} & join`}
+        {profile.balance < totalCost ? "Insufficient balance" : coverUser ? `Pay ${money(totalCost)} & join (covering teammate)` : `Pay ${money(t.entry)} & join`}
       </Button>
     </Modal>
   );
@@ -230,8 +272,19 @@ function JoinModal({ t, onClose, onDone, onLogin }) {
 const DETAIL_TABS = [
   { id: "overview", label: "Overview", Icon: BookOpen },
   { id: "bracket", label: "Bracket", Icon: Swords },
-  { id: "teams", label: "Teams", Icon: Users },
+  { id: "participants", label: "Participants", Icon: Users },
 ];
+
+function phaseLabel(t, entryCount, started, done, full) {
+  if (done) return { text: "COMPLETED", cls: "s-settled" };
+  if (t.status === "cancelled" || t.status === "archived") return { text: "CANCELLED", cls: "s-cancelled" };
+  if (started || t.status === "live") return { text: "LIVE", cls: "s-live" };
+  if (full) return { text: "REGISTRATION FULL", cls: "s-full" };
+  const minutesLeft = (new Date(t.starts_at).getTime() - Date.now()) / 60000;
+  if (minutesLeft <= 5) return { text: "STARTING SOON", cls: "s-starting" };
+  if (entryCount >= t.capacity * 0.8) return { text: "FILLING FAST", cls: "s-filling" };
+  return { text: "REGISTRATION OPEN", cls: "" };
+}
 
 function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: parentReload }) {
   const toast = useToast();
@@ -243,18 +296,40 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
   const [joinOpen, setJoinOpen] = useState(false);
 
   const t = liveT || initialT;
-  const pz = pooledPrize(t.entry, t.tournament_entries?.length || t.entries_count || 0);
   const entryCount = t.tournament_entries?.length || t.entries_count || 0;
+  const pz = pooledPrize(t.entry, entryCount);
   const started = new Date(t.starts_at).getTime() <= Date.now();
   const done = t.status === "completed";
+  const cancelled = t.status === "cancelled" || t.status === "archived";
   const full = entryCount >= t.capacity;
+  const spotsLeft = Math.max(0, t.capacity - entryCount);
   const rounds = bracket?.rounds || [];
   const matches = bracket?.matches || [];
   const entries = t.tournament_entries || [];
+  const phase = phaseLabel(t, entryCount, started, done, full);
+  const myEntry = profile && entries.find((e) => e.user_id === profile.id);
+  const isRegistered = !!myEntry;
+  const isCheckedIn = myEntry?.checked_in === true;
+  const preStart = !done && !started && !cancelled;
+  const isFree = Number(t.entry) === 0;
+  const checkinOpen = preStart && t.starts_at &&
+    Date.now() >= new Date(t.starts_at).getTime() - 15 * 60 * 1000;
+  const [checkingIn, setCheckingIn] = useState(false);
 
   React.useEffect(() => {
-    return subscribeToTournamentMatches(initialT.id, () => { reloadBracket(); reloadT(); });
+    return subscribeToTournament(initialT.id, () => { reloadBracket(); reloadT(); });
   }, [initialT.id]); // eslint-disable-line
+
+  useVisibilityRefresh(() => { reloadT(); reloadBracket(); }, [initialT.id]);
+
+  async function doCheckin() {
+    setCheckingIn(true);
+    const res = await checkinTournament(initialT.id);
+    setCheckingIn(false);
+    if (res.error) return toast.error(res.error);
+    toast.success("Checked in. You're locked for the bracket.");
+    reloadT();
+  }
 
   async function generateBracket() {
     setBusy(true);
@@ -286,21 +361,128 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
           <div className="matchBadges">
             {t.skill_tier !== "Open" && <span className="badge accent">{t.skill_tier}</span>}
             {t.weapon_restriction && <span className="badge warn">{t.weapon_restriction}</span>}
-            <span className={`roomStatus ${done ? "s-settled" : started ? "s-live" : ""}`}>
-              {done ? "COMPLETED" : started ? "● LIVE" : "REGISTRATION"}
-            </span>
+            <span className={`roomStatus ${phase.cls}`}>{phase.text}</span>
           </div>
         </div>
         <div className="tourHeroStats">
           <div className="tourHeroStat"><small>POT</small><b className="cash">{money(pz.pot)}</b></div>
-          <div className="tourHeroStat"><small>ENTRY</small><b>{money(t.entry)}</b></div>
+          <div className="tourHeroStat"><small>ENTRY</small><b>{isFree ? "FREE" : money(t.entry)}</b></div>
           <div className="tourHeroStat"><small>TEAMS</small><b>{entryCount}/{t.capacity}</b></div>
           <div className="tourHeroStat">
             <small>STARTS</small>
-            <b>{done ? <em className="doneTag">ENDED</em> : started ? <em className="liveTag">● LIVE</em> : <Countdown to={new Date(t.starts_at).getTime()} />}</b>
+            <b>{done ? <em className="doneTag">ENDED</em> : cancelled ? <em className="doneTag">CANCELLED</em> : started ? <em className="liveTag">● LIVE</em> : <Countdown to={new Date(t.starts_at).getTime()} />}</b>
           </div>
         </div>
       </section>
+
+      {/* ── Pre-start info panel ── */}
+      {preStart && (
+        <section className="tourPreStart" aria-live="polite">
+          {/* Countdown banner */}
+          <div className="tourCountdownBanner">
+            <Clock size={18} />
+            <div className="tourCountdownInfo">
+              <small>{started ? "TOURNAMENT STARTS" : "REGISTRATION CLOSES & TOURNAMENT STARTS IN"}</small>
+              <b><Countdown to={new Date(t.starts_at).getTime()} /></b>
+            </div>
+            {spotsLeft > 0 && spotsLeft <= 4 && (
+              <span className="tourSpotsUrgent"><AlertCircle size={14} /> {spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} left</span>
+            )}
+          </div>
+
+          {/* Registered user status + check-in */}
+          {isRegistered && (
+            <div className="tourRegisteredBanner">
+              {isCheckedIn ? (
+                <><CheckCircle size={16} /> Checked in — you're locked for the bracket.</>
+              ) : checkinOpen ? (
+                <>
+                  <AlertCircle size={16} /> Check-in is open. Confirm your spot before the tournament starts or your entry will be refunded.
+                  <Button variant="primary" size="sm" loading={checkingIn} onClick={doCheckin} style={{ marginLeft: 12 }}>
+                    <CheckCircle size={14} /> Check in now
+                  </Button>
+                </>
+              ) : (
+                <><Clock size={16} /> Registered. Check-in opens 15 minutes before start.</>
+              )}
+            </div>
+          )}
+
+          {/* Key facts row */}
+          <div className="tourFactsRow">
+            <div className="tourFact"><small>GAME</small><b>{shortForGame(t.game)}</b></div>
+            <div className="tourFact"><small>FORMAT</small><b>{t.format}</b></div>
+            <div className="tourFact"><small>MODE</small><b>{t.mode}</b></div>
+            <div className="tourFact"><small>SERIES</small><b>{t.series}</b></div>
+            <div className="tourFact"><small>REGION</small><b>{t.region}</b></div>
+            <div className="tourFact"><small>PLATFORM</small><b>{t.platform}</b></div>
+            <div className="tourFact"><small>ENTRY</small><b className={isFree ? "cash" : ""}>{isFree ? "FREE" : money(t.entry)}</b></div>
+            <div className="tourFact"><small>SPOTS LEFT</small><b className={spotsLeft <= 4 ? "urgentNum" : ""}>{full ? "FULL" : spotsLeft}</b></div>
+          </div>
+
+          {/* Prize split preview */}
+          <div className="tourPrizeSplit">
+            <h4><Crown size={14} /> Prize Split</h4>
+            <div className="tourPrizeCols">
+              <div className="tourPrizeCol first">
+                <small>1ST PLACE</small>
+                <b className="cash">{money(pz.first)}</b>
+                <span>{entryCount <= 2 ? "Winner takes all" : entryCount < 8 ? "85% of pot" : "80% of pot"}</span>
+              </div>
+              {pz.second > 0 && (
+                <div className="tourPrizeCol second">
+                  <small>2ND PLACE</small>
+                  <b className="cash">{money(pz.second)}</b>
+                  <span>15% of pot</span>
+                </div>
+              )}
+              {pz.third > 0 && (
+                <div className="tourPrizeCol third">
+                  <small>3RD PLACE</small>
+                  <b className="cash">{money(pz.third)}</b>
+                  <span>5% of pot</span>
+                </div>
+              )}
+              <div className="tourPrizeCol rake">
+                <small>PLATFORM</small>
+                <b>{money(pz.houseCut)}</b>
+                <span>2% rake</span>
+              </div>
+            </div>
+            {entryCount < 8 && <small className="subtle">3rd place pays out at 8+ teams.</small>}
+          </div>
+
+          {/* Join CTA */}
+          {!isRegistered && !full && (
+            <div className="tourJoinCta">
+              <Button variant="primary" size="lg" onClick={() => profile ? setJoinOpen(true) : onLogin()}>
+                {isFree ? "Join Tournament — Free Entry" : `Join Tournament · ${money(t.entry)}`}
+              </Button>
+              {full ? null : spotsLeft <= 4 ? (
+                <small className="subtle">{spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} remaining</small>
+              ) : null}
+            </div>
+          )}
+          {!isRegistered && full && (
+            <div className="tourFullBanner">
+              <AlertCircle size={16} /> Registration is full ({t.capacity}/{t.capacity}). Check back for the next one.
+            </div>
+          )}
+
+          {/* What happens next */}
+          <div className="tourNextInfo">
+            <Info size={15} />
+            <p>When the countdown hits zero, the bracket auto-generates and your first match appears here and on your team page. Single-elimination — lose and you're out.{isFree ? " This is a free-entry WAGR tournament." : ""}</p>
+          </div>
+        </section>
+      )}
+
+      {/* Cancelled/archived state */}
+      {cancelled && (
+        <div className="tourCancelledBanner">
+          <AlertCircle size={16} /> This tournament was cancelled. Entry fees have been refunded.
+        </div>
+      )}
 
       {/* Winner banner */}
       {done && t.winner_name && (
@@ -308,13 +490,6 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
           <Trophy size={18} /> <b>{t.winner_name}</b> wins!
           {t.second_name && <span> · 2nd: {t.second_name}</span>}
           {t.third_name && <span> · 3rd: {t.third_name}</span>}
-        </div>
-      )}
-
-      {/* Join button */}
-      {!done && !started && !full && (
-        <div style={{ marginBottom: 16 }}>
-          <Button variant="primary" onClick={() => profile ? setJoinOpen(true) : onLogin()}>Join Tournament · {money(t.entry)}</Button>
         </div>
       )}
 
@@ -328,6 +503,7 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
         {DETAIL_TABS.map(({ id, label, Icon }) => (
           <button key={id} className={`tourTab ${tab === id ? "on" : ""}`} onClick={() => setTab(id)}>
             <Icon size={15} /> {label}
+            {id === "participants" && <span className="tourTabCount">{entryCount}</span>}
           </button>
         ))}
       </div>
@@ -339,13 +515,13 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
             <div className="roomCard">
               <h3><Crown size={15} /> Prize Breakdown</h3>
               <div className="breakBox">
-                <div><span>Total pot ({entryCount} teams × {money(t.entry)})</span><b className="cash">{money(pz.pot)}</b></div>
+                <div><span>Total pot ({entryCount} teams × {isFree ? "Free" : money(t.entry)})</span><b className="cash">{money(pz.pot)}</b></div>
                 <div className="total"><span>1st place{entryCount <= 2 ? " · winner takes all" : entryCount < 8 ? " · 85%" : " · 80%"}</span><b className="cash">{money(pz.first)}</b></div>
                 {pz.second > 0 && <div><span>2nd place · 15%</span><b className="cash">{money(pz.second)}</b></div>}
                 {pz.third > 0 && <div><span>3rd place · 5%</span><b className="cash">{money(pz.third)}</b></div>}
                 <div><span>Platform rake</span><b>{money(pz.houseCut)}</b></div>
               </div>
-              <small className="subtle">3rd place pays out at 8+ teams. Winner earns a gold trophy.</small>
+              <small className="subtle">{entryCount < 8 ? "3rd place pays out at 8+ teams. " : ""}Winner earns a {isFree ? "WAGR" : "gold"} trophy.</small>
             </div>
             <div className="roomCard">
               <h3>Rules</h3>
@@ -356,6 +532,7 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
                 <li>{t.platform === "PC + Console Mixed" ? "PC and console players share the lobby." : `${t.platform} only.`}</li>
                 <li>Platform rake: {RAKE_CONFIG.tournament * 100}% of the total pot.</li>
                 {t.weapon_restriction && <li>Weapon restriction: {t.weapon_restriction}.</li>}
+                <li>10-minute no-show window per match. Report via match chat.</li>
               </ul>
             </div>
           </div>
@@ -365,7 +542,11 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
       {tab === "bracket" && (
         <section className="tourTabContent">
           {rounds.length === 0 ? (
-            <EmptyState title="No bracket yet">{t.status === "upcoming" ? "The bracket is generated when the tournament starts." : "No bracket data found."}</EmptyState>
+            <EmptyState title={preStart ? "Bracket generates at start" : "No bracket yet"}>
+              {preStart
+                ? `${entryCount} team${entryCount !== 1 ? "s" : ""} registered. The bracket locks when the countdown hits zero.`
+                : "No bracket data found."}
+            </EmptyState>
           ) : (
             <Bracket
               rounds={rounds}
@@ -378,22 +559,37 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
         </section>
       )}
 
-      {tab === "teams" && (
-        <section className="tourTabContent">
+      {tab === "participants" && (
+        <section className="tourTabContent" aria-live="polite">
+          <div className="tourParticipantHeader">
+            <b>{entryCount} / {t.capacity} registered</b>
+            {preStart && spotsLeft > 0 && <span className="subtle">{spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} remaining</span>}
+          </div>
           {entries.length === 0 ? (
             <EmptyState icon={Users} title="No teams registered yet">Be the first to join.</EmptyState>
           ) : (
             <div className="tourTeamsGrid">
-              {entries.map((e, i) => (
-                <div className="tourTeamCard" key={e.user_id || i}>
-                  <div className="tourTeamRank">#{i + 1}</div>
-                  <div className="tourTeamInfo">
-                    <b>{e.entrant_name}</b>
-                    {e.placed && <span className="tourTeamPlaced">
-                      {e.placed === 1 ? "🥇 1st" : e.placed === 2 ? "🥈 2nd" : e.placed === 3 ? "🥉 3rd" : `${e.placed}th`}
-                    </span>}
+              {entries.map((e, i) => {
+                const isMe = profile && e.user_id === profile.id;
+                return (
+                  <div className={`tourTeamCard ${isMe ? "isMe" : ""}`} key={e.user_id || i}>
+                    <div className="tourTeamRank">#{i + 1}</div>
+                    <div className="tourTeamInfo">
+                      <b>{e.entrant_name}{isMe && " (you)"}</b>
+                      {e.placed && <span className="tourTeamPlaced">
+                        {e.placed === 1 ? "1st" : e.placed === 2 ? "2nd" : e.placed === 3 ? "3rd" : `${e.placed}th`}
+                      </span>}
+                    </div>
+                    <span className={`badge ${e.paid ? "accent" : ""}`}>{e.paid ? "PAID" : "PENDING"}</span>
+                    {preStart && <span className={`badge ${e.checked_in ? "accent" : ""}`}>{e.checked_in ? "CHECKED IN" : "NOT CHECKED IN"}</span>}
                   </div>
-                  <span className={`badge ${e.paid ? "accent" : ""}`}>{e.paid ? "PAID" : "PENDING"}</span>
+                );
+              })}
+              {/* Empty slots visualization */}
+              {preStart && spotsLeft > 0 && spotsLeft <= 8 && Array.from({ length: spotsLeft }).map((_, i) => (
+                <div className="tourTeamCard empty" key={`empty-${i}`}>
+                  <div className="tourTeamRank" style={{ opacity: 0.3 }}>#{entryCount + i + 1}</div>
+                  <div className="tourTeamInfo"><b style={{ opacity: 0.3 }}>Open slot</b></div>
                 </div>
               ))}
             </div>

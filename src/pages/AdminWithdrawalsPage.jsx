@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { ShieldCheck, Search, Check, X, Send, ExternalLink } from "lucide-react";
+import { ShieldCheck, Search, Check, X, Send, ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import {
-  adminListWithdrawals, adminMarkProcessing, adminApproveWithdrawal, adminRejectWithdrawal
+  adminListWithdrawals, adminMarkProcessing, adminApproveWithdrawal, adminRejectWithdrawal,
+  adminGetAutoPayoutsEnabled, adminToggleAutoPayouts
 } from "../services/walletService";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
@@ -23,6 +24,8 @@ export function AdminWithdrawalsPage() {
   const [loading, setLoading] = useState(true);
   const [rejectFor, setRejectFor] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [autoOn, setAutoOn] = useState(null);
+  const [toggling, setToggling] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -33,6 +36,7 @@ export function AdminWithdrawalsPage() {
   }, [filter]); // eslint-disable-line
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { adminGetAutoPayoutsEnabled().then(r => setAutoOn(r.enabled)); }, []);
 
   if (!isAdmin) {
     return <main className="page"><EmptyState icon={ShieldCheck} title="Admins only">You don't have access to this page.</EmptyState></main>;
@@ -64,6 +68,22 @@ export function AdminWithdrawalsPage() {
     <main className="page">
       <div className="pageHead"><div className="eyebrow">ADMIN</div><h1>Withdrawals</h1><p className="sub">Review, approve and pay out withdrawal requests. Every action is logged and reflected in the user's balance server-side.</p></div>
 
+      <div className="adminAutoToggle">
+        <span>Auto-payouts</span>
+        <Button variant={autoOn ? "primary" : "ghost"} className="sm" loading={toggling} onClick={async () => {
+          setToggling(true);
+          const next = !autoOn;
+          const res = await adminToggleAutoPayouts(next);
+          setToggling(false);
+          if (res.error) return toast.error(res.error);
+          setAutoOn(next);
+          toast.success(next ? "Auto-payouts enabled." : "Auto-payouts paused — all withdrawals need manual approval.");
+        }}>
+          {autoOn ? <><ToggleRight size={15} /> Enabled</> : <><ToggleLeft size={15} /> Paused</>}
+        </Button>
+        <small className="subtle">≤$500, trusted users auto-approved. Kill switch pauses all auto-approvals.</small>
+      </div>
+
       <div className="segRow inline">
         {FILTERS.map((f) => (
           <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>{f}</button>
@@ -90,6 +110,8 @@ export function AdminWithdrawalsPage() {
               </div>
               <div className="adminWdMeta">
                 <span>Requested {shortDate(w.created_at)}</span>
+                {w.meta?.auto_approved && <span className="statusChip s-paid" style={{ fontSize: 10 }}>auto-approved</span>}
+                {w.meta?.auto_approved === false && <span className="statusChip s-pending" style={{ fontSize: 10 }}>held: {w.meta?.hold_reason || "review"}</span>}
                 <span className={`statusChip ${w.stripe_payouts_enabled ? "s-paid" : "s-pending"}`}>Stripe {w.stripe_payouts_enabled ? "ready" : w.stripe_verification_status || "incomplete"}</span>
                 {w.suspended && <span className="statusChip s-rejected">suspended</span>}
                 {w.payout_id && <a className="txId" href={`https://dashboard.stripe.com/payouts/${w.payout_id}`} target="_blank" rel="noreferrer">{w.payout_id} <ExternalLink size={11} /></a>}

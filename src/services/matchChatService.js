@@ -4,7 +4,7 @@ import { sanitizeMessage } from "../utils/format";
 export async function getMatchMessages(matchId, limit = 100) {
   const { data, error } = await supabase
     .from("match_messages")
-    .select("id, match_id, user_id, username, text, kind, created_at")
+    .select("id, match_id, user_id, username, text, kind, created_at, profiles(wagr_member)")
     .eq("match_id", matchId)
     .order("created_at", { ascending: true })
     .limit(limit);

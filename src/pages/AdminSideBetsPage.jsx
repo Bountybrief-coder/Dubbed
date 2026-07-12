@@ -10,6 +10,7 @@ import { money, shortDate } from "../utils/format";
 import {
   getBetEvents, createBetEvent, lockBetEvent, settleBetEvent, voidBetEvent
 } from "../services/chatService";
+import { getAllOffers, settleBetOffer, voidBetOffer } from "../services/p2pBetService";
 import { supabase } from "../lib/supabase";
 
 const FILTERS = ["open", "locked", "settled", "void", "all"];
@@ -23,6 +24,7 @@ const CDL_TEAMS = [
 export function AdminSideBetsPage() {
   const { isAdmin } = useAuth();
   const toast = useToast();
+  const [mode, setMode] = useState("pool");
   const [filter, setFilter] = useState("open");
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState([]);
@@ -30,6 +32,12 @@ export function AdminSideBetsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [settleFor, setSettleFor] = useState(null);
   const [voidFor, setVoidFor] = useState(null);
+
+  // P2P state
+  const [p2pFilter, setP2pFilter] = useState("matched");
+  const [p2pRows, setP2pRows] = useState([]);
+  const [p2pLoading, setP2pLoading] = useState(false);
+  const [p2pSettleFor, setP2pSettleFor] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,7 +47,15 @@ export function AdminSideBetsPage() {
     setLoading(false);
   }, [filter]);
 
-  useEffect(() => { load(); }, [load]);
+  const loadP2p = useCallback(async () => {
+    setP2pLoading(true);
+    const status = p2pFilter === "all" ? null : p2pFilter;
+    const { data } = await getAllOffers(status);
+    setP2pRows(data);
+    setP2pLoading(false);
+  }, [p2pFilter]);
+
+  useEffect(() => { if (mode === "pool") load(); else loadP2p(); }, [mode, load, loadP2p]);
 
   if (!isAdmin) return <main className="page"><EmptyState icon={ShieldCheck} title="Admins only" /></main>;
 
@@ -48,53 +64,161 @@ export function AdminSideBetsPage() {
   );
   const openCount = rows.filter((r) => r.status === "open").length;
   const lockedCount = rows.filter((r) => r.status === "locked").length;
+  const p2pMatchedCount = p2pRows.filter((r) => r.status === "matched").length;
 
   return (
     <main className="page">
       <div className="pageHead rowHead">
         <div>
           <div className="eyebrow">ADMIN</div>
-          <h1><Dice5 size={24} /> Bet Events</h1>
+          <h1><Dice5 size={24} /> Bet Management</h1>
           <p className="sub">
-            Create betting events, lock when ready, and settle by picking the winner.
-            {lockedCount > 0 && <strong style={{ color: "var(--gold)", marginLeft: 8 }}>{lockedCount} awaiting settlement</strong>}
+            {mode === "pool" ? "Pool events: create, lock, settle." : `P2P offers: settle matched bets.`}
+            {mode === "pool" && lockedCount > 0 && <strong style={{ color: "var(--gold)", marginLeft: 8 }}>{lockedCount} awaiting settlement</strong>}
+            {mode === "p2p" && p2pMatchedCount > 0 && <strong style={{ color: "var(--gold)", marginLeft: 8 }}>{p2pMatchedCount} awaiting settlement</strong>}
           </p>
         </div>
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
-          <Plus size={16} /> New Event
-        </Button>
+        {mode === "pool" && (
+          <Button variant="primary" onClick={() => setCreateOpen(true)}>
+            <Plus size={16} /> New Event
+          </Button>
+        )}
       </div>
 
-      <div className="segRow inline">
-        {FILTERS.map((f) => (
-          <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
-            {f}{f === "open" && openCount > 0 ? ` (${openCount})` : f === "locked" && lockedCount > 0 ? ` (${lockedCount})` : ""}
-          </button>
-        ))}
+      <div className="segRow inline" style={{ marginBottom: 12 }}>
+        <button className={mode === "pool" ? "on" : ""} onClick={() => setMode("pool")}>Pool Events</button>
+        <button className={mode === "p2p" ? "on" : ""} onClick={() => setMode("p2p")}>P2P Offers{p2pMatchedCount > 0 ? ` (${p2pMatchedCount})` : ""}</button>
       </div>
 
-      <div className="navSearch adminSearch">
-        <Search size={15} />
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search events" />
-      </div>
+      {mode === "pool" && (
+        <>
+          <div className="segRow inline">
+            {FILTERS.map((f) => (
+              <button key={f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
+                {f}{f === "open" && openCount > 0 ? ` (${openCount})` : f === "locked" && lockedCount > 0 ? ` (${lockedCount})` : ""}
+              </button>
+            ))}
+          </div>
 
-      {loading ? <SkeletonRows rows={4} height={90} /> : filtered.length === 0 ? (
-        <EmptyState title="No events">Nothing matches this filter.</EmptyState>
-      ) : (
-        <div className="adminWdList">
-          {filtered.map((ev) => (
-            <EventRow key={ev.id} ev={ev} onSettle={setSettleFor} onVoid={setVoidFor} onLock={async () => {
-              const { error } = await lockBetEvent(ev.id);
-              if (error) toast.error(error); else { toast.success("Event locked."); load(); }
-            }} />
-          ))}
-        </div>
+          <div className="navSearch adminSearch">
+            <Search size={15} />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search events" />
+          </div>
+
+          {loading ? <SkeletonRows rows={4} height={90} /> : filtered.length === 0 ? (
+            <EmptyState title="No events">Nothing matches this filter.</EmptyState>
+          ) : (
+            <div className="adminWdList">
+              {filtered.map((ev) => (
+                <EventRow key={ev.id} ev={ev} onSettle={setSettleFor} onVoid={setVoidFor} onLock={async () => {
+                  const { error } = await lockBetEvent(ev.id);
+                  if (error) toast.error(error); else { toast.success("Event locked."); load(); }
+                }} />
+              ))}
+            </div>
+          )}
+
+          {createOpen && <CreateEventModal onClose={() => setCreateOpen(false)} onDone={load} toast={toast} />}
+          {settleFor && <SettleModal ev={settleFor} onClose={() => setSettleFor(null)} onDone={load} toast={toast} />}
+          {voidFor && <VoidModal ev={voidFor} onClose={() => setVoidFor(null)} onDone={load} toast={toast} />}
+        </>
       )}
 
-      {createOpen && <CreateEventModal onClose={() => setCreateOpen(false)} onDone={load} toast={toast} />}
-      {settleFor && <SettleModal ev={settleFor} onClose={() => setSettleFor(null)} onDone={load} toast={toast} />}
-      {voidFor && <VoidModal ev={voidFor} onClose={() => setVoidFor(null)} onDone={load} toast={toast} />}
+      {mode === "p2p" && (
+        <>
+          <div className="segRow inline">
+            {["matched", "open", "settled", "void", "all"].map((f) => (
+              <button key={f} className={p2pFilter === f ? "on" : ""} onClick={() => setP2pFilter(f)}>{f}</button>
+            ))}
+          </div>
+
+          {p2pLoading ? <SkeletonRows rows={4} height={90} /> : p2pRows.length === 0 ? (
+            <EmptyState title="No P2P offers">Nothing matches this filter.</EmptyState>
+          ) : (
+            <div className="adminWdList">
+              {p2pRows.map((off) => (
+                <P2POfferRow key={off.id} offer={off} onSettle={setP2pSettleFor} onVoid={async () => {
+                  const { error } = await voidBetOffer(off.id);
+                  if (error) toast.error(error); else { toast.success("Offer voided, stakes refunded."); loadP2p(); }
+                }} />
+              ))}
+            </div>
+          )}
+
+          {p2pSettleFor && <P2PSettleModal offer={p2pSettleFor} onClose={() => setP2pSettleFor(null)} onDone={loadP2p} toast={toast} />}
+        </>
+      )}
     </main>
+  );
+}
+
+function P2POfferRow({ offer, onSettle, onVoid }) {
+  return (
+    <div className="adminWdRow">
+      <div className="adminWdMain">
+        <b>{offer.event_ref}</b>
+        <span className={`statusChip ${offer.status === "open" ? "s-active" : offer.status === "matched" ? "s-pending" : offer.status === "settled" ? "s-paid" : "s-rejected"}`}>
+          {offer.status}
+        </span>
+        <span style={{ color: "var(--muted)", fontSize: 12 }}>${Number(offer.stake).toFixed(2)} each</span>
+      </div>
+      <div className="adminWdMeta">
+        <span>Creator: {offer.creator?.username || "?"} — "{offer.creator_pick}"</span>
+        {offer.acceptor?.username && <span>Acceptor: {offer.acceptor.username}</span>}
+        <span>{offer.section} · {offer.market}</span>
+        {offer.winner_pick && <span><Trophy size={11} /> Winner: {offer.winner_pick}</span>}
+      </div>
+      <div className="adminWdActions">
+        {offer.status === "matched" && (
+          <>
+            <Button variant="primary" className="sm" onClick={() => onSettle(offer)}>
+              <Award size={13} /> Settle
+            </Button>
+            <Button variant="ghost" className="sm" onClick={onVoid}>
+              <XCircle size={13} /> Void
+            </Button>
+          </>
+        )}
+        {offer.status === "open" && (
+          <Button variant="ghost" className="sm" onClick={onVoid}>
+            <XCircle size={13} /> Void
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function P2PSettleModal({ offer, onClose, onDone, toast }) {
+  const [winner, setWinner] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <Modal open onClose={onClose} eyebrow="SETTLE P2P BET" title={`Settle: ${offer.event_ref}`} size="sm">
+      <div style={{ marginBottom: 12 }}>
+        <p style={{ color: "var(--muted)", fontSize: 13 }}>
+          <strong>{offer.creator?.username}</strong> picked "{offer.creator_pick}" · <strong>{offer.acceptor?.username}</strong> took the other side.
+          <br />Pot: ${(Number(offer.stake) * 2).toFixed(2)} (each put up ${Number(offer.stake).toFixed(2)}).
+        </p>
+      </div>
+      <label className="fieldLbl">Who won?</label>
+      <div className="chipRow wrap" style={{ marginBottom: 12 }}>
+        <button className={winner === "creator" ? "on" : ""} onClick={() => setWinner("creator")}>
+          {offer.creator?.username || "Creator"} (posted)
+        </button>
+        <button className={winner === "acceptor" ? "on" : ""} onClick={() => setWinner("acceptor")}>
+          {offer.acceptor?.username || "Acceptor"}
+        </button>
+      </div>
+      <Button variant="primary" className="wide" loading={busy} disabled={!winner} onClick={async () => {
+        setBusy(true);
+        const { error } = await settleBetOffer(offer.id, winner);
+        setBusy(false);
+        if (error) return toast.error(error);
+        toast.success(`Settled! ${winner === "creator" ? offer.creator?.username : offer.acceptor?.username} wins.`);
+        onDone(); onClose();
+      }}>Settle — {winner ? (winner === "creator" ? offer.creator?.username : offer.acceptor?.username) : "..."} wins</Button>
+    </Modal>
   );
 }
 

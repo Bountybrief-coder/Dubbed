@@ -1,4 +1,5 @@
 import React from "react";
+import { THROWBACK_RULESETS, THROWBACK_SHARED_RULES } from "../utils/games";
 
 export function RulesPage() {
   return (
@@ -46,6 +47,8 @@ export function RulesPage() {
         <WarzoneRules />
         <BO7Rules />
         <WWIIRules />
+        <BO1Rules />
+        <BO2Rules />
       </div>
     </main>
   );
@@ -566,6 +569,140 @@ function WWIIRules() {
 
         <h3>Proof & Disputes</h3>
         <p>Same rules as General — video proof required, DVR recordings strongly encouraged. Full scoreboard with gamertags must be visible.</p>
+      </div>
+    </details>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function ThrowbackSharedRules() {
+  return THROWBACK_SHARED_RULES.map((r) => (
+    <div key={r.title}>
+      <h3>{r.title}</h3>
+      <p>{r.text}</p>
+    </div>
+  ));
+}
+
+function ThrowbackSettings({ ruleset }) {
+  return (
+    <table className="settingTable">
+      <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+      <tbody>
+        {ruleset.settings.map((s) => (
+          <tr key={s.label}><td>{s.label}</td><td>{s.value}</td></tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function BO1Rules() {
+  const r = THROWBACK_RULESETS["Call of Duty: Black Ops"];
+  return (
+    <details>
+      <summary>Black Ops 1 <span className="badge">Throwback · PS5 Only</span></summary>
+      <div className="ruleBody">
+        <h3>Platform</h3>
+        <p>{r.platform}</p>
+
+        <h3>Series Scoring</h3>
+        <p>{r.scoring}</p>
+
+        <h3>Gameplay Settings</h3>
+        <p>Anything not listed stays at default.</p>
+        <ThrowbackSettings ruleset={r} />
+
+        <h3>Maps (Search & Destroy)</h3>
+        <p className="tag-allowed">{r.maps.join(", ")}</p>
+
+        <h3>Restricted Items</h3>
+        <div className="restrictedGrid">
+          <div className="restrictedBox">
+            <b>Banned Weapons</b>
+            <p className="tag-banned">{r.restrictions.bannedWeapons}</p>
+          </div>
+          <div className="restrictedBox">
+            <b>Banned Attachments</b>
+            <p className="tag-banned">{r.restrictions.bannedAttachments}</p>
+          </div>
+        </div>
+
+        <p style={{ marginTop: 12 }}><b>Lethals:</b></p>
+        <ul>
+          <li className="tag-allowed">Allowed: {r.restrictions.allowedLethals}</li>
+          <li className="tag-banned">Banned: {r.restrictions.bannedLethals}</li>
+        </ul>
+
+        <p><b>Tacticals:</b></p>
+        <ul>
+          <li className="tag-allowed">Allowed: {r.restrictions.allowedTacticals}</li>
+          <li className="tag-banned">Banned: {r.restrictions.bannedTacticals}</li>
+        </ul>
+
+        <p><b>Equipment:</b> <span className="tag-banned">{r.restrictions.equipment}</span></p>
+
+        <p><b>Perks (only these allowed — rest banned):</b></p>
+        <ul>
+          {r.restrictions.allowedPerks.map((p) => (
+            <li key={p.slot} className="tag-allowed">{p.slot}: {p.perks}</li>
+          ))}
+        </ul>
+
+        <ThrowbackSharedRules />
+      </div>
+    </details>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function BO2Rules() {
+  const r = THROWBACK_RULESETS["Call of Duty: Black Ops II"];
+  return (
+    <details>
+      <summary>Black Ops 2 <span className="badge">Throwback · PS5 Only</span></summary>
+      <div className="ruleBody">
+        <h3>Platform</h3>
+        <p>{r.platform}</p>
+
+        <h3>Series Scoring</h3>
+        <p>{r.scoring}</p>
+
+        <h3>Gameplay Settings</h3>
+        <ThrowbackSettings ruleset={r} />
+
+        <h3>Maps (Search & Destroy)</h3>
+        <p className="tag-allowed">{r.maps.join(", ")}</p>
+
+        <h3>Restricted Items</h3>
+        <div className="restrictedGrid">
+          <div className="restrictedBox">
+            <b>Allowed Primaries</b>
+            <p className="tag-allowed">{r.restrictions.allowedPrimaries}</p>
+          </div>
+          <div className="restrictedBox">
+            <b>Allowed Secondary</b>
+            <p className="tag-allowed">{r.restrictions.allowedSecondary}</p>
+          </div>
+        </div>
+
+        <p style={{ marginTop: 12 }}><b>Perks (only these allowed):</b></p>
+        <ul>
+          {r.restrictions.allowedPerks.map((p) => (
+            <li key={p.slot} className="tag-allowed">{p.slot}: {p.perks}</li>
+          ))}
+        </ul>
+
+        <p><b>Lethals:</b> <span className="tag-allowed">{r.restrictions.allowedLethals}</span></p>
+        <p><b>Tacticals:</b> <span className="tag-allowed">{r.restrictions.allowedTacticals}</span></p>
+        <p><b>Wildcards:</b> <span className="tag-allowed">{r.restrictions.allowedWildcards}</span></p>
+        <p><b>Attachments:</b> <span className="tag-allowed">{r.restrictions.allowedAttachments}</span></p>
+
+        <ThrowbackSharedRules />
       </div>
     </details>
   );

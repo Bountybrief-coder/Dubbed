@@ -16,7 +16,7 @@ import { WagrBadge } from "../components/WagrBadge";
 import { RankStar } from "../components/RankStar";
 import { TrophyIcon } from "../components/TrophyIcon";
 import { money, shortTime } from "../utils/format";
-import { modeRule, seriesRule, formatLabel, RAKE_CONFIG, mapsForGameMode, mapsNeededForSeries, seriesLabel, pcPlayersFromPlatform, isConsoleOnlyGame } from "../utils/games";
+import { modeRule, seriesRule, formatLabel, RAKE_CONFIG, mapsForGameMode, mapsNeededForSeries, seriesLabel, pcPlayersFromPlatform, isConsoleOnlyGame, NO_SHOW_MINUTES } from "../utils/games";
 import { uploadEvidence } from "../utils/storage";
 import { MapCard } from "../components/MapCard";
 import { mapHue as getMapHue } from "../utils/mapImages";
@@ -220,6 +220,15 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
         showGamertags={isParticipant}
       />
 
+      {/* No-show timer */}
+      {isParticipant && match.status === "live" && !inVeto && (
+        <NoShowTimer match={match} userId={user.id} onClaim={() => {
+          openDispute(match.id, { reason: `No-show: opponent did not join within the ${NO_SHOW_MINUTES}-minute window.` });
+          toast.success("No-show claimed. Match will be reviewed.");
+          load();
+        }} />
+      )}
+
       {/* §4 — Per-map host table (step 2) */}
       <HostMapTable match={match} players={players} teamSize={teamSize} />
 
@@ -259,7 +268,7 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
           matchStatus={match.status}
           inVeto={inVeto}
           onNoShow={() => {
-            openDispute(match.id, { reason: "No-show: opponent did not join within the 10-minute window." });
+            openDispute(match.id, { reason: `No-show: opponent did not join within the ${NO_SHOW_MINUTES}-minute window.` });
             toast.success("No-show reported. An admin will review.");
           }}
           onRequestAdmin={async () => {
@@ -276,6 +285,55 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
       <DisputeModal open={disputeOpen} onClose={() => setDisputeOpen(false)} match={match} onDone={() => { load(); loadDispute(); }} toast={toast} />
       <CancelModal open={cancelOpen} onClose={() => setCancelOpen(false)} match={match} onDone={() => { loadCancel(); load(); }} toast={toast} />
     </main>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NO-SHOW TIMER
+// ═══════════════════════════════════════════════════════════════════════════
+
+function NoShowTimer({ match, userId, onClaim }) {
+  const [secsLeft, setSecsLeft] = useState(() => {
+    const start = match.accepted_at ? new Date(match.accepted_at).getTime() : Date.now();
+    const deadline = start + NO_SHOW_MINUTES * 60 * 1000;
+    return Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+  });
+
+  useEffect(() => {
+    const start = match.accepted_at ? new Date(match.accepted_at).getTime() : Date.now();
+    const deadline = start + NO_SHOW_MINUTES * 60 * 1000;
+    const tick = setInterval(() => {
+      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setSecsLeft(left);
+      if (left <= 0) clearInterval(tick);
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [match.accepted_at]);
+
+  const mins = Math.floor(secsLeft / 60);
+  const secs = secsLeft % 60;
+  const expired = secsLeft <= 0;
+  const pct = Math.max(0, Math.min(100, (secsLeft / (NO_SHOW_MINUTES * 60)) * 100));
+
+  return (
+    <section className="noShowTimer">
+      <div className="nstHead">
+        <UserX size={16} />
+        <span>{expired ? "No-show window expired" : "No-show timer"}</span>
+      </div>
+      <div className="nstBar"><div className="nstFill" style={{ width: `${pct}%` }} /></div>
+      <div className="nstRow">
+        <span className={`nstTime ${expired ? "expired" : ""}`}>
+          {expired ? "00:00" : `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`}
+        </span>
+        {expired && (
+          <button className="btn btn-warn sm" onClick={onClaim}>
+            Claim No-Show Win
+          </button>
+        )}
+      </div>
+      {!expired && <p className="nstHint">If your opponent doesn't show, you can claim a free win once this timer runs out.</p>}
+    </section>
   );
 }
 
@@ -505,6 +563,7 @@ function RulesStrip({ match }) {
             <li>Conversations outside Dubbed (DMs, Xbox/PSN messages) are not valid proof.</li>
             <li>Match ticket: <b>#{match.match_number || match.code}</b>. Reference this in any dispute.</li>
             {match.kind === "cash" && <li>Rake: {RAKE_CONFIG.standard * 100}% standard / {RAKE_CONFIG.wagr * 100}% WAGR members (min {money(RAKE_CONFIG.minimum)}).</li>}
+            <li>If your opponent doesn't show within <b>{NO_SHOW_MINUTES} minutes</b>, you can claim a no-show forfeit.</li>
             <li>If one team reports a result and the opponent does not respond within <b>2 hours</b>, the reported result stands.</li>
           </ul>
         </div>

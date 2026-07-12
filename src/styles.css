@@ -6,23 +6,23 @@
 }
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Arial,sans-serif}
 button,input{font:inherit}button{cursor:pointer}
-.topbar{position:sticky;top:0;z-index:20;height:64px;display:flex;align-items:center;gap:20px;padding:0 28px;background:#050708;border-bottom:1px solid var(--line)}
+.topbar{position:sticky;top:0;z-index:20;height:56px;display:flex;align-items:center;gap:16px;padding:0 24px;background:#050708;border-bottom:1px solid var(--line);box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .brand{background:none;border:0;color:white;font-weight:800;font-size:22px;letter-spacing:-.5px;display:flex;align-items:center;gap:9px}.brand img{height:26px;width:auto}
 .heroLogo{height:46px;width:auto;margin-bottom:18px}
 .modalLogo{height:30px;width:auto;margin-bottom:6px}
 .topbar nav{display:flex;gap:2px}.topbar nav button{background:none;border:0;color:var(--muted);padding:9px 11px;border-radius:7px;font-weight:600;text-transform:capitalize;font-size:14px}.topbar nav button.on,.topbar nav button:hover{background:var(--panel2);color:white}
-.walletBtn,.loginBtn,.joinBtn{border:1px solid var(--line);border-radius:8px;padding:9px 13px;background:var(--panel2);color:white;font-weight:700;display:flex;gap:8px;align-items:center;font-size:14px}
+.walletBtn,.loginBtn,.joinBtn{border:1px solid var(--line);border-radius:8px;padding:8px 12px;background:var(--panel2);color:white;font-weight:700;display:flex;gap:8px;align-items:center;font-size:14px}
 .walletBtn{margin-left:auto;color:var(--blue)}
 .joinBtn,.primary{background:var(--blue);border:0;color:#04141c}
-main{max-width:1240px;margin:0 auto;padding:28px}
+main.legacy{max-width:1240px;margin:0 auto;padding:28px}
 .introStrip{display:flex;justify-content:space-between;align-items:center;gap:20px;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:26px 30px;margin-bottom:22px;flex-wrap:wrap}
 .introStrip h1{font-size:30px;line-height:1.1;margin:8px 0 6px;letter-spacing:-.5px;color:white}
 .introStrip p{color:var(--muted);margin:0;font-size:15px}
 .introActions{display:flex;gap:10px;flex-shrink:0}
 .eyebrow{color:var(--blue);font-size:11px;font-weight:800;letter-spacing:.14em}
-.finderHero h1,.page h1{font-size:36px;line-height:1;margin:12px 0;letter-spacing:-1px;color:white}
+.finderHero h1{font-size:36px;line-height:1;margin:12px 0;letter-spacing:-1px;color:white}
 .finderHero p,.payModal p{color:var(--muted);font-size:15px;line-height:1.6}
-.primary,.secondary{border-radius:8px;padding:12px 17px;font-weight:700;font-size:14px}
+.primary,.secondary{border-radius:8px;padding:11px 16px;font-weight:700;font-size:14px}
 .secondary{background:var(--panel2);border:1px solid var(--line);color:#fff}
 .secondary:hover{border-color:var(--blue)}
 
@@ -48,7 +48,7 @@ main{max-width:1240px;margin:0 auto;padding:28px}
 .gameBlock{display:flex;align-items:center;gap:12px}
 .gameCover{width:56px;height:62px;border-radius:6px;background-size:cover;background-position:center;display:flex;align-items:center;justify-content:center;color:var(--blue);font-weight:700;border:1px solid #24303c}
 .gameBlock small,.rules small{display:block;color:var(--muted);margin-top:3px}
-.amount{font-size:22px;font-weight:800;color:var(--blue)}
+.amount{font-size:22px;font-weight:800;color:var(--blue);font-variant-numeric:tabular-nums;letter-spacing:-.5px}
 .rules b{font-size:14px}
 .prize{font-weight:800;color:var(--ink)}
 .support{display:flex;gap:6px;align-items:center;color:var(--blue);font-weight:600;font-size:14px}
@@ -57,7 +57,7 @@ main{max-width:1240px;margin:0 auto;padding:28px}
 .accept.small{padding:8px 12px;font-size:13px}
 
 .modalShade{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:40;display:flex;align-items:center;justify-content:center;padding:20px}
-.acceptModal,.payModal,.loginModal{position:relative;width:min(1040px,100%);background:#0a0d12;border:1px solid var(--line);border-radius:14px;padding:26px;box-shadow:var(--shadow)}
+.acceptModal,.payModal,.loginModal{position:relative;width:min(1040px,100%);background:#0a0d12;border:1px solid var(--line);border-radius:16px;padding:26px;box-shadow:0 16px 48px rgba(0,0,0,.6),0 0 0 1px rgba(34,197,251,.06)}
 .payModal,.loginModal{width:min(480px,100%)}
 .close{position:absolute;top:16px;right:16px;border:1px solid var(--line);background:var(--panel2);color:white;border-radius:8px;padding:8px}
 .acceptTop{display:flex;justify-content:space-between;gap:20px}
@@ -92,7 +92,7 @@ main{max-width:1240px;margin:0 auto;padding:28px}
 .tour h2{color:var(--blue);font-size:30px}
 .ticket,.leader{display:flex;align-items:center;gap:16px;margin:12px 0}
 .ticket p{color:var(--muted)}
-.leader b{color:var(--blue);font-size:22px}
+.leader b{color:var(--blue);font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
 .leader span{font-weight:700}
 .leader em{margin-left:auto;color:var(--blue);font-style:normal;font-weight:700}
 @media(max-width:1100px){.filterGrid{grid-template-columns:repeat(2,1fr)}}
@@ -123,7 +123,7 @@ main{max-width:1240px;margin:0 auto;padding:28px}
 .profileStats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}
 .statBox{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px}
 .statBox small{display:block;color:var(--muted);font-weight:700;font-size:12px}
-.statBox b{font-size:26px;color:white}
+.statBox b{font-size:26px;color:white;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px;margin-top:16px}
 .panel h2{margin:0 0 6px;color:white;font-size:18px}
 .rankLegendRow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:16px}
@@ -136,7 +136,7 @@ main{max-width:1240px;margin:0 auto;padding:28px}
 .xpBar{height:100%;background:var(--blue)}
 .trophySummary{display:flex;gap:14px;margin:16px 0}
 .trophySummary div{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;text-align:center}
-.trophySummary b{display:block;font-size:26px;color:var(--blue)}
+.trophySummary b{display:block;font-size:26px;color:var(--blue);font-variant-numeric:tabular-nums;letter-spacing:-.5px}
 .trophySummary span{color:var(--muted);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
 .trophyShelf{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px}
 .gbTrophy{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 14px 18px;text-align:center;position:relative}
@@ -189,7 +189,7 @@ main.completeHome section{margin-top:26px}
 .gameTile small{color:var(--muted);font-size:11px}
 .statCards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .bigStat{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-height:92px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;position:relative}
-.bigStat strong{font-size:23px;letter-spacing:-.5px;color:var(--blue);font-variant-numeric:tabular-nums}
+.bigStat strong{font-size:24px;letter-spacing:-.5px;color:var(--blue);font-variant-numeric:tabular-nums;font-weight:800}
 .bigStat span{margin-top:4px;color:var(--muted);font-size:12px;font-weight:600}
 .liveDot{position:absolute;top:10px;right:10px;font-size:9px;font-weight:800;color:var(--win);letter-spacing:.06em}
 .liveDot:before{content:"";display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--win);margin-right:4px;animation:pulse 1.4s infinite}
@@ -251,13 +251,10 @@ main.completeHome section{margin-top:26px}
 .loggedOutPanel h2{color:white;margin:4px 0 0}
 .loggedOutPanel .primary{margin-top:10px}
 
-/* LEADERBOARD */
-.lbRow{display:grid;grid-template-columns:70px 1fr 140px 90px;align-items:center;gap:16px;padding:14px 18px}
+/* LEADERBOARD — see theme.css */
 .lbName{font-weight:700}
 .leaderboardPage .table{margin-top:0}
 .challengeModal{width:min(420px,100%)}
-
-@media(max-width:920px){.lbRow{grid-template-columns:1fr}}
 
 /* COOKIE BANNER */
 .cookieBanner{position:fixed;left:20px;right:20px;bottom:20px;max-width:640px;margin:0 auto;background:#0a0d12;border:1px solid var(--line);border-radius:10px;padding:16px 18px;display:flex;align-items:center;gap:16px;box-shadow:var(--shadow);z-index:50}
@@ -273,7 +270,7 @@ main.completeHome section{margin-top:26px}
 .balanceChip{margin-left:auto;display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 13px;color:var(--blue)}
 .balanceChip .balDot{width:24px;height:24px;border-radius:7px;background:var(--blue-dim);display:flex;align-items:center;justify-content:center;color:var(--blue)}
 .balanceChip small{display:block;font-size:9px;font-weight:800;letter-spacing:.1em;color:var(--muted)}
-.balanceChip b{display:block;font-size:14px;color:var(--blue)}
+.balanceChip b{display:block;font-size:14px;color:var(--blue);font-variant-numeric:tabular-nums}
 .rankChip{display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:6px 11px;color:#fff}
 .rankChip:hover{border-color:var(--blue)}
 .rankChip b{display:block;font-size:13px}
@@ -369,7 +366,7 @@ main.completeHome section{margin-top:26px}
 .topupCards,.itemCards{grid-template-columns:repeat(4,1fr)}
 .topupCard{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;text-align:center}
 .topupTag{position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:var(--blue);color:#04141c;font-size:10px;font-weight:800;padding:3px 10px;border-radius:99px}
-.topupUsd{font-size:24px;color:var(--blue)}
+.topupUsd{font-size:24px;color:var(--blue);font-variant-numeric:tabular-nums;letter-spacing:-.5px;font-weight:800}
 .topupBonus{display:block;color:var(--win);font-weight:700;font-size:12px;margin-bottom:4px}
 .topupCard small.muted{display:block;margin-bottom:4px}
 .itemCards{grid-template-columns:1fr 1fr;max-width:760px}
@@ -382,7 +379,7 @@ main.completeHome section{margin-top:26px}
 /* chat dock + fab */
 .chatFab{position:fixed;bottom:22px;right:22px;width:52px;height:52px;border-radius:15px;background:var(--blue);border:0;color:#04141c;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 28px rgba(34,197,251,.4);z-index:45}
 .chatFab:hover{background:var(--blue-deep);color:#fff}
-.chatDock{position:fixed;bottom:0;right:22px;width:380px;max-width:calc(100vw - 20px);height:min(600px,84vh);background:var(--panel);border:1px solid var(--line);border-bottom:0;border-radius:14px 14px 0 0;display:flex;flex-direction:column;z-index:70;box-shadow:var(--shadow)}
+.chatDock{position:fixed;bottom:0;right:22px;width:380px;max-width:calc(100vw - 20px);height:min(600px,84vh);background:var(--panel);border:1px solid var(--line);border-bottom:0;border-radius:16px 16px 0 0;display:flex;flex-direction:column;z-index:70;box-shadow:0 -4px 32px rgba(0,0,0,.5)}
 .chatHead{display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border-bottom:1px solid var(--line);background:#0a0d12;border-radius:14px 14px 0 0}
 .chatTitle{display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;color:#fff}
 .chatClose{position:static}
@@ -424,3 +421,9 @@ main.completeHome section{margin-top:26px}
 .modeRuleList>div{background:#0a0d12;border:1px solid var(--line);border-radius:9px;padding:12px 14px}
 .modeRuleList b{display:block;color:var(--blue);font-size:14px;margin-bottom:3px}
 .modeRuleList span{color:var(--muted);font-size:13px;line-height:1.55}
+
+/* Evidence upload group */
+.evidenceInputGroup{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.evidenceInputGroup .field{flex:1;min-width:160px}
+.evidenceOr{color:var(--muted);font-size:12px;font-weight:600;text-transform:uppercase}
+.evidenceUploadBtn{white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;cursor:pointer}

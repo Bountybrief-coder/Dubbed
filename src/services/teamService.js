@@ -19,7 +19,9 @@ export async function getTeam(teamId) {
 }
 
 export async function createTeam({ name, tag, type, game, platform = null, size = 1 }) {
-  const row = { name, tag: (tag || name.slice(0, 3)).toUpperCase(), type, game, size };
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "Not authenticated" };
+  const row = { name, tag: (tag || name.slice(0, 3)).toUpperCase(), type, game, size, owner_id: user.id };
   if (platform) row.platform = platform;
   const { data: team, error } = await supabase
     .from("teams")
@@ -93,21 +95,19 @@ export async function disbandTeam(teamId) {
 }
 
 export async function getTeamActiveMatches(teamId) {
-  const { data: members } = await supabase
-    .from("team_members")
-    .select("user_id")
+  const { data: mp } = await supabase
+    .from("match_players")
+    .select("match_id")
     .eq("team_id", teamId);
-  if (!members || members.length === 0) return { data: [] };
-  const userIds = members.map((m) => m.user_id);
+  if (!mp || mp.length === 0) return { data: [] };
+  const matchIds = [...new Set(mp.map((r) => r.match_id))];
   const { data, error } = await supabase
     .from("matches")
     .select("id, code, game, mode, format, region, entry, kind, status, created_by, platform, skill_tier, series, host_region, host_rule, veto_status, veto, match_players(user_id, region, team_name, profiles(username, avatar_url))")
+    .in("id", matchIds)
     .in("status", ["open", "live", "reported", "disputed"])
     .order("created_at", { ascending: false });
-  const active = (data || []).filter((m) =>
-    m.match_players?.some((mp) => userIds.includes(mp.user_id))
-  );
-  return { data: active, error: error?.message };
+  return { data: data || [], error: error?.message };
 }
 
 export async function getTeamMatchHistory(teamId, limit = 10) {
@@ -124,6 +124,14 @@ export function subscribeToTeamMatches(teamId, onChange) {
   const channel = supabase
     .channel(`team-matches:${teamId}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "team_match_history", filter: `team_id=eq.${teamId}` }, onChange)
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}
+
+export function subscribeToInvites(userId, onChange) {
+  const channel = supabase
+    .channel(`team-invites:${userId}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "team_invites", filter: `user_id=eq.${userId}` }, onChange)
     .subscribe();
   return () => supabase.removeChannel(channel);
 }

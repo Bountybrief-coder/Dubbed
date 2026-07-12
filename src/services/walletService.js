@@ -47,19 +47,28 @@ export async function getAvailableToWithdraw(userId) {
   return { amount: Number(data || 0), error: error?.message };
 }
 
-// Files a request; funds move to pending (held). Never sends money directly.
+// Files a request; funds move to pending (held). If auto-approved, fires the
+// payout edge function immediately (best-effort — admin fallback if it fails).
 export async function requestWithdrawal(amount, destination) {
   const { data, error } = await supabase.rpc("request_withdrawal", {
     p_amount: Number(amount),
     p_destination: destination || null
   });
-  return { data, error: error?.message };
+  if (error) return { data: null, error: error.message };
+
+  if (data?.auto_approved) {
+    supabase.functions.invoke("stripe-payout", {
+      body: { withdrawal_id: data.id }
+    }).catch(() => {});
+  }
+
+  return { data, error: null };
 }
 
 export async function getWithdrawalRequests(userId) {
   const { data, error } = await supabase
     .from("withdrawal_requests")
-    .select("id, amount, status, provider, destination, payout_id, transaction_id, rejected_reason, created_at, processing_at, completed_at")
+    .select("id, amount, status, provider, destination, payout_id, transaction_id, rejected_reason, created_at, processing_at, completed_at, meta")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   return { data: data || [], error: error?.message };
@@ -122,6 +131,17 @@ export async function adminApproveWithdrawal(id) {
 
 export async function adminRejectWithdrawal(id, reason) {
   const { error } = await supabase.rpc("reject_withdrawal", { p_id: id, p_reason: reason || "Rejected by admin" });
+  return { error: error?.message };
+}
+
+export async function adminGetAutoPayoutsEnabled() {
+  const { data, error } = await supabase
+    .from("app_settings").select("value").eq("key", "auto_payouts_enabled").maybeSingle();
+  return { enabled: data?.value === true, error: error?.message };
+}
+
+export async function adminToggleAutoPayouts(enabled) {
+  const { error } = await supabase.rpc("admin_toggle_auto_payouts", { p_enabled: enabled });
   return { error: error?.message };
 }
 

@@ -1,11 +1,11 @@
 // POST /stripe-payout   { withdrawal_id }
-// Admin-only. Marks the held withdrawal 'processing', then creates a Stripe
-// Transfer to the user's connected Express account. The webhook later marks it
-// 'paid' (payout.paid) or fails it (payout.failed / transfer reversal).
+// Fires a Stripe Transfer for a withdrawal. Allowed callers:
+//   - Admin: can fire any pending/processing withdrawal
+//   - Owner: can fire their own auto-approved withdrawal (already in processing)
 //
 // Idempotency: the withdrawal id is the Stripe idempotency key, so a retried
-// approve can never double-pay.
-import { CORS, json, stripeClient, serviceClient, getCaller, env } from "../_shared/util.ts";
+// call can never double-pay.
+import { CORS, json, stripeClient, serviceClient, getCaller } from "../_shared/util.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -17,21 +17,28 @@ Deno.serve(async (req) => {
 
     const db = serviceClient();
 
-    // Admin check — direct table read under service role (never trust client).
     const { data: adminRow } = await db
       .from("app_admins").select("user_id").eq("user_id", caller.id).maybeSingle();
-    if (!adminRow) return json({ error: "admin only" }, 403);
+    const isAdmin = !!adminRow;
 
     const { withdrawal_id } = await req.json().catch(() => ({}));
     if (!withdrawal_id) return json({ error: "withdrawal_id required" }, 400);
 
     const { data: w, error: wErr } = await db
       .from("withdrawal_requests")
-      .select("id, user_id, amount, status")
+      .select("id, user_id, amount, fee, status, meta")
       .eq("id", withdrawal_id)
       .maybeSingle();
     if (wErr) return json({ error: wErr.message }, 500);
     if (!w) return json({ error: "withdrawal not found" }, 404);
+
+    // Authorization: admin can fire anything; owner can only fire auto-approved
+    if (!isAdmin) {
+      if (w.user_id !== caller.id) return json({ error: "not authorized" }, 403);
+      if (w.status !== "processing") return json({ error: "withdrawal not in processing state" }, 403);
+      if (!w.meta?.auto_approved) return json({ error: "withdrawal not auto-approved" }, 403);
+    }
+
     if (w.status === "paid") return json({ ok: true, already: "paid" });
     if (w.status === "rejected") return json({ error: "withdrawal was rejected" }, 400);
 
@@ -44,8 +51,8 @@ Deno.serve(async (req) => {
     if (!profile.stripe_payouts_enabled) return json({ error: "user payouts not enabled" }, 400);
     if (profile.suspended) return json({ error: "user is suspended" }, 400);
 
-    // pending -> processing (service RPC; safe to call once).
-    if (w.status === "pending") {
+    // Admin path: mark processing if still pending
+    if (isAdmin && w.status === "pending") {
       const { error: procErr } = await db.rpc("mark_withdrawal_processing_admin", {
         p_id: w.id,
         p_admin: caller.id,
@@ -54,12 +61,12 @@ Deno.serve(async (req) => {
     }
 
     const stripe = stripeClient();
-    const amountCents = Math.round(Number(w.amount) * 100);
+    const amountCents = Math.round((Number(w.amount) - Number(w.fee || 0)) * 100);
 
     const transfer = await stripe.transfers.create(
       {
         amount: amountCents,
-        currency: (env("PAYOUT_CURRENCY") || "usd").toLowerCase(),
+        currency: (Deno.env.get("PAYOUT_CURRENCY") || "usd").toLowerCase(),
         destination: profile.stripe_account_id,
         metadata: { withdrawal_id: w.id, dubbed_user_id: w.user_id },
       },

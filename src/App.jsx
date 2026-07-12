@@ -10,9 +10,12 @@ import { AuthGate } from "./components/AuthGate";
 import { Skeleton } from "./components/Skeleton";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
+import { BannedScreen } from "./components/BannedScreen";
 import { getNotifications, subscribeToNotifications } from "./services/notificationService";
+import { getMyInvites, subscribeToInvites } from "./services/teamService";
 import { checkBanExpiry } from "./services/banService";
 import { useWebVitals } from "./hooks/useWebVitals";
+import { track } from "./utils/analytics";
 
 // Eager: homepage (first paint)
 import { HomePage } from "./pages/HomePage";
@@ -32,6 +35,7 @@ const PrivacyPage = lazy(() => import("./pages/PrivacyPage").then(m => ({ defaul
 const SupportPage = lazy(() => import("./pages/SupportPage").then(m => ({ default: m.SupportPage })));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
 const LivePage = lazy(() => import("./pages/LivePage").then(m => ({ default: m.LivePage })));
+const BettingPage = lazy(() => import("./pages/BettingPage").then(m => ({ default: m.BettingPage })));
 
 // Admin pages — most users never hit these
 const AdminWithdrawalsPage = lazy(() => import("./pages/AdminWithdrawalsPage").then(m => ({ default: m.AdminWithdrawalsPage })));
@@ -49,7 +53,7 @@ function PageSkeleton() {
 
 const ROUTE_PATHS = {
   home: "/", matchfinder: "/matches", tournaments: "/tournaments", teams: "/teams",
-  leaderboard: "/leaderboard", wallet: "/wallet", shop: "/shop", live: "/live",
+  leaderboard: "/leaderboard", betting: "/betting", wallet: "/wallet", shop: "/shop", live: "/live",
   rules: "/rules", privacy: "/privacy", support: "/support", notifications: "/notifications",
   "admin-withdrawals": "/admin/withdrawals", "admin-shop": "/admin/shop",
   "admin-bans": "/admin/bans", "admin-disputes": "/admin/disputes",
@@ -69,6 +73,7 @@ const PREFETCH_MAP = {
   wallet: () => import("./pages/WalletPage"),
   shop: () => import("./pages/ShopPage"),
   live: () => import("./pages/LivePage"),
+  betting: () => import("./pages/BettingPage"),
   notifications: () => import("./pages/NotificationsPage"),
 };
 const prefetched = new Set();
@@ -103,6 +108,7 @@ export function App() {
   const [chatOpen, setChatOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [inviteCount, setInviteCount] = useState(0);
 
   const pageKey = useRef(0);
   const navigate = (name, param) => {
@@ -111,6 +117,7 @@ export function App() {
     setRoute(r);
     window.history.pushState(r, "", routeToPath(name, param));
     window.scrollTo({ top: 0, behavior: "smooth" });
+    track.pageView(name);
   };
 
   useEffect(() => {
@@ -136,6 +143,15 @@ export function App() {
     return unsub;
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return setInviteCount(0);
+    getMyInvites(user.id).then(({ data }) => setInviteCount((data || []).length));
+    const unsub = subscribeToInvites(user.id, () => {
+      getMyInvites(user.id).then(({ data }) => setInviteCount((data || []).length));
+    });
+    return unsub;
+  }, [user]);
+
   // Prefetch likely-next routes after idle
   useEffect(() => {
     const id = requestIdleCallback(() => {
@@ -148,6 +164,10 @@ export function App() {
 
   if (loading) {
     return <div className="bootScreen"><div className="bootLogo">dubbed</div><span className="spinner" /></div>;
+  }
+
+  if (profile?.banned === true) {
+    return <BannedScreen />;
   }
 
   const sideView = route.name === "game" ? `game-${route.param}` : route.name;
@@ -167,6 +187,7 @@ export function App() {
         collapsed={sidebarCollapsed}
         onToggle={() => setSidebarCollapsed((c) => !c)}
         onHoverRoute={prefetchRoute}
+        inviteCount={inviteCount}
       />
 
       <div className="appMain">
@@ -182,16 +203,6 @@ export function App() {
 
         <div className="appBody" key={pageKey.current}>
           <div className="pageTransition">
-          {profile?.banned && (
-            <div className="errBanner banBanner" style={{ margin: "0 auto 16px", maxWidth: 700, textAlign: "center" }}>
-              <strong>Your account is banned.</strong> Reason: {profile.ban_reason || "policy violation"}.
-              {profile.ban_expires_at
-                ? <> Expires: {new Date(profile.ban_expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}.</>
-                : <> This ban is permanent.</>
-              }
-              <br /><small>You can still view matches and leaderboards, but you cannot create, join, or wager.</small>
-            </div>
-          )}
 
           <ErrorBoundary key={pageKey.current}>
           <Suspense fallback={<PageSkeleton />}>
@@ -200,6 +211,7 @@ export function App() {
           {route.name === "match" && requireAuth(<MatchRoomPage matchId={route.param} onBack={() => navigate("matchfinder")} onNavigate={navigate} />)}
           {route.name === "game" && <GamePage slug={route.param} onNavigate={navigate} onLogin={() => setAuthOpen(true)} onOpenMatch={(id) => navigate("match", id)} />}
           {route.name === "tournaments" && <TournamentsPage onLogin={() => setAuthOpen(true)} onNavigate={navigate} />}
+          {route.name === "betting" && <BettingPage onLogin={() => setAuthOpen(true)} />}
           {route.name === "teams" && requireAuth(<TeamsPage onNavigate={navigate} />)}
           {route.name === "leaderboard" && <LeaderboardPage onOpenProfile={(u) => navigate("profile", u)} />}
           {route.name === "wallet" && requireAuth(<WalletPage />)}

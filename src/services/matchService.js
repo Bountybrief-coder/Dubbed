@@ -1,7 +1,7 @@
 import { supabase } from "../lib/supabase";
 
 const MATCH_SELECT =
-  "id, code, match_number, game, mode, format, region, entry, kind, status, created_by, winner_id, created_at, " +
+  "id, code, match_number, game, mode, format, region, entry, kind, status, created_by, winner_id, created_at, accepted_at, " +
   "platform, skill_tier, series, weapon_restriction, host_region, host_rule, veto_status, veto, team_name, map, allowed_input";
 
 export async function listOpenMatches({ kind, game } = {}) {
@@ -181,6 +181,18 @@ export function subscribeToMatch(matchId, onChange) {
       "postgres_changes",
       { event: "*", schema: "public", table: "matches", filter: `id=eq.${matchId}` },
       onChange
+    )
+    .subscribe();
+  return () => supabase.removeChannel(channel);
+}
+
+export function subscribeToOpenMatches(onChange) {
+  const channel = supabase
+    .channel("open-matches")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "matches" },
+      (payload) => onChange(payload)
     )
     .subscribe();
   return () => supabase.removeChannel(channel);

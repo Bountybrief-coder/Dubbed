@@ -32,53 +32,30 @@ deploy the 4 edge functions, (3) create the Stripe webhook endpoint, (4) seed
 an admin (`insert into app_admins ...`) — the Admin · Withdrawals page then
 appears in that user's account menu.
 
-The app is fully wired to Supabase and builds cleanly. Before taking real money and real users, these are the things that still need doing. They're ordered roughly by how much they matter.
+The app is fully wired to Supabase and builds cleanly.
 
-## 1. Payments (Stripe) — REQUIRED before real deposits
+## Completed
 
-Right now `deposit()` calls a `deposit` RPC that **credits balance directly**. That's a testing placeholder — it means anyone who can call the RPC can mint balance. Before launch:
+- **~~1. Payments (Stripe)~~** — DONE. `stripe-deposit-checkout` Edge Function creates Stripe Checkout sessions. `stripe-deposit-webhook` verifies signatures, records idempotent events, credits balance via `deposit_from_webhook` RPC. Fallback to direct `deposit` RPC still in place for dev/test.
+- **~~2. Admin dispute review~~** — DONE. `AdminDisputesPage.jsx` lists/filters/searches disputes with settle (award to player) and cancel+refund actions.
+- **~~3. File storage~~** — DONE. `uploadAvatar` and `uploadEvidence` use Supabase Storage buckets. Avatar upload wired in `ProfilePage`. Evidence upload wired in `MatchRoomPage` report + dispute modals (URL paste or direct file upload).
+- **~~4. Tournament bracket + settlement~~** — DONE. `generate_bracket` seeds single-elimination brackets. `advance_bracket` auto-advances winners. `settle_tournament_auto` distributes prizes (1st/2nd/3rd) when the final match resolves. `settle_tournament` available for admin manual settlement.
+- **~~5. Side betting settlement~~** — DONE. Pool events: `settle_bet_event` / `void_bet_event`. P2P offers: `settle_bet_offer` / `void_bet_offer`. Admin UI in `AdminSideBetsPage.jsx`.
+- **~~6a. Weekly stats~~** — DONE. `settle_match` and `settle_tournament` now INSERT/UPSERT into `weekly_stats` via `upsert_weekly_stat()`. Run `migrate_weekly_stats.sql` to deploy.
 
-- Add Stripe Checkout (or Payment Element) on the frontend for the deposit flow.
-- Create a Supabase **Edge Function** that receives the Stripe webhook, verifies the signature, records the event in `payment_events` (the `external_id` unique column prevents double-processing), and only then credits balance via a service-role write.
-- **Revoke `execute` on the client-callable `deposit` RPC** so the browser can no longer credit balance. Balance should only ever go up from a verified webhook.
+## Remaining before launch
 
-## 2. Admin surfaces — needed to operate
+### DB migration required
 
-The schema and RPCs exist, but there's no admin UI yet. You need internal pages (or a protected route) for:
+Run `migrate_weekly_stats.sql` in the Supabase SQL Editor. It patches `settle_match`, `settle_tournament`, and `advance_bracket` to populate `weekly_stats`.
 
-- **Dispute review** — list `match_disputes` where `status = 'open'`, show both `match_reports` + evidence, and call `settle_match_admin(match_id, winner_id, note)`.
-- **Withdrawal review** — ✅ built. The Admin · Withdrawals page (`AdminWithdrawalsPage`) lists/filters/searches requests, approves (fires the Stripe payout Edge Function), and rejects (auto-refunds). Only the dispute-review UI above still needs building.
-- Seed admins by inserting their profile id into `app_admins`. `is_admin()` gates all admin RPCs and policies.
+### Hardening / polish
 
-## 3. File storage (avatars + evidence)
-
-Avatar upload and match/dispute evidence currently use `URL.createObjectURL` — the image only exists in the browser tab. To persist:
-
-- Create a Supabase **Storage** bucket (e.g. `avatars`, `evidence`).
-- Upload the file, get the public (or signed) URL, and save that URL to `profiles.avatar_url` / the report's `evidence_url`.
-- Wire the "upload" stubs in `MatchRoomPage` (report + dispute modals) and the avatar picker in `ProfilePage`.
-
-## 4. Tournament bracket + settlement
-
-`join_tournament` holds entry and fills the pot. What's not built yet:
-
-- Bracket generation / seeding once a tournament fills or its start time hits.
-- Result reporting per round.
-- Final payout split (the UI already previews 70/30 of the net pot; the actual payout needs a server-side settlement RPC that mirrors `settle_match`).
-
-## 5. Side betting settlement
-
-`place_bet` records a bet and holds stake. There's no market resolution yet — you'll need an admin/automated way to settle bets and pay winners.
-
-## 6. Hardening / polish
-
-- **Rate limiting** on chat and match creation (Supabase doesn't do this out of the box — consider an Edge Function or a per-user throttle table).
-- **Profanity / moderation** on chat messages and team names (only usernames are filtered right now).
 - **Email templates** — customize the Supabase confirmation email branding.
 - **Realtime auth** — make sure Realtime is enabled for the tables the app subscribes to (matches, chat_messages, notifications, profiles, match_reports, match_disputes). The migrations add them to the `supabase_realtime` publication, but double-check in the dashboard.
 - **Responsible-gambling** footer copy is present; add age-gating / self-exclusion if you operate in regulated regions, and check the legal status of skill-based wagering where your users are.
 
-## 7. Nice-to-haves
+### Nice-to-haves
 
 - Trim unused rules from the old `styles.css` (the new components use `theme.css`; the old file is still imported for any leftover classes and is harmless but larger than needed).
 - Deep links / real routing (currently a lightweight in-memory router in `App.jsx`). Swap in `react-router` if you want shareable URLs and back-button support.

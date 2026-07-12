@@ -29,6 +29,27 @@ export async function getWeeklyTopPlayers(weekStart) {
   return { data: data || [], error: error?.message };
 }
 
+export async function getTimedLeaderboard(metric = "xp", since, { region, platform, limit = 100 } = {}) {
+  const { data, error } = await supabase.rpc("get_timed_leaderboard", {
+    p_metric: metric,
+    p_since: since,
+    p_region: region || null,
+    p_platform: platform || null,
+    p_limit: limit,
+  });
+  return { data: data || [], error: error?.message };
+}
+
+export async function getMyTimedRank(metric = "xp", since, { region, platform } = {}) {
+  const { data, error } = await supabase.rpc("get_my_timed_rank", {
+    p_metric: metric,
+    p_since: since,
+    p_region: region || null,
+    p_platform: platform || null,
+  });
+  return { data: data?.[0] || null, error: error?.message };
+}
+
 export async function getWeeklyRewards(weekStart) {
   const { data, error } = await supabase
     .from("weekly_rewards")

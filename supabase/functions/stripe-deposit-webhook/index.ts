@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
 
   // Record the event
   await db.from("payment_events").insert({
-    external_id: session.id, user_id: userId, amount, type: "deposit", processed: true,
+    external_id: session.id, user_id: userId, amount, event_type: "deposit",
   });
 
   // Credit balance atomically via RPC

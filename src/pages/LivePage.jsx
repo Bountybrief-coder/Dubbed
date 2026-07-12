@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Tv, ExternalLink } from "lucide-react";
 import { useAsync } from "../hooks/useAsync";
+import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { getStreamers } from "../services/profileService";
 import { RankStar } from "../components/RankStar";
 import { WagrBadge } from "../components/WagrBadge";
@@ -12,6 +13,8 @@ import { money } from "../utils/format";
 export function LivePage({ onOpenProfile }) {
   const { data: streamers, loading, error, reload } = useAsync(() => getStreamers(), []);
   const [active, setActive] = useState(null);
+
+  useVisibilityRefresh(reload, []);
 
   return (
     <main className="page">

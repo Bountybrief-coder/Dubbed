@@ -86,6 +86,14 @@ CREATE POLICY "achievements read" ON public.achievements FOR SELECT USING (true)
 - `join_match` — updated signature (added p_veto_ban)
 - `generate_bracket` — updated signature (added p_auto boolean)
 
+## 8. P2P Bet Offers table + RPCs
+```sql
+-- Run the bet_offers CREATE TABLE block from supabase_setup.sql
+-- Then run all 5 P2P RPCs: create_bet_offer, accept_bet_offer,
+-- settle_bet_offer, void_bet_offer, cancel_bet_offer
+-- Realtime publication is added automatically
+```
+
 ## Easiest path
 Re-run the entire `supabase_setup.sql` — every statement is idempotent.
 Then run `tournament_schedule_setup.sql` to populate tournament templates.

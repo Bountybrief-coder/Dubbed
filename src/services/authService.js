@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase";
 import { validateUsername, validateEmail, validatePassword } from "../utils/validation";
+import { track } from "../utils/analytics";
 
 export async function signUp({ email, username, password }) {
   const uErr = validateUsername(username);
@@ -22,10 +23,11 @@ export async function signUp({ email, username, password }) {
     options: { data: { username: username.trim() } }
   });
   if (error) return { error: error.message };
+  track.signup();
   return { data };
 }
 
-// LOGIN WITH USERNAME + PASSWORD.
+// Login with username + password.
 // Supabase Auth only understands email, so we resolve username -> email via a
 // SECURITY DEFINER RPC (email_for_username), then sign in with that email.
 export async function signIn({ username, password }) {
@@ -41,10 +43,11 @@ export async function signIn({ username, password }) {
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
-    // Normalize the common case for a nicer message.
     if (/invalid login/i.test(error.message)) return { error: "Incorrect username or password." };
+    if (/email.*not.*confirmed/i.test(error.message)) return { error: "Check your email to verify your account before logging in." };
     return { error: error.message };
   }
+  track.login();
   return { data };
 }
 

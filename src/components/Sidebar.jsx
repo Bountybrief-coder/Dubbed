@@ -6,7 +6,7 @@ import {
   HelpCircle, FileText
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
-import { CURRENT_GAMES } from "../utils/games";
+import { CURRENT_GAMES, THROWBACK_GAMES } from "../utils/games";
 import logoMark from "../assets/dubbed-mark.png";
 
 const MAIN_NAV = [
@@ -18,6 +18,7 @@ const MAIN_NAV = [
 
 const COMMUNITY_NAV = [
   { key: "leaderboard", label: "Leaderboard", icon: BarChart3 },
+  { key: "betting", label: "Betting", icon: Swords },
   { key: "live", label: "Live", icon: Radio },
 ];
 
@@ -40,10 +41,10 @@ const ADMIN_NAV = [
   { key: "admin-support", label: "Support", icon: Gavel },
 ];
 
-export function Sidebar({ view, onNavigate, collapsed, onToggle, onHoverRoute }) {
+export function Sidebar({ view, onNavigate, collapsed, onToggle, onHoverRoute, inviteCount = 0 }) {
   const { isAdmin } = useAuth();
 
-  function NavItem({ item, active }) {
+  function NavItem({ item, active, badge }) {
     const Icon = item.icon;
     return (
       <button
@@ -54,6 +55,7 @@ export function Sidebar({ view, onNavigate, collapsed, onToggle, onHoverRoute })
       >
         <Icon size={18} />
         {!collapsed && <span>{item.label}</span>}
+        {badge > 0 && <span className="sideBadge">{badge}</span>}
         {active && <div className="sideActiveBar" />}
       </button>
     );
@@ -71,11 +73,25 @@ export function Sidebar({ view, onNavigate, collapsed, onToggle, onHoverRoute })
       <nav className="sideNav">
         {!collapsed && <div className="sideSection">PLAY</div>}
         {MAIN_NAV.map((item) => (
-          <NavItem key={item.key} item={item} active={view === item.key} />
+          <NavItem key={item.key} item={item} active={view === item.key} badge={item.key === "teams" ? inviteCount : 0} />
         ))}
 
         {!collapsed && <div className="sideSection">GAMES</div>}
         {(collapsed ? CURRENT_GAMES.slice(0, 4) : CURRENT_GAMES).map((g) => (
+          <button
+            key={g.slug}
+            className={`sideItem sideGame${view === `game-${g.slug}` ? " active" : ""}`}
+            onClick={() => onNavigate("game", g.slug)}
+            title={collapsed ? g.short : undefined}
+          >
+            <Gamepad2 size={16} />
+            {!collapsed && <span>{g.short}</span>}
+            {view === `game-${g.slug}` && <div className="sideActiveBar" />}
+          </button>
+        ))}
+
+        {!collapsed && THROWBACK_GAMES.length > 0 && <div className="sideSection">THROWBACK</div>}
+        {(!collapsed ? THROWBACK_GAMES : THROWBACK_GAMES.slice(0, 2)).map((g) => (
           <button
             key={g.slug}
             className={`sideItem sideGame${view === `game-${g.slug}` ? " active" : ""}`}

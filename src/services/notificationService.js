@@ -20,6 +20,16 @@ export async function markAllRead() {
   return { error: error?.message };
 }
 
+export async function deleteNotification(id) {
+  const { error } = await supabase.from("notifications").delete().eq("id", id);
+  return { error: error?.message };
+}
+
+export async function clearAllNotifications(userId) {
+  const { error } = await supabase.from("notifications").delete().eq("user_id", userId);
+  return { error: error?.message };
+}
+
 export function subscribeToNotifications(userId, onInsert) {
   const sub = supabase
     .channel(`notif:${userId}`)

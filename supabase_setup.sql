@@ -11,7 +11,7 @@ create extension if not exists pgcrypto;   -- gen_random_uuid()
 -- ---------- ENUM TYPES (guarded so re-running won't error) ----------
 do $$ begin create type match_status as enum ('open','live','reported','settled','disputed','cancelled'); exception when duplicate_object then null; end $$;
 do $$ begin create type match_kind as enum ('cash','xp'); exception when duplicate_object then null; end $$;
-do $$ begin create type team_type as enum ('xp','cash'); exception when duplicate_object then null; end $$;
+do $$ begin create type team_type as enum ('xp','cash','tournament'); exception when duplicate_object then null; end $$;
 do $$ begin create type tournament_status as enum ('upcoming','live','completed','cancelled'); exception when duplicate_object then null; end $$;
 -- Add 'archived' to tournament_status if missing (idempotent).
 do $$ begin alter type tournament_status add value if not exists 'archived'; exception when others then null; end $$;
@@ -705,6 +705,12 @@ returns boolean language sql stable security definer as $$
 $$;
 grant execute on function public.is_admin() to authenticated;
 
+create or replace function public.is_match_participant(p_match uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.match_players where match_id = p_match and user_id = auth.uid());
+$$;
+grant execute on function public.is_match_participant(uuid) to authenticated;
+
 -- ============================================================================
 -- ROW LEVEL SECURITY
 -- ============================================================================
@@ -753,6 +759,30 @@ create policy "profiles self update" on public.profiles for update using (auth.u
 revoke update on public.profiles from authenticated;
 grant update (avatar_url, activision_id, psn, xbox, region, twitter, youtube, twitch_username, platform, favorite_game, favorite_mode) on public.profiles to authenticated;
 
+-- Gamertag lock: block psn/xbox/activision_id changes while user has active matches
+create or replace function public.lock_gamertag_during_match()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if (new.psn is distinct from old.psn
+      or new.xbox is distinct from old.xbox
+      or new.activision_id is distinct from old.activision_id)
+    and exists (
+      select 1 from public.match_players mp
+      join public.matches m on m.id = mp.match_id
+      where mp.user_id = new.id
+        and m.status in ('open', 'live', 'reported', 'disputed')
+    )
+  then
+    raise exception 'Cannot change gamertag while you have an active match. Finish or cancel your matches first.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_lock_gamertag on public.profiles;
+create trigger trg_lock_gamertag
+  before update of psn, xbox, activision_id on public.profiles
+  for each row execute function public.lock_gamertag_during_match();
+
 drop policy if exists "trophies read" on public.trophies;
 create policy "trophies read" on public.trophies for select using (true);
 drop policy if exists "records read" on public.records;
@@ -779,8 +809,15 @@ create policy "invites delete" on public.team_invites for delete using (auth.uid
 
 drop policy if exists "matches read" on public.matches;
 create policy "matches read" on public.matches for select using (true);
+-- Blind-accept: match_players rows only visible to participants in that match
+-- (or the row owner, or admin). On an open match the only participant is the
+-- poster, so no one else can read the row until they join.
 drop policy if exists "match_players read" on public.match_players;
-create policy "match_players read" on public.match_players for select using (true);
+create policy "match_players read" on public.match_players for select using (
+  user_id = auth.uid()
+  or public.is_match_participant(match_id)
+  or public.is_admin()
+);
 drop policy if exists "reports read" on public.match_reports;
 create policy "reports read" on public.match_reports for select using (true);
 drop policy if exists "disputes read" on public.match_disputes;
@@ -836,6 +873,8 @@ drop policy if exists "notif read own" on public.notifications;
 create policy "notif read own" on public.notifications for select using (auth.uid() = user_id);
 drop policy if exists "notif update own" on public.notifications;
 create policy "notif update own" on public.notifications for update using (auth.uid() = user_id);
+drop policy if exists "notif delete own" on public.notifications;
+create policy "notif delete own" on public.notifications for delete using (auth.uid() = user_id);
 
 drop policy if exists "ledger read own" on public.wallet_ledger;
 create policy "ledger read own" on public.wallet_ledger for select using (auth.uid() = user_id);
@@ -1651,6 +1690,21 @@ begin
 end $$;
 grant execute on function public.check_ban_expiry() to authenticated;
 
+-- my_ban_status: lets a banned user always read their own ban info
+create or replace function public.my_ban_status()
+returns json language plpgsql security definer stable set search_path = public as $$
+declare v_p public.profiles;
+begin
+  select * into v_p from public.profiles where id = auth.uid();
+  if not found then return json_build_object('banned', false); end if;
+  return json_build_object(
+    'banned', coalesce(v_p.banned, false),
+    'reason', v_p.ban_reason,
+    'expires_at', v_p.ban_expires_at
+  );
+end $$;
+grant execute on function public.my_ban_status() to authenticated;
+
 -- ---------- tournament templates + scheduler ----------
 create table if not exists public.tournament_templates (
   id                  uuid primary key default gen_random_uuid(),
@@ -1878,7 +1932,7 @@ end $$;
 
 grant execute on function public.generate_bracket(uuid, boolean) to authenticated;
 grant execute on function public.start_tournament_match(uuid) to authenticated;
-grant execute on function public.advance_bracket(uuid) to authenticated;
+-- advance_bracket is internal (called from settle_match); no direct client access
 
 -- ---------- admin dispute resolution ----------
 create or replace function public.admin_settle_dispute(p_match uuid, p_winner uuid, p_note text default null)
@@ -2403,23 +2457,46 @@ create or replace function public.settle_match(p_match uuid, p_winner uuid)
 returns void language plpgsql security definer set search_path = public as $$
 declare v_m public.matches; v_pot numeric; v_rake numeric; v_payout numeric; v_member boolean;
         v_mp record; v_is_tourney boolean; v_opp_team uuid; v_winner_name text;
+        v_winner_team uuid; v_win_count int; v_share numeric;
+        v_done_teams uuid[] := '{}';
 begin
   select * into v_m from public.matches where id = p_match for update;
   if v_m.status = 'settled' then return; end if;
+
+  select team_id into v_winner_team from public.match_players where match_id = p_match and user_id = p_winner;
+
   if v_m.kind = 'cash' then
     select wagr_member into v_member from public.profiles where id = p_winner;
     v_pot := v_m.entry * 2;
     v_rake := case when coalesce(v_member,false) then 0 else round(v_pot * 0.05, 2) end;
     v_payout := v_pot - v_rake;
-    update public.profiles set balance = balance + v_payout, earnings = earnings + (v_payout - v_m.entry) where id = p_winner;
+    update public.profiles set balance = balance + v_payout where id = p_winner;
     insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (p_winner, v_payout, 'match_payout', p_match);
+    if v_winner_team is not null then
+      select count(*) into v_win_count from public.match_players where match_id = p_match and team_id = v_winner_team;
+      v_share := round((v_payout - v_m.entry) / greatest(v_win_count, 1), 2);
+      update public.profiles set earnings = earnings + v_share
+      where id in (select user_id from public.match_players where match_id = p_match and team_id = v_winner_team);
+    else
+      update public.profiles set earnings = earnings + (v_payout - v_m.entry) where id = p_winner;
+    end if;
   end if;
+
   update public.profiles p set
-    xp = xp + case when p.id = p_winner then 100 else 25 end,
-    wins = wins + case when p.id = p_winner then 1 else 0 end,
-    losses = losses + case when p.id = p_winner then 0 else 1 end,
-    streak = case when p.id = p_winner then streak + 1 else 0 end
+    xp = xp + case
+      when (v_winner_team is not null and mp.team_id = v_winner_team)
+        or (v_winner_team is null and p.id = p_winner) then 100 else 25 end,
+    wins = wins + case
+      when (v_winner_team is not null and mp.team_id = v_winner_team)
+        or (v_winner_team is null and p.id = p_winner) then 1 else 0 end,
+    losses = losses + case
+      when (v_winner_team is not null and mp.team_id = v_winner_team)
+        or (v_winner_team is null and p.id = p_winner) then 0 else 1 end,
+    streak = case
+      when (v_winner_team is not null and mp.team_id = v_winner_team)
+        or (v_winner_team is null and p.id = p_winner) then streak + 1 else 0 end
   from public.match_players mp where mp.match_id = p_match and mp.user_id = p.id;
+
   update public.matches set status='settled', winner_id=p_winner where id=p_match;
 
   select username into v_winner_name from public.profiles where id = p_winner;
@@ -2428,40 +2505,41 @@ begin
 
   v_is_tourney := exists (select 1 from public.tournament_matches where match_id = p_match);
 
-  -- Credit team records
   for v_mp in select mp.user_id, mp.team_id from public.match_players mp where mp.match_id = p_match and mp.team_id is not null loop
-    -- Find opponent team
     select mp2.team_id into v_opp_team from public.match_players mp2
     where mp2.match_id = p_match and mp2.team_id <> v_mp.team_id limit 1;
 
-    if v_mp.user_id = p_winner then
-      if v_is_tourney then
-        update public.teams set tourney_wins = tourney_wins + 1,
-          xp = xp + 100,
-          earnings = earnings + greatest(coalesce(v_payout, 0) - v_m.entry, 0)
-        where id = v_mp.team_id;
+    if not (v_mp.team_id = any(v_done_teams)) then
+      v_done_teams := v_done_teams || v_mp.team_id;
+      if v_mp.team_id = v_winner_team then
+        if v_is_tourney then
+          update public.teams set tourney_wins = tourney_wins + 1,
+            xp = xp + 100,
+            earnings = earnings + greatest(coalesce(v_payout, 0) - v_m.entry, 0)
+          where id = v_mp.team_id;
+        else
+          update public.teams set wins = wins + 1,
+            xp = xp + 100,
+            earnings = earnings + greatest(coalesce(v_payout, 0) - v_m.entry, 0)
+          where id = v_mp.team_id;
+        end if;
+        insert into public.team_match_history(team_id, match_id, result, earnings, xp_earned, opponent_team_id,
+          tournament_id)
+          values (v_mp.team_id, p_match, 'win', greatest(coalesce(v_payout, 0) - v_m.entry, 0), 100, v_opp_team,
+            (select tournament_id from public.tournament_matches where match_id = p_match limit 1));
       else
-        update public.teams set wins = wins + 1,
-          xp = xp + 100,
-          earnings = earnings + greatest(coalesce(v_payout, 0) - v_m.entry, 0)
-        where id = v_mp.team_id;
+        if v_is_tourney then
+          update public.teams set tourney_losses = tourney_losses + 1, xp = xp + 25
+          where id = v_mp.team_id;
+        else
+          update public.teams set losses = losses + 1, xp = xp + 25
+          where id = v_mp.team_id;
+        end if;
+        insert into public.team_match_history(team_id, match_id, result, earnings, xp_earned, opponent_team_id,
+          tournament_id)
+          values (v_mp.team_id, p_match, 'loss', 0, 25, v_opp_team,
+            (select tournament_id from public.tournament_matches where match_id = p_match limit 1));
       end if;
-      insert into public.team_match_history(team_id, match_id, result, earnings, xp_earned, opponent_team_id,
-        tournament_id)
-        values (v_mp.team_id, p_match, 'win', greatest(coalesce(v_payout, 0) - v_m.entry, 0), 100, v_opp_team,
-          (select tournament_id from public.tournament_matches where match_id = p_match limit 1));
-    else
-      if v_is_tourney then
-        update public.teams set tourney_losses = tourney_losses + 1, xp = xp + 25
-        where id = v_mp.team_id;
-      else
-        update public.teams set losses = losses + 1, xp = xp + 25
-        where id = v_mp.team_id;
-      end if;
-      insert into public.team_match_history(team_id, match_id, result, earnings, xp_earned, opponent_team_id,
-        tournament_id)
-        values (v_mp.team_id, p_match, 'loss', 0, 25, v_opp_team,
-          (select tournament_id from public.tournament_matches where match_id = p_match limit 1));
     end if;
   end loop;
 
@@ -2699,17 +2777,21 @@ begin
   if not found then raise exception 'tournament not found'; end if;
   if v_t.status <> 'upcoming' then raise exception 'tournament is not open'; end if;
 
-  -- Resolve + validate team
+  -- Resolve + validate team (must be tournament type)
   if p_team_id is not null then
     select * into v_team from public.teams where id = p_team_id;
     if not found then raise exception 'team not found'; end if;
     if not exists (select 1 from public.team_members where team_id = p_team_id and user_id = auth.uid()) then
       raise exception 'you are not on this team';
     end if;
+    if v_team.type <> 'tournament' then
+      raise exception 'tournament requires a tournament-type team';
+    end if;
   else
     select t.* into v_team from public.team_members tm
     join public.teams t on t.id = tm.team_id
     where tm.user_id = auth.uid() and t.game = v_t.game
+      and t.type = 'tournament'
     limit 1;
   end if;
 
@@ -2769,10 +2851,14 @@ begin
     if not exists (select 1 from public.team_members where team_id = p_team_id and user_id = auth.uid()) then
       raise exception 'you are not on this team';
     end if;
+    if v_team.type <> 'tournament' then
+      raise exception 'tournament requires a tournament-type team';
+    end if;
   else
     select t.* into v_team from public.team_members tm
     join public.teams t on t.id = tm.team_id
     where tm.user_id = p_for_user and t.game = v_t.game
+      and t.type = 'tournament'
     limit 1;
   end if;
 
@@ -2811,9 +2897,17 @@ begin
   select count(*) into v_joined from public.tournament_entries where tournament_id = p_tournament;
   v_is_wagr := (v_t.entry = 0);
   v_pot := round(v_t.entry * v_joined * 0.98, 2); -- 2% house cut
-  v_p1 := round(v_pot * 0.833, 2);
-  v_p2 := round(v_pot * 0.10, 2);
-  v_p3 := round(v_pot * 0.067, 2);
+  if v_joined <= 2 then
+    v_p1 := v_pot; v_p2 := 0; v_p3 := 0;
+  elsif v_joined < 8 then
+    v_p1 := round(v_pot * 0.85, 2);
+    v_p2 := round(v_pot * 0.15, 2);
+    v_p3 := 0;
+  else
+    v_p1 := round(v_pot * 0.80, 2);
+    v_p2 := round(v_pot * 0.15, 2);
+    v_p3 := round(v_pot * 0.05, 2);
+  end if;
 
   select user_id into v_u1 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_first limit 1;
   select user_id into v_u2 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_second limit 1;
@@ -2880,9 +2974,17 @@ begin
   select count(*) into v_joined from public.tournament_entries where tournament_id = p_tournament;
   v_is_wagr := (v_t.entry = 0);
   v_pot := round(v_t.entry * v_joined * 0.98, 2);
-  v_p1 := round(v_pot * 0.833, 2);
-  v_p2 := round(v_pot * 0.10, 2);
-  v_p3 := round(v_pot * 0.067, 2);
+  if v_joined <= 2 then
+    v_p1 := v_pot; v_p2 := 0; v_p3 := 0;
+  elsif v_joined < 8 then
+    v_p1 := round(v_pot * 0.85, 2);
+    v_p2 := round(v_pot * 0.15, 2);
+    v_p3 := 0;
+  else
+    v_p1 := round(v_pot * 0.80, 2);
+    v_p2 := round(v_pot * 0.15, 2);
+    v_p3 := round(v_pot * 0.05, 2);
+  end if;
   select user_id into v_u1 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_first limit 1;
   select user_id into v_u2 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_second limit 1;
   select user_id into v_u3 from public.tournament_entries where tournament_id=p_tournament and entrant_name=p_third limit 1;
@@ -2999,6 +3101,9 @@ declare v_bal numeric; v_id uuid;
 begin
   perform public.check_not_banned();
   if p_stake <= 0 then raise exception 'stake must be positive'; end if;
+  if p_stake > 100 then raise exception 'max bet is $100'; end if;
+  if p_odds <= 1 then raise exception 'odds must be greater than 1'; end if;
+  if p_odds > 10 then raise exception 'max odds is 10x'; end if;
   if p_match_id is not null and not exists (select 1 from public.matches where id = p_match_id and status in ('open','live'))
     then raise exception 'match not found or not active'; end if;
   select balance into v_bal from public.profiles where id = auth.uid() for update;
@@ -3173,9 +3278,12 @@ create index if not exists betoff_status_idx on public.bet_offers(status, create
 create index if not exists betoff_creator_idx on public.bet_offers(creator_id);
 
 alter table public.bet_offers enable row level security;
+drop policy if exists "bet_offers read" on public.bet_offers;
 create policy "bet_offers read" on public.bet_offers for select using (true);
+drop policy if exists "bet_offers insert" on public.bet_offers;
 create policy "bet_offers insert" on public.bet_offers for insert with check (auth.uid() = creator_id);
-create policy "bet_offers update" on public.bet_offers for update using (true);
+drop policy if exists "bet_offers update" on public.bet_offers;
+create policy "bet_offers update" on public.bet_offers for update using (false);
 
 do $$ begin
   execute 'alter publication supabase_realtime add table public.bet_offers';
@@ -3310,6 +3418,13 @@ begin
   insert into public.wallet_ledger(user_id, delta, reason, ref_id) values (auth.uid(), v_off.stake, 'bet_offer_cancel', p_offer);
   update public.bet_offers set status = 'void', settled_at = now() where id = p_offer;
 end $$;
+
+-- P2P bet offer grants
+grant execute on function public.create_bet_offer(text,text,text,text,numeric,timestamptz) to authenticated;
+grant execute on function public.accept_bet_offer(uuid) to authenticated;
+grant execute on function public.cancel_bet_offer(uuid) to authenticated;
+grant execute on function public.settle_bet_offer(uuid,text) to authenticated;
+grant execute on function public.void_bet_offer(uuid) to authenticated;
 
 -- ============================================================================
 -- SEED — a few upcoming tournaments so the page isn't empty (only if none yet)
@@ -3636,6 +3751,9 @@ begin
       select mp.user_id, v_entry.tourney_name || ' match was cancelled due to inactivity (2+ hours with no report).'
       from public.match_players mp where mp.match_id = v_entry.match_id;
   end loop;
+
+  -- 5. Hard-delete archived zero-entry tournaments past start time
+  perform public.tournament_cleanup();
 end $$;
 
 -- Cron: run maintenance every 3 minutes
@@ -3685,7 +3803,7 @@ returns json language plpgsql security definer stable set search_path = public a
 declare v_matches bigint; v_winnings numeric; v_open bigint;
 begin
   select count(*) into v_matches from public.matches where status in ('settled','live','reported');
-  select coalesce(sum(l.delta),0) into v_winnings from public.wallet_ledger l where l.reason = 'match_win';
+  select coalesce(sum(l.delta),0) into v_winnings from public.wallet_ledger l where l.reason in ('match_payout','tournament_payout');
   select count(*) into v_open from public.matches where status = 'open';
   return json_build_object('total_matches', v_matches, 'total_winnings', v_winnings, 'open_lobbies', v_open);
 end $$;
@@ -3735,11 +3853,10 @@ begin
   if not public.is_admin() then raise exception 'admin only'; end if;
   select * into v_m from public.matches where id = p_match for update;
   if not found then raise exception 'match not found'; end if;
-  if v_m.status not in ('settled','completed') then raise exception 'can only revert settled/completed matches'; end if;
+  if v_m.status <> 'settled' then raise exception 'can only revert settled matches'; end if;
 
-  -- Reverse wallet_ledger entries for this match
   for v_ledger in
-    select user_id, delta from public.wallet_ledger where ref_id = p_match and reason in ('match_win','match_rake')
+    select user_id, delta from public.wallet_ledger where ref_id = p_match and reason in ('match_payout','tournament_payout')
   loop
     update public.profiles set balance = balance - v_ledger.delta where id = v_ledger.user_id;
     insert into public.wallet_ledger(user_id, delta, reason, ref_id)
@@ -3787,6 +3904,36 @@ begin
     from public.match_players mp where mp.match_id = p_match;
 end $$;
 grant execute on function public.admin_set_match_status(uuid, text, text) to authenticated;
+
+-- ============================================================================
+-- TOURNAMENT CLEANUP: hard-delete archived zero-entry tournaments past start
+-- Idempotent. Call from cron or tournament_maintenance().
+-- ============================================================================
+create or replace function public.tournament_cleanup()
+returns integer language plpgsql security definer set search_path = public as $$
+declare
+  v_row record;
+  v_count integer := 0;
+begin
+  for v_row in
+    select t.id, t.name, t.starts_at
+    from public.tournaments t
+    where t.status = 'archived'
+      and t.starts_at < now()
+      and not exists (
+        select 1 from public.tournament_entries te where te.tournament_id = t.id
+      )
+    for update skip locked
+  loop
+    insert into public.tournament_log(tournament_id, action, detail)
+      values (v_row.id, 'cleanup_delete',
+        'Hard-deleted archived zero-entry tournament "' || v_row.name || '" (started ' || v_row.starts_at::text || ')');
+    delete from public.tournaments where id = v_row.id;
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end $$;
+grant execute on function public.tournament_cleanup() to authenticated;
 
 -- ============================================================================
 -- DONE. After running:

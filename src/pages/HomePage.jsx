@@ -1,20 +1,26 @@
 import React from "react";
-import { Zap, Trophy, ShieldCheck, DollarSign, ChevronRight, Swords, Gamepad2 } from "lucide-react";
+import { Zap, Trophy, ShieldCheck, DollarSign, ChevronRight, Swords, Gamepad2, Wallet, TrendingUp, Target } from "lucide-react";
 import { Button } from "../components/Button";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
+import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { listOpenMatches, joinMatch } from "../services/matchService";
 import { supabase } from "../lib/supabase";
 import { CURRENT_GAMES, shortForGame, formatLabel, calculatePayout, RAKE_CONFIG } from "../utils/games";
 import { money } from "../utils/format";
-import { PlayerCard } from "../components/PlayerCard";
+import { RankStar } from "../components/RankStar";
+import { WagrBadge } from "../components/WagrBadge";
+import { rankForXp, rankProgress, nextRank } from "../utils/ranks";
+import { track } from "../utils/analytics";
 import bo7Cover from "../assets/black-ops-7.png";
 import wzCover from "../assets/warzone.png";
 import mw4Cover from "../assets/mw4.png";
 import wwiiCover from "../assets/wwii.png";
+import bo1Cover from "../assets/bo1.png";
+import bo2Cover from "../assets/bo2.png";
 
-const COVERS = { bo7: bo7Cover, warzone: wzCover, bor: wzCover, mw4: mw4Cover, wwii: wwiiCover };
+const COVERS = { bo7: bo7Cover, warzone: wzCover, bor: wzCover, mw4: mw4Cover, wwii: wwiiCover, bo1: bo1Cover, bo2: bo2Cover };
 
 export function HomePage({ onNavigate, onLogin }) {
   const { profile, refreshProfile } = useAuth();
@@ -24,10 +30,13 @@ export function HomePage({ onNavigate, onLogin }) {
   const openMatches = matches || [];
   const platformStats = stats || { total_matches: 0, total_winnings: 0, open_lobbies: 0 };
 
+  useVisibilityRefresh(reload, []);
+
   async function acceptMatch(m) {
     if (!profile) return onLogin();
     const res = await joinMatch(m.id);
     if (res.error) return toast.error(res.error);
+    track.matchJoin(m.game, m.entry || 0);
     toast.success("Joined. Match is live.");
     refreshProfile();
     reload();
@@ -48,12 +57,17 @@ export function HomePage({ onNavigate, onLogin }) {
             <Button variant="ghost" onClick={() => onNavigate("tournaments")}>Browse tournaments</Button>
           </div>
         </div>
-        <div className="heroStats">
-          <div className="heroStat"><b>{money(platformStats.total_winnings)}</b><small>WINNINGS PAID</small></div>
-          <div className="heroStat"><b>{platformStats.total_matches.toLocaleString()}</b><small>MATCHES PLAYED</small></div>
-          <div className="heroStat"><b>{platformStats.open_lobbies}</b><small>OPEN LOBBIES</small></div>
-        </div>
+        {(platformStats.total_matches > 0 || platformStats.open_lobbies > 0) && (
+          <div className="heroStats">
+            <div className="heroStat"><b>{money(platformStats.total_winnings)}</b><small>WINNINGS PAID</small></div>
+            <div className="heroStat"><b>{platformStats.total_matches.toLocaleString()}</b><small>MATCHES PLAYED</small></div>
+            <div className="heroStat"><b>{platformStats.open_lobbies}</b><small>OPEN LOBBIES</small></div>
+          </div>
+        )}
       </section>
+
+      {/* ── LOGGED-IN USER CARD ── */}
+      {profile && <UserQuickCard profile={profile} onNavigate={onNavigate} />}
 
       {/* ── GAME CARDS ── */}
       <section className="gameCardsSection">
@@ -104,7 +118,6 @@ export function HomePage({ onNavigate, onLogin }) {
                   <span>{m.platform}</span>
                 </div>
                 <div className="fmBottom">
-                  <PlayerCard player={m.creator} />
                   <Button variant="primary" className="btn-sm" onClick={() => acceptMatch(m)}>Accept</Button>
                 </div>
               </div>
@@ -153,7 +166,7 @@ export function HomePage({ onNavigate, onLogin }) {
             <div className="rakeIcon gold"><Trophy size={22} /></div>
             <b>WAGR Member</b>
             <span className="rakeRate gold">{RAKE_CONFIG.wagr * 100}% rake</span>
-            <p>WAGR members get half the rake. Same $20 pot, only $0.50. Winner takes ${calculatePayout(20, true)}.</p>
+            <p>WAGR members pay zero rake. Same $20 pot, you keep it all. Winner takes ${calculatePayout(20, true)}.</p>
             <Button variant="primary" className="btn-sm" onClick={() => onNavigate("shop")}>Get WAGR</Button>
           </div>
         </div>
@@ -185,5 +198,69 @@ export function HomePage({ onNavigate, onLogin }) {
         </section>
       )}
     </main>
+  );
+}
+
+function UserQuickCard({ profile: p, onNavigate }) {
+  const rank = rankForXp(p.xp);
+  const next = nextRank(p.xp);
+  const pct = rankProgress(p.xp);
+  const remaining = next.xp === rank.xp ? 0 : next.xp - (p.xp || 0);
+  const total = (p.wins || 0) + (p.losses || 0);
+  const winPct = total ? Math.round((p.wins / total) * 100) : 0;
+
+  return (
+    <section className="userQuickCard" style={{ "--rank-glow": rank.glow }}>
+      <div className="uqcLeft">
+        <div className="uqcAvatarWrap">
+          <div className="uqcAvatar" style={{ borderColor: rank.glow }}>
+            {p.avatar_url ? <img src={p.avatar_url} alt="" /> : <span>{(p.username || "?").slice(0, 2)}</span>}
+          </div>
+          <div className="uqcStarWrap"><RankStar rank={rank} size={24} /></div>
+        </div>
+        <div className="uqcInfo">
+          <div className="uqcName">
+            <b>{p.username}</b>
+            {p.wagr_member && <WagrBadge size={14} />}
+          </div>
+          <div className="uqcTier" style={{ color: rank.glow }}>{rank.name}</div>
+          {next && (
+            <div className="uqcProgress">
+              <div className="uqcBar">
+                <div className="uqcBarFill" style={{ width: `${pct}%`, background: rank.glow }} />
+              </div>
+              <span className="uqcBarLabel">{remaining.toLocaleString()} XP to {next.name}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="uqcStats">
+        <button className="uqcStat" onClick={() => onNavigate("wallet")}>
+          <Wallet size={14} />
+          <span className="uqcStatVal cash">{money(p.balance)}</span>
+          <span className="uqcStatLbl">Balance</span>
+        </button>
+        <div className="uqcStat">
+          <TrendingUp size={14} />
+          <span className="uqcStatVal">{(p.xp || 0).toLocaleString()}</span>
+          <span className="uqcStatLbl">XP</span>
+        </div>
+        <div className="uqcStat">
+          <Target size={14} />
+          <span className="uqcStatVal">{p.wins || 0}W-{p.losses || 0}L</span>
+          <span className="uqcStatLbl">{total >= 1 ? `${winPct}% Win` : "Record"}</span>
+        </div>
+        {(p.earnings || 0) > 0 && (
+          <div className="uqcStat">
+            <DollarSign size={14} />
+            <span className="uqcStatVal cash">{money(p.earnings)}</span>
+            <span className="uqcStatLbl">Earned</span>
+          </div>
+        )}
+      </div>
+      <Button variant="ghost" className="uqcAction" onClick={() => onNavigate("profile", p.username)}>
+        My Profile <ChevronRight size={14} />
+      </Button>
+    </section>
   );
 }

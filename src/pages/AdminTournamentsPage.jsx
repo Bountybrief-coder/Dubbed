@@ -3,6 +3,7 @@ import { ShieldCheck, Search, Plus, Play, Calendar } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
+import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { listTournaments, adminCreateTournament, adminGenerateBracket } from "../services/tournamentService";
 import { TOURNAMENT_ROTATION } from "../utils/tournamentPresets";
 import { GAMES, REGIONS, PLATFORMS, SKILL_TIERS, SERIES_OPTIONS, modesForGame, formatsForGame } from "../utils/games";
@@ -16,6 +17,7 @@ export function AdminTournamentsPage() {
   const { isAdmin } = useAuth();
   const toast = useToast();
   const { data, loading, error, reload } = useAsync(() => listTournaments(), []);
+  useVisibilityRefresh(reload, []);
   const [createOpen, setCreateOpen] = useState(false);
 
   if (!isAdmin) return <main className="page"><EmptyState icon={ShieldCheck} title="Admins only" /></main>;

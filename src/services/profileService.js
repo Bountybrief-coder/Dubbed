@@ -63,6 +63,15 @@ export async function changeUsername(newName) {
   return { error: error?.message };
 }
 
+export async function hasActiveMatches(userId) {
+  const { count } = await supabase
+    .from("match_players")
+    .select("match_id, matches!inner(status)", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .in("matches.status", ["open", "live", "reported", "disputed"]);
+  return (count || 0) > 0;
+}
+
 export async function getStreamers() {
   const { data, error } = await supabase
     .from("profiles")
@@ -97,7 +106,7 @@ export async function getTrophyCounts(userId) {
     .select("tone, place")
     .eq("user_id", userId);
   const rows = data || [];
-  const counts = { gold: 0, silver: 0, bronze: 0 };
+  const counts = { wagr: 0, gold: 0, silver: 0, bronze: 0 };
   for (const t of rows) {
     const tone = t.tone || (t.place === 1 ? "gold" : t.place === 2 ? "silver" : t.place === 3 ? "bronze" : null);
     if (tone && counts[tone] != null) counts[tone] += 1;

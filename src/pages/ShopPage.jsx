@@ -10,6 +10,7 @@ import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { money } from "../utils/format";
 import { validateUsername } from "../utils/validation";
+import { track } from "../utils/analytics";
 import wagrEmblem from "../assets/wagr-emblem.png";
 
 const SERVICE_ICON = { username_change: PenLine, stat_reset: RotateCcw, double_xp_token: Zap };
@@ -53,6 +54,7 @@ export function ShopPage({ onLogin, onNavigate }) {
       const res = await purchaseWithWallet(item.key);
       setBusyItem(null);
       if (res.error) return toast.error(res.error);
+      track.shopPurchase(item.key, item.price);
       toast.success(`${item.name} purchased.`);
       refreshProfile();
       if (item.key === "username_change") setUsernameOpen(true);
@@ -123,6 +125,7 @@ export function ShopPage({ onLogin, onNavigate }) {
                   const res = await purchaseWithWallet("wagr_membership");
                   setBusyWagr(false);
                   if (res.error) return toast.error(res.error);
+                  track.wagrUpgrade();
                   toast.success("WAGR Membership activated for 30 days.");
                   refreshProfile();
                 } else {

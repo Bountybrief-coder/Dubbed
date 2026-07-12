@@ -42,9 +42,7 @@ export const sanitizeMessage = (raw, max = 400) =>
     .trimEnd()
     .slice(0, max);
 
-// Withdrawal display helpers. Stripe payouts to a connected Express account
-// typically land in ~2 business days once processing starts.
-export const WITHDRAWAL_PROCESSING_COPY = "2–3 business days";
+export const WITHDRAWAL_PROCESSING_COPY = "1–2 business days";
 
 export const estimatedArrival = (createdAt) => {
   // Add ~3 calendar days as a friendly upper bound (skips exact banking math).

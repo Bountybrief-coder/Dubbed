@@ -6,8 +6,9 @@ import { WagrBadge } from "../components/WagrBadge";
 import { TrophyIcon } from "../components/TrophyIcon";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useAsync } from "../hooks/useAsync";
+import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { useToast } from "../hooks/useToast.jsx";
-import { getProfileByUsername, getRecords, getTrophies, getTrophyCounts, getRecentMatches, subscribeToTrophies, updateProfile, changeUsername, isUsernameTaken } from "../services/profileService";
+import { getProfileByUsername, getRecords, getTrophies, getTrophyCounts, getRecentMatches, subscribeToTrophies, updateProfile, changeUsername, isUsernameTaken, hasActiveMatches } from "../services/profileService";
 import { supabase } from "../lib/supabase";
 import { getAchievements } from "../services/achievementService";
 import { uploadAvatar } from "../utils/storage";
@@ -20,10 +21,14 @@ import { GAMES } from "../utils/games";
 import bo7Cover from "../assets/black-ops-7.png";
 import wzCover from "../assets/warzone.png";
 import mw4Cover from "../assets/mw4.png";
+import wwiiCover2 from "../assets/wwii.png";
+import bo1Cover from "../assets/bo1.png";
+import bo2Cover from "../assets/bo2.png";
 
 const GAME_COVERS = {
   "Call of Duty: Black Ops 7": bo7Cover, "Warzone": wzCover, "Black Ops Royale": wzCover,
-  "Call of Duty: Modern Warfare 4": mw4Cover,
+  "Call of Duty: Modern Warfare 4": mw4Cover, "Call of Duty: WWII": wwiiCover2,
+  "Call of Duty: Black Ops": bo1Cover, "Call of Duty: Black Ops II": bo2Cover,
 };
 import { money } from "../utils/format";
 
@@ -31,6 +36,8 @@ export function ProfilePage({ username }) {
   const { user, profile: me, refreshProfile } = useAuth();
   const toast = useToast();
   const { data: profile, loading, error, reload } = useAsync(() => getProfileByUsername(username), [username]);
+
+  useVisibilityRefresh(reload, [username]);
 
   if (loading) return <main className="page"><Skeleton h={160} r={14} /></main>;
   if (error) return <main className="page"><div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div></main>;
@@ -145,12 +152,10 @@ function PlayerStatCard({ profile, rank, total }) {
         </div>
       </div>
       <div className="pscTrophies">
-        {profile.wagr_member && (
-          <div className="pscTrophy" title="WAGR Member">
-            <TrophyIcon tone="wagr" size={56} />
-            <span className="pscTrophyN" style={{ color: "#7c5cff" }}>WAGR</span>
-          </div>
-        )}
+        <div className={`pscTrophy${tc.wagr === 0 ? " empty" : ""}`} title={`${tc.wagr} WAGR`}>
+          <TrophyIcon tone="wagr" size={56} />
+          <span className="pscTrophyN" style={tc.wagr > 0 ? { color: "#7c5cff" } : undefined}>{tc.wagr}</span>
+        </div>
         <div className={`pscTrophy ${tc.gold === 0 ? "empty" : ""}`} title={`${tc.gold} Gold`}>
           <TrophyIcon tone="gold" size={56} />
           <span className="pscTrophyN">{tc.gold}</span>
@@ -189,6 +194,14 @@ function GamertagsPanel({ profile, isMe, onUpdate }) {
   const [editing, setEditing] = useState(false);
   const [vals, setVals] = useState({});
   const [saving, setSaving] = useState(false);
+  const [gamertagLocked, setGamertagLocked] = useState(false);
+
+  useEffect(() => {
+    if (!isMe) return;
+    let cancelled = false;
+    hasActiveMatches(profile.id).then((active) => { if (!cancelled) setGamertagLocked(active); });
+    return () => { cancelled = true; };
+  }, [isMe, profile.id, editing]);
 
   function startEdit() {
     setVals({
@@ -233,10 +246,11 @@ function GamertagsPanel({ profile, isMe, onUpdate }) {
 
       {editing ? (
         <div className="gtEditGrid">
+          {gamertagLocked && <p className="gtLockNotice"><Lock size={13} /> Gamertag changes locked — you have an active match.</p>}
           {GAMERTAG_FIELDS.map(({ key, label, Icon, placeholder }) => (
             <div className="gtEditRow" key={key}>
-              <label><Icon size={14} /> {label}</label>
-              <input className="field sm" value={vals[key]} onChange={(e) => setVals({ ...vals, [key]: e.target.value })} placeholder={placeholder} />
+              <label><Icon size={14} /> {label}{gamertagLocked && <Lock size={11} />}</label>
+              <input className="field sm" value={vals[key]} onChange={(e) => { if (!gamertagLocked) setVals({ ...vals, [key]: e.target.value }); }} placeholder={placeholder} disabled={gamertagLocked} />
             </div>
           ))}
           <div className="gtEditDivider" />
@@ -291,33 +305,49 @@ function AccountSettingsPanel({ profile, onUpdate }) {
 
   const [emailOpen, setEmailOpen] = useState(false);
   const [newEmail, setNewEmail] = useState("");
+  const [emailPw, setEmailPw] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
 
   async function handleChangeEmail() {
+    if (!emailPw) return toast.error("Enter your current password to confirm.");
     if (!newEmail.trim() || !newEmail.includes("@")) return toast.error("Enter a valid email.");
     setEmailBusy(true);
+    const { data: session } = await supabase.auth.getSession();
+    const currentEmail = session?.session?.user?.email;
+    if (!currentEmail) { setEmailBusy(false); return toast.error("Session expired. Please log in again."); }
+    const { error: reAuthErr } = await supabase.auth.signInWithPassword({ email: currentEmail, password: emailPw });
+    if (reAuthErr) { setEmailBusy(false); return toast.error("Password is incorrect."); }
     const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
     setEmailBusy(false);
     if (error) return toast.error(error.message);
     toast.success("Confirmation email sent. Check your inbox to verify the new address.");
     setEmailOpen(false);
     setNewEmail("");
+    setEmailPw("");
   }
 
   const [pwOpen, setPwOpen] = useState(false);
+  const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [pwBusy, setPwBusy] = useState(false);
 
   async function handleChangePassword() {
-    if (newPw.length < 8) return toast.error("Password must be at least 8 characters.");
+    if (!currentPw) return toast.error("Enter your current password.");
+    if (newPw.length < 6) return toast.error("Password must be at least 6 characters.");
     if (newPw !== confirmPw) return toast.error("Passwords don't match.");
     setPwBusy(true);
+    const { data: session } = await supabase.auth.getSession();
+    const email = session?.session?.user?.email;
+    if (!email) { setPwBusy(false); return toast.error("Session expired. Please log in again."); }
+    const { error: reAuthErr } = await supabase.auth.signInWithPassword({ email, password: currentPw });
+    if (reAuthErr) { setPwBusy(false); return toast.error("Current password is incorrect."); }
     const { error } = await supabase.auth.updateUser({ password: newPw });
     setPwBusy(false);
     if (error) return toast.error(error.message);
     toast.success("Password updated.");
     setPwOpen(false);
+    setCurrentPw("");
     setNewPw("");
     setConfirmPw("");
   }
@@ -353,12 +383,16 @@ function AccountSettingsPanel({ profile, onUpdate }) {
         {emailOpen && (
           <div className="gtEditGrid" style={{ padding: "8px 0 12px" }}>
             <div className="gtEditRow">
+              <label>Current password</label>
+              <input className="field sm" type="password" value={emailPw} onChange={(e) => setEmailPw(e.target.value)} placeholder="Verify your identity" />
+            </div>
+            <div className="gtEditRow">
               <label>New email</label>
               <input className="field sm" type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="new@email.com" />
             </div>
             <div className="gtEditActions">
               <button className="btn btn-primary sm" onClick={handleChangeEmail} disabled={emailBusy}><Check size={13} /> {emailBusy ? "Sending..." : "Update email"}</button>
-              <button className="btn btn-ghost sm" onClick={() => { setEmailOpen(false); setNewEmail(""); }}>Cancel</button>
+              <button className="btn btn-ghost sm" onClick={() => { setEmailOpen(false); setNewEmail(""); setEmailPw(""); }}>Cancel</button>
             </div>
           </div>
         )}
@@ -371,8 +405,12 @@ function AccountSettingsPanel({ profile, onUpdate }) {
         {pwOpen && (
           <div className="gtEditGrid" style={{ padding: "8px 0 12px" }}>
             <div className="gtEditRow">
+              <label>Current password</label>
+              <input className="field sm" type="password" value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} placeholder="Verify your identity" />
+            </div>
+            <div className="gtEditRow">
               <label>New password</label>
-              <input className="field sm" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="Min 8 characters" />
+              <input className="field sm" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="Min 6 characters" />
             </div>
             <div className="gtEditRow">
               <label>Confirm password</label>
@@ -380,7 +418,7 @@ function AccountSettingsPanel({ profile, onUpdate }) {
             </div>
             <div className="gtEditActions">
               <button className="btn btn-primary sm" onClick={handleChangePassword} disabled={pwBusy}><Check size={13} /> {pwBusy ? "Updating..." : "Update password"}</button>
-              <button className="btn btn-ghost sm" onClick={() => { setPwOpen(false); setNewPw(""); setConfirmPw(""); }}>Cancel</button>
+              <button className="btn btn-ghost sm" onClick={() => { setPwOpen(false); setCurrentPw(""); setNewPw(""); setConfirmPw(""); }}>Cancel</button>
             </div>
           </div>
         )}
@@ -520,7 +558,7 @@ function TrophiesPanel({ userId }) {
   const { data: trophies, loading } = useAsync(() => getTrophies(userId), [userId]);
   const placeLabel = { 1: "1st", 2: "2nd", 3: "3rd" };
   if (loading) return null;
-  if (!trophies.length) return null;
+  if (!trophies || !trophies.length) return null;
   return (
     <section className="panel2">
       <h2><Trophy size={16} /> Trophies</h2>

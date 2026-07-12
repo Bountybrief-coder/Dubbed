@@ -3,17 +3,17 @@ import { Plus, Crosshair, Gamepad2, ChevronRight, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
+import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { listOpenMatches, joinMatch } from "../services/matchService";
 import { CreateMatchModal } from "../components/CreateMatchModal";
 import { Button } from "../components/Button";
-import { PlayerCard } from "../components/PlayerCard";
 import { SkeletonRows } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
 import { money } from "../utils/format";
 import {
   gameBySlug, shortForGame, formatLabel, formatsForGameMode,
   modesForGameByCategory, CATEGORY_LABELS, modeRule, isKillRaceMode,
-  isBattleRoyaleGame, FORMAT_LABELS
+  isBattleRoyaleGame, FORMAT_LABELS, seriesLabel
 } from "../utils/games";
 import bo7Cover from "../assets/black-ops-7.png";
 import wzCover from "../assets/warzone.png";
@@ -24,9 +24,14 @@ import mwCover from "../assets/mw-2019.png";
 import mw2Cover from "../assets/mw2.png";
 import wawCover from "../assets/waw.png";
 
+import bo1Cover from "../assets/bo1.png";
+import bo2Cover from "../assets/bo2.png";
+import wwiiCover from "../assets/wwii.png";
+
 const COVERS = {
   bo7: bo7Cover, warzone: wzCover, bor: wzCover, mw4: mw4Cover,
-  bo4: bo4Cover, bo3: bo3Cover, mw: mwCover, mw2: mw2Cover, waw: wawCover
+  bo4: bo4Cover, bo3: bo3Cover, mw: mwCover, mw2: mw2Cover, waw: wawCover,
+  bo1: bo1Cover, bo2: bo2Cover, wwii: wwiiCover
 };
 
 export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
@@ -42,6 +47,8 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
     [slug]
   );
   const matches = data || [];
+
+  useVisibilityRefresh(reload, [slug]);
 
   if (!game) {
     return (
@@ -166,7 +173,7 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
                 <img className="matchCover" src={COVERS[game.slug]} alt="" loading="lazy" />
                 <div className="matchMeta">
                   <b>{m.mode}</b>
-                  <small>{m.format} {formatLabel(m.format)} · {m.series || "BO1"} · {m.region}</small>
+                  <small>{m.format} {formatLabel(m.format)} · {seriesLabel(m.series || "Best of 1")} · {m.region}</small>
                   <div className="matchBadges">
                     <span className="badge">{m.platform}</span>
                     {m.skill_tier !== "Open" && <span className="badge accent">{m.skill_tier}</span>}
@@ -174,7 +181,6 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
                   </div>
                   <span className="matchTicket">{m.code}</span>
                 </div>
-                <PlayerCard player={m.creator} />
                 <div className="matchStakeCol">
                   <span className="matchStakeLbl">{m.kind === "cash" ? "ENTRY" : "MODE"}</span>
                   <b className={m.kind === "cash" ? "cash" : "xp"}>{m.kind === "cash" ? money(m.entry) : "XP"}</b>

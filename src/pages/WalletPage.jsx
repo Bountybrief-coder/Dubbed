@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Wallet, ArrowDownToLine, ArrowUpFromLine, Receipt, ShieldCheck, RefreshCw, ExternalLink, Clock, ShoppingBag } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useAsync } from "../hooks/useAsync";
+import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { useToast } from "../hooks/useToast.jsx";
 import { useWithdrawals } from "../hooks/useWithdrawals";
 import { getLedger, deposit, startStripeOnboarding, refreshStripeStatus } from "../services/walletService";
@@ -12,6 +13,8 @@ import { Skeleton, SkeletonRows } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
 import { money, timeAgo, shortDate, estimatedArrival, WITHDRAWAL_PROCESSING_COPY } from "../utils/format";
 import { validateEntry } from "../utils/validation";
+import { track } from "../utils/analytics";
+import { calculateWithdrawalFee, calculateWithdrawalNet, WITHDRAWAL_FEE } from "../utils/games";
 
 const REASON_LABEL = {
   deposit: "Deposit", match_entry: "Match entry", match_payout: "Match payout",
@@ -45,6 +48,8 @@ export function WalletPage() {
   const [depOpen, setDepOpen] = useState(false);
   const [wdOpen, setWdOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+
+  useVisibilityRefresh(reload, [profileId]);
 
   const stripeReady = profile?.stripe_onboarding_complete && profile?.stripe_payouts_enabled;
 
@@ -147,11 +152,15 @@ export function WalletPage() {
                 <div className="wdHistMain">
                   <b>{money(w.amount)}</b>
                   <span className={`statusChip ${WD_STATUS_CLASS[w.status] || "s-pending"}`}>{WD_STATUS_LABEL[w.status] || w.status}</span>
+                  {w.meta?.auto_approved && w.status === "processing" && <span className="statusChip s-paid" style={{ fontSize: 10 }}>auto</span>}
+                  {w.meta?.auto_approved === false && w.status === "pending" && <span className="statusChip" style={{ fontSize: 10 }}>under review</span>}
                 </div>
                 <div className="wdHistMeta">
                   <span>{shortDate(w.created_at)}</span>
-                  {w.status === "pending" || w.status === "processing" ? (
-                    <span className="wdEta"><Clock size={12} /> {WITHDRAWAL_PROCESSING_COPY} · est. {estimatedArrival(w.created_at)}</span>
+                  {w.status === "processing" && w.meta?.auto_approved ? (
+                    <span className="wdEta"><Clock size={12} /> On its way — est. {estimatedArrival(w.processing_at || w.created_at)}</span>
+                  ) : w.status === "pending" || w.status === "processing" ? (
+                    <span className="wdEta"><Clock size={12} /> {w.status === "pending" ? "Under review" : WITHDRAWAL_PROCESSING_COPY} · est. {estimatedArrival(w.created_at)}</span>
                   ) : w.status === "paid" ? (
                     <span className="win">Paid {shortDate(w.completed_at)}</span>
                   ) : w.status === "rejected" ? (
@@ -242,6 +251,7 @@ export function WalletPage() {
           const res = await deposit(amount);
           setBusy(false);
           if (res.error) return toast.error(res.error);
+          track.deposit(Number(amount));
           toast.success(`Deposited ${money(amount)}.`);
           onDone(); onClose();
         }}>Deposit {money(Number(amount) || 0)}</Button>
@@ -272,27 +282,40 @@ export function WalletPage() {
         ) : (
           <>
             <p className="modalNote">
-              Funds move to <b>pending</b> while Stripe processes the payout ({WITHDRAWAL_PROCESSING_COPY}). If a request is rejected, the money returns to your balance automatically.
+              Most withdrawals are auto-approved and sent instantly ({WITHDRAWAL_PROCESSING_COPY} to arrive). Higher amounts or first-time withdrawals go through a quick manual review. If rejected, funds return to your balance automatically.
+            </p>
+            <p className="modalNote" style={{ fontSize: 12, color: "var(--text2)" }}>
+              Fee: {WITHDRAWAL_FEE.percent * 100}% + {money(WITHDRAWAL_FEE.flat)} per withdrawal.
             </p>
             <label className="fieldLbl">Amount (available {money(max)})</label>
-            <input className="field" type="number" min="10" max={max} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Minimum $10" />
+            <input className="field" type="number" min="5" max={max} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Minimum $5" />
             <div className="chipRow">
               {[25, 50, 100].filter((a) => a <= max).map((a) => (
                 <button key={a} className={Number(amount) === a ? "on" : ""} onClick={() => setAmount(a)}>{money(a)}</button>
               ))}
-              {max >= 10 && <button className={Number(amount) === max ? "on" : ""} onClick={() => setAmount(max)}>Max</button>}
+              {max >= 5 && <button className={Number(amount) === max ? "on" : ""} onClick={() => setAmount(max)}>Max</button>}
             </div>
+            {Number(amount) >= 5 && (
+              <div className="wdFeeBreakdown">
+                <div className="wdFeeRow"><span>Withdrawal</span><b>{money(amount)}</b></div>
+                <div className="wdFeeRow"><span>Fee ({WITHDRAWAL_FEE.percent * 100}% + {money(WITHDRAWAL_FEE.flat)})</span><b className="danger">-{money(calculateWithdrawalFee(amount))}</b></div>
+                <div className="wdFeeRow total"><span>You receive</span><b className="win">{money(calculateWithdrawalNet(amount))}</b></div>
+              </div>
+            )}
             <Button variant="primary" className="wide" loading={busy} onClick={async () => {
               const n = Number(amount);
-              if (!Number.isFinite(n) || n < 10) return toast.error("Minimum withdrawal is $10.");
+              if (!Number.isFinite(n) || n < 5) return toast.error("Minimum withdrawal is $5.");
               if (n > max) return toast.error("Amount exceeds available balance.");
               setBusy(true);
               const res = await wd.submit(n, `stripe:${profile.stripe_account_id}`);
               setBusy(false);
               if (res.error) return toast.error(res.error);
-              toast.success("Withdrawal requested. Track it in your history.");
+              track.withdraw(n);
+              toast.success(res.data?.auto_approved
+                ? "Auto-approved — on its way!"
+                : "Withdrawal submitted for review.");
               onDone(); onClose();
-            }}>Request {money(Number(amount) || 0)}</Button>
+            }}>Request {money(Number(amount) || 0)} (receive {money(calculateWithdrawalNet(Number(amount) || 0))})</Button>
           </>
         )}
       </Modal>

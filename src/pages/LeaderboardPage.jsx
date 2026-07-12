@@ -1,8 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { Trophy, Crown, Flame, TrendingUp, DollarSign, Percent, Filter, ChevronRight } from "lucide-react";
 import { useAsync, useCountdown } from "../hooks/useAsync";
+import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { useAuth } from "../hooks/useAuth.jsx";
-import { getLeaderboard, getMyRank, getWeeklyRewards } from "../services/leaderboardService";
+import { getLeaderboard, getMyRank, getWeeklyRewards, getTimedLeaderboard, getMyTimedRank } from "../services/leaderboardService";
 import { SkeletonRows } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
 import { RankStar } from "../components/RankStar";
@@ -19,8 +20,8 @@ const BOARDS = [
 
 const SCOPES = [
   { key: "alltime", label: "All-Time" },
-  { key: "season",  label: "Season" },
-  { key: "weekly",  label: "Weekly" },
+  { key: "30d",     label: "30 Days" },
+  { key: "7d",      label: "7 Days" },
 ];
 
 const REGIONS   = ["NA", "EU"];
@@ -59,6 +60,17 @@ function lastWeekStart() {
   return d.toISOString().slice(0, 10);
 }
 
+function sinceDate(scope) {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  if (scope === "7d") {
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  } else {
+    d.setUTCDate(d.getUTCDate() - 30);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
 export function LeaderboardPage({ onOpenProfile }) {
   const { profile: me } = useAuth();
   const [metric, setMetric] = useState("xp");
@@ -68,31 +80,33 @@ export function LeaderboardPage({ onOpenProfile }) {
   const [showFilters, setShowFilters] = useState(false);
   const youRowRef = useRef(null);
 
+  const weeklyCountdown = useCountdown(nextSunday());
   const filters = { region, platform };
+  const isTimed = scope === "7d" || scope === "30d";
+  const boardMetric = isTimed && metric === "streak" ? "xp" : metric;
+  const since = isTimed ? sinceDate(scope) : null;
   const fetchBoard = useCallback(
-    () => getLeaderboard(metric, filters),
-    [metric, region, platform]
+    () => isTimed
+      ? getTimedLeaderboard(boardMetric, since, filters)
+      : getLeaderboard(boardMetric, filters),
+    [boardMetric, region, platform, scope]
   );
-  const { data, loading, error, reload } = useAsync(fetchBoard, [metric, region, platform]);
+  const { data, loading, error, reload } = useAsync(fetchBoard, [boardMetric, region, platform, scope]);
 
   const fetchMyRank = useCallback(
-    () => me ? getMyRank(metric, filters) : Promise.resolve({ data: null }),
-    [metric, region, platform, me?.id]
+    () => me
+      ? (isTimed ? getMyTimedRank(boardMetric, since, filters) : getMyRank(boardMetric, filters))
+      : Promise.resolve({ data: null }),
+    [boardMetric, region, platform, me?.id, scope]
   );
-  const { data: myRankData } = useAsync(fetchMyRank, [metric, region, platform, me?.id]);
+  const { data: myRankData } = useAsync(fetchMyRank, [boardMetric, region, platform, me?.id, scope]);
 
-  // Refresh on tab focus
-  useEffect(() => {
-    const onFocus = () => reload();
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, [reload]);
+  useVisibilityRefresh(reload, [boardMetric, region, platform, scope]);
 
   const rows = data || [];
   const topVal = rows[0];
   const myIdx = me ? rows.findIndex((r) => r.id === me.id) : -1;
   const myRankPos = myIdx >= 0 ? myIdx + 1 : myRankData?.rank_pos;
-  const isWeeklyStub = scope === "weekly";
 
   function scrollToMe() {
     youRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -179,20 +193,37 @@ export function LeaderboardPage({ onOpenProfile }) {
       {/* ── Players of the Week ── */}
       <PlayersOfTheWeek />
 
-      {/* ── Weekly Stub ── */}
-      {isWeeklyStub ? (
-        <EmptyState icon={Trophy} title="Weekly tracking coming soon">
-          Weekly leaderboards start next season. Play matches now to build your all-time stats.
-        </EmptyState>
-      ) : loading ? (
+      {/* ── Timed info banner ── */}
+      {isTimed && (
+        <div className="lbWeeklyBanner">
+          <Trophy size={14} />
+          {scope === "7d" ? (
+            <>
+              <span>This week's standings. Top 3 earn <b>$3 / $2 / $1</b> credits every Monday.</span>
+              <span className="lbPotwTimer">
+                Resets in {weeklyCountdown.d > 0 ? `${weeklyCountdown.d}d ` : ""}{weeklyCountdown.h}h {weeklyCountdown.m}m
+              </span>
+            </>
+          ) : (
+            <span>Last 30 days of match activity.</span>
+          )}
+        </div>
+      )}
+
+      {/* ── Board ── */}
+      {loading ? (
         <SkeletonRows rows={8} />
       ) : error ? (
         <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : rows.length === 0 ? (
-        <EmptyState icon={Trophy} title={metric === "winpct" ? "No players with 10+ matches yet" : "No ranked players yet"}>
-          {metric === "winpct"
-            ? "Play at least 10 matches to qualify for the Win % board."
-            : "Play a match to get on the board."}
+        <EmptyState icon={Trophy} title={isTimed ? `No matches in the last ${scope === "7d" ? "7 days" : "30 days"}` : boardMetric === "winpct" ? "No players with 10+ matches yet" : "No ranked players yet"}>
+          {isTimed
+            ? scope === "7d"
+              ? "Play a match this week to get on the board. Top 3 earn credits every Monday."
+              : "No match activity in the last 30 days. Play a match to appear here."
+            : boardMetric === "winpct"
+              ? "Play at least 10 matches to qualify for the Win % board."
+              : "Play a match to get on the board."}
         </EmptyState>
       ) : (
         <>
@@ -251,7 +282,7 @@ export function LeaderboardPage({ onOpenProfile }) {
       )}
 
       {/* ── "You" Sticky Anchor ── */}
-      {me && !isWeeklyStub && !loading && (
+      {me && !loading && (
         <YouAnchor
           me={me}
           metric={metric}
