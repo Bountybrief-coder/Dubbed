@@ -44,7 +44,7 @@ export async function signIn({ username, password }) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     if (/invalid login/i.test(error.message)) return { error: "Incorrect username or password." };
-    if (/email.*not.*confirmed/i.test(error.message)) return { error: "Check your email to verify your account before logging in." };
+    if (/email.*not.*confirmed/i.test(error.message)) return { error: "email_not_confirmed", email };
     return { error: error.message };
   }
   track.login();
@@ -64,6 +64,11 @@ export async function getSession() {
 // Password reset still needs an email (Supabase sends the reset link there).
 export async function requestPasswordReset(email) {
   const { error } = await supabase.auth.resetPasswordForEmail(email);
+  return { error: error?.message };
+}
+
+export async function resendVerification(email) {
+  const { error } = await supabase.auth.resend({ type: "signup", email });
   return { error: error?.message };
 }
 

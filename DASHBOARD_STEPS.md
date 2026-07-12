@@ -53,6 +53,41 @@ For each:
 
 ---
 
+## Email Deliverability (CRITICAL — emails going to spam)
+
+Verification and password-reset emails from `noreply@dubbed.pro` are being sent via Resend (Amazon SES), but `dubbed.pro` is missing SPF/DMARC DNS records. Gmail and iCloud will reject or spam-folder these emails.
+
+### 1. Add SPF record in Porkbun
+1. Go to https://porkbun.com → manage `dubbed.pro` → DNS Records
+2. Add a **TXT** record:
+   - **Host/Name**: *(leave blank for apex)*
+   - **Type**: TXT
+   - **Value**: `v=spf1 include:amazonses.com ~all`
+   - **TTL**: 300
+
+### 2. Fix DMARC record in Porkbun
+1. Find the existing `_dmarc` CNAME record (currently points to `pixie.porkbun.com` — Porkbun placeholder)
+2. **Delete** the CNAME record for `_dmarc`
+3. Add a **TXT** record:
+   - **Host/Name**: `_dmarc`
+   - **Type**: TXT
+   - **Value**: `v=DMARC1; p=none; rua=mailto:webdeansolutions@gmail.com`
+   - **TTL**: 300
+
+### 3. Verify Resend DKIM (may already be correct)
+1. In Porkbun, check that `resend._domainkey` has a TXT record with a public key (starts with `p=MIGf...`). If it exists, DKIM is fine.
+2. Also check if Resend's dashboard (https://resend.com/domains) shows `dubbed.pro` as verified. If any records are pending, add them.
+
+### 4. Verify
+Wait 5 minutes for DNS propagation, then test:
+```bash
+dig +short TXT dubbed.pro          # should show SPF
+dig +short TXT _dmarc.dubbed.pro   # should show DMARC policy
+```
+Then sign up a new test account with a Gmail address and confirm the verification email arrives in the inbox (not spam).
+
+---
+
 ## No-Show Timer (5 minutes)
 
 ### 1. Run migration: `migrate_noshow_timer.sql`

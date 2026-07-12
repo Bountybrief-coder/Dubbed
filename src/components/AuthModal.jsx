@@ -5,7 +5,7 @@ import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { validateUsername, validateEmail, validatePassword } from "../utils/validation";
 import { isUsernameTaken } from "../services/profileService";
-import { requestPasswordReset } from "../services/authService";
+import { requestPasswordReset, resendVerification } from "../services/authService";
 import logoMark from "../assets/dubbed-mark-tight.png";
 
 export function AuthModal({ open, onClose }) {
@@ -17,6 +17,7 @@ export function AuthModal({ open, onClose }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [unverifiedEmail, setUnverifiedEmail] = useState("");
 
   const unameErr = mode === "register" && username ? validateUsername(username) : "";
 
@@ -64,6 +65,10 @@ export function AuthModal({ open, onClose }) {
       setBusy(true);
       const res = await signIn({ username, password });
       setBusy(false);
+      if (res.error === "email_not_confirmed") {
+        setUnverifiedEmail(res.email);
+        return setErr("Your email hasn't been verified yet. Check your inbox or resend the link below.");
+      }
       if (res.error) return setErr(res.error);
       toast.success("Logged in.");
       onClose();
@@ -71,7 +76,7 @@ export function AuthModal({ open, onClose }) {
   }
 
   function handleClose() {
-    setEmail(""); setUsername(""); setPassword(""); setErr(""); setBusy(false); setMode("login");
+    setEmail(""); setUsername(""); setPassword(""); setErr(""); setBusy(false); setMode("login"); setUnverifiedEmail("");
     onClose();
   }
 
@@ -103,15 +108,26 @@ export function AuthModal({ open, onClose }) {
           <input className="field" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={mode === "login" ? "Password" : "At least 6 characters"} onKeyDown={(e) => e.key === "Enter" && submit()} />
 
           {err && <div className="errBanner">{err}</div>}
+          {unverifiedEmail && mode === "login" && (
+            <button className="linkSwap" onClick={async () => {
+              setBusy(true);
+              const res = await resendVerification(unverifiedEmail);
+              setBusy(false);
+              if (res.error) { setErr(res.error); return; }
+              toast.success("Verification email sent! Check your inbox.");
+              setUnverifiedEmail("");
+              setErr("");
+            }}>Resend verification email</button>
+          )}
 
           <Button variant="primary" className="wide" loading={busy} onClick={submit}>
             {mode === "login" ? "Log in" : "Create account"}
           </Button>
-          <button className="linkSwap" onClick={() => { setMode(mode === "login" ? "register" : "login"); reset(); }}>
+          <button className="linkSwap" onClick={() => { setMode(mode === "login" ? "register" : "login"); reset(); setUnverifiedEmail(""); }}>
             {mode === "login" ? "Need an account? Sign up" : "Already have an account? Log in"}
           </button>
           {mode === "login" && (
-            <button className="linkSwap" onClick={() => { setMode("reset"); reset(); }}>Forgot password?</button>
+            <button className="linkSwap" onClick={() => { setMode("reset"); reset(); setUnverifiedEmail(""); }}>Forgot password?</button>
           )}
         </>
       )}

@@ -1,5 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 
+// Capture auth callback params BEFORE Supabase client processes (and clears) the URL.
+const _hash = new URLSearchParams(window.location.hash.substring(1));
+const _search = new URLSearchParams(window.location.search);
+export const authCallback = {
+  isCallback: _search.has("code") || _hash.has("access_token") || _search.has("error") || _hash.has("error"),
+  type: _hash.get("type") || _search.get("type"),
+  error: _hash.get("error") || _search.get("error"),
+  errorDesc: _hash.get("error_description") || _search.get("error_description"),
+};
+
 // Vite exposes env vars prefixed with VITE_. Copy .env.example to .env and fill,
 // and set the same vars in your host (e.g. Netlify) BEFORE the build runs —
 // Vite inlines them at build time.

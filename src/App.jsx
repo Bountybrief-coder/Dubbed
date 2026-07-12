@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from "react";
-import { supabaseConfigured } from "./lib/supabase";
+import { supabaseConfigured, authCallback } from "./lib/supabase";
 import { useAuth } from "./hooks/useAuth.jsx";
+import { useToast } from "./hooks/useToast.jsx";
 import { TopNav } from "./components/TopNav";
 import { Sidebar } from "./components/Sidebar";
 import { MobileNav } from "./components/MobileNav";
@@ -108,12 +109,14 @@ function pathToRoute(pathname) {
 
 export function App() {
   const { user, profile, loading, bootError } = useAuth();
+  const toast = useToast();
   const [route, setRoute] = useState(() => pathToRoute(window.location.pathname));
   const [authOpen, setAuthOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [inviteCount, setInviteCount] = useState(0);
+  const callbackHandled = useRef(false);
 
   const pageKey = useRef(0);
   const navigate = (name, param) => {
@@ -124,6 +127,22 @@ export function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
     track.pageView(name);
   };
+
+  useEffect(() => {
+    if (!authCallback.isCallback || loading || callbackHandled.current) return;
+    callbackHandled.current = true;
+    if (window.location.search || window.location.hash.length > 1) {
+      window.history.replaceState({}, "", "/");
+    }
+    if (authCallback.error) {
+      toast.error(authCallback.errorDesc || "Verification link expired or is invalid. Please try again.");
+    } else if (user) {
+      toast.success("Email verified — welcome to Dubbed!");
+    } else {
+      toast.success("Email verified! Log in with your username and password to get started.");
+      setAuthOpen(true);
+    }
+  }, [loading, user]);
 
   useEffect(() => {
     const onPop = (e) => {
