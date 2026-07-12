@@ -172,8 +172,10 @@ export function BettingPage({ onLogin }) {
   useVisibilityRefresh(refetch, [tab]);
 
   useEffect(() => {
-    const unsub = subscribeToBetOffers(() => refetch());
-    return unsub;
+    try {
+      const unsub = subscribeToBetOffers(() => refetch());
+      return unsub;
+    } catch { /* realtime not available */ }
   }, [refetch]);
 
   async function handleAccept(offerId) {

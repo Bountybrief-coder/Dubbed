@@ -82,11 +82,11 @@ returns table(
   created_at timestamptz, expires_at timestamptz,
   username text, avatar_url text, xp int, wagr_member boolean, verified boolean
 )
-language plpgsql stable security definer set search_path = public as $$
+language plpgsql volatile security definer set search_path = public as $$
 begin
   -- Auto-expire old posts
-  update public.lfg_posts set status = 'expired'
-    where status = 'open' and expires_at <= now();
+  update public.lfg_posts lp set status = 'expired'
+    where lp.status = 'open' and lp.expires_at <= now();
 
   return query
     select
