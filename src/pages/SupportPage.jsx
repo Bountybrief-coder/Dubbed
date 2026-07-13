@@ -37,7 +37,7 @@ export function SupportPage() {
 
       <section className="panel2 rulesSection">
         <h2>How do I deposit or withdraw funds?</h2>
-        <p>Go to your Wallet. Deposit with any card through Stripe. To withdraw, hit "Request Payout" — minimum is $5, and it typically lands in 1-3 business days.</p>
+        <p>Go to your Wallet. Deposit with crypto — you'll be redirected to a secure checkout where you can choose your coin. To withdraw, add your wallet address and hit "Request Payout" — minimum is $5, and crypto payouts typically confirm within minutes.</p>
       </section>
 
       <section className="panel2 rulesSection">

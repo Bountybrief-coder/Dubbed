@@ -1135,7 +1135,8 @@ select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xml
 .wdStat b.win{color:var(--win)}
 .wdStat em{font-style:normal;color:var(--muted);font-size:12px}
 
-.stripeGate .stripeGateStatus{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.payoutGate .cryptoWalletInfo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
+.payoutGate .walletAddr{font-size:12px;color:var(--muted);word-break:break-all;background:var(--panel);padding:4px 8px;border-radius:6px;border:1px solid var(--line)}
 
 .wdList{display:flex;flex-direction:column}
 .wdHistRow{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 0;border-top:1px solid var(--line)}

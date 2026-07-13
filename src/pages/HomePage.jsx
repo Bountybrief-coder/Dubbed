@@ -145,7 +145,7 @@ export function HomePage({ onNavigate, onLogin }) {
           <div className="howStep">
             <div className="howNum">3</div>
             <b>Win & Cash Out</b>
-            <p>Winnings land in your Dubbed wallet instantly. Cash out anytime through Stripe — no minimum wait, no hoops.</p>
+            <p>Winnings land in your Dubbed wallet instantly. Cash out anytime to your crypto wallet — no minimum wait, no hoops.</p>
           </div>
         </div>
       </section>

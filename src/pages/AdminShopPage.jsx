@@ -106,8 +106,8 @@ export function AdminShopPage() {
     return (
       <Modal open onClose={onClose} eyebrow="REFUND" title={`Refund ${p.username}'s ${p.item_name}`} size="sm">
         <p className="modalNote">
-          {p.payment_method === "stripe"
-            ? "This was paid by card. Issue the refund in the Stripe dashboard. This action marks it refunded and reverses the entitlement here."
+          {p.payment_method === "crypto"
+            ? "This was paid with crypto. Crypto payments cannot be auto-refunded — issue a manual refund if needed. This action marks it refunded and reverses the entitlement here."
             : "Refund the wallet charge back to the user's balance and reverse the entitlement."}
         </p>
         {p.payment_method === "wallet" && (

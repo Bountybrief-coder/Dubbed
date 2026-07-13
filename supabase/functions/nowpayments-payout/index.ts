@@ -1,11 +1,11 @@
-// POST /stripe-payout   { withdrawal_id }
-// Fires a Stripe Transfer for a withdrawal. Allowed callers:
+// POST /nowpayments-payout   { withdrawal_id }
+// Sends a crypto payout for a withdrawal request. Reads the user's saved
+// crypto wallet address from their profile. Allowed callers:
 //   - Admin: can fire any pending/processing withdrawal
 //   - Owner: can fire their own auto-approved withdrawal (already in processing)
 //
-// Idempotency: the withdrawal id is the Stripe idempotency key, so a retried
-// call can never double-pay.
-import { CORS, json, stripeClient, serviceClient, getCaller } from "../_shared/util.ts";
+// Idempotency: the withdrawal id in the order_id prevents double-pays.
+import { CORS, json, npFetch, serviceClient, getCaller } from "../_shared/util.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -32,7 +32,6 @@ Deno.serve(async (req) => {
     if (wErr) return json({ error: wErr.message }, 500);
     if (!w) return json({ error: "withdrawal not found" }, 404);
 
-    // Authorization: admin can fire anything; owner can only fire auto-approved
     if (!isAdmin) {
       if (w.user_id !== caller.id) return json({ error: "not authorized" }, 403);
       if (w.status !== "processing") return json({ error: "withdrawal not in processing state" }, 403);
@@ -44,39 +43,39 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await db
       .from("profiles")
-      .select("stripe_account_id, stripe_payouts_enabled, suspended")
+      .select("crypto_wallet_address, crypto_wallet_currency, suspended")
       .eq("id", w.user_id)
       .maybeSingle();
-    if (!profile?.stripe_account_id) return json({ error: "user has no connected account" }, 400);
-    if (!profile.stripe_payouts_enabled) return json({ error: "user payouts not enabled" }, 400);
+    if (!profile?.crypto_wallet_address) return json({ error: "user has no crypto wallet address" }, 400);
     if (profile.suspended) return json({ error: "user is suspended" }, 400);
 
-    // Admin path: mark processing if still pending
     if (isAdmin && w.status === "pending") {
       const { error: procErr } = await db.rpc("mark_withdrawal_processing_admin", {
-        p_id: w.id,
-        p_admin: caller.id,
+        p_id: w.id, p_admin: caller.id,
       });
       if (procErr) return json({ error: procErr.message }, 500);
     }
 
-    const stripe = stripeClient();
-    const amountCents = Math.round((Number(w.amount) - Number(w.fee || 0)) * 100);
-    if (!Number.isFinite(amountCents) || amountCents < 1) return json({ error: "payout amount too small after fees" }, 400);
+    const netAmount = Number(w.amount) - Number(w.fee || 0);
+    if (!Number.isFinite(netAmount) || netAmount < 1) return json({ error: "payout amount too small after fees" }, 400);
 
-    const transfer = await stripe.transfers.create(
-      {
-        amount: amountCents,
-        currency: (Deno.env.get("PAYOUT_CURRENCY") || "usd").toLowerCase(),
-        destination: profile.stripe_account_id,
-        metadata: { withdrawal_id: w.id, dubbed_user_id: w.user_id },
+    const currency = (profile.crypto_wallet_currency || "usdttrc20").toLowerCase();
+
+    const payout = await npFetch("/payout", {
+      method: "POST",
+      body: {
+        address: profile.crypto_wallet_address,
+        currency,
+        amount: netAmount,
+        ipn_callback_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/nowpayments-webhook`,
+        order_id: `payout_${w.id}`,
       },
-      { idempotencyKey: `dubbed_wd_${w.id}` },
-    );
+    }) as Record<string, unknown>;
 
-    await db.from("withdrawal_requests").update({ transfer_id: transfer.id }).eq("id", w.id);
+    const payoutId = String(payout.id ?? "");
+    await db.from("withdrawal_requests").update({ transfer_id: payoutId }).eq("id", w.id);
 
-    return json({ ok: true, transfer_id: transfer.id });
+    return json({ ok: true, payout_id: payoutId });
   } catch (e) {
     console.error("payout error:", (e as Error).message);
     return json({ error: "Payout failed. Please try again or contact support." }, 500);

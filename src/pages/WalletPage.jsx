@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Wallet, ArrowDownToLine, ArrowUpFromLine, Receipt, ShieldCheck, RefreshCw, ExternalLink, Clock, ShoppingBag } from "lucide-react";
+import { Wallet, ArrowDownToLine, ArrowUpFromLine, Receipt, ShieldCheck, Clock, ShoppingBag, Copy, Check } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useAsync } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { useToast } from "../hooks/useToast.jsx";
 import { useWithdrawals } from "../hooks/useWithdrawals";
-import { getLedger, deposit, startStripeOnboarding, refreshStripeStatus } from "../services/walletService";
+import { getLedger, deposit, saveCryptoWallet } from "../services/walletService";
 import { getPurchaseHistory } from "../services/shopService";
 import { Modal } from "../components/Modal";
 import { Button } from "../components/Button";
@@ -27,14 +27,21 @@ const REASON_LABEL = {
 };
 
 const WD_STATUS_LABEL = { pending: "pending", processing: "processing", paid: "paid", rejected: "rejected", approved: "processing" };
-// Map every status onto an existing statusChip color class.
 const WD_STATUS_CLASS = { pending: "s-pending", processing: "s-pending", approved: "s-pending", paid: "s-paid", rejected: "s-rejected" };
+
+const CRYPTO_NETWORKS = [
+  { value: "usdttrc20", label: "USDT (TRC-20)" },
+  { value: "usdterc20", label: "USDT (ERC-20)" },
+  { value: "btc", label: "Bitcoin (BTC)" },
+  { value: "eth", label: "Ethereum (ETH)" },
+  { value: "ltc", label: "Litecoin (LTC)" },
+  { value: "sol", label: "Solana (SOL)" },
+];
 
 export function WalletPage() {
   const { profile, refreshProfile } = useAuth();
   const toast = useToast();
 
-  // Profile can be null briefly after auth — guard everything downstream.
   const profileId = profile?.id;
   const { data: ledger, loading, error, reload } = useAsync(
     () => profileId ? getLedger(profileId) : Promise.resolve({ data: [] }),
@@ -47,48 +54,22 @@ export function WalletPage() {
   const wd = useWithdrawals(profileId);
   const [depOpen, setDepOpen] = useState(false);
   const [wdOpen, setWdOpen] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [walletSetupOpen, setWalletSetupOpen] = useState(false);
 
   useVisibilityRefresh(reload, [profileId]);
 
-  const stripeReady = profile?.stripe_onboarding_complete && profile?.stripe_payouts_enabled;
+  const cryptoReady = !!profile?.crypto_wallet_address;
 
-  // On return from Stripe onboarding or deposit, handle the URL param.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("stripe") === "return") {
-      (async () => {
-        setSyncing(true);
-        const res = await refreshStripeStatus();
-        setSyncing(false);
-        if (!res.error) { refreshProfile(); wd.reload(); toast.success("Payout account updated."); }
-        window.history.replaceState({}, "", window.location.pathname);
-      })();
-    }
     const d = params.get("deposit");
     if (d === "success") { toast.success("Deposit complete! Balance updated."); reload(); refreshProfile(); }
     if (d === "cancel") toast.error("Deposit canceled.");
     if (d) window.history.replaceState({}, "", window.location.pathname);
   }, []); // eslint-disable-line
 
-  // While profile is loading, show a skeleton — don't render the page.
   if (!profile) {
     return <main className="page"><Skeleton w="40%" h={28} /><div style={{ height: 16 }} /><SkeletonRows rows={3} height={60} /></main>;
-  }
-
-  async function connectStripe() {
-    const res = await startStripeOnboarding("/wallet");
-    if (res.error) return toast.error(res.error);
-    if (res.url) window.location.href = res.url;
-  }
-
-  async function syncStripe() {
-    setSyncing(true);
-    const res = await refreshStripeStatus();
-    setSyncing(false);
-    if (res.error) return toast.error(res.error);
-    refreshProfile(); wd.reload();
-    toast.success("Payout account status refreshed.");
   }
 
   return (
@@ -113,27 +94,28 @@ export function WalletPage() {
         <div className="wdStat"><small>LAST WITHDRAWAL</small><b>{wd.summary.last ? money(wd.summary.last.amount) : "-"}</b><em>{wd.summary.last ? shortDate(wd.summary.last.completed_at || wd.summary.last.created_at) : "no payouts yet"}</em></div>
       </section>
 
-      {/* Stripe Connect gate */}
-      {!stripeReady && (
-        <section className="panel2 stripeGate">
-          <h2><ShieldCheck size={16} /> Payout account</h2>
+      {/* Crypto wallet gate */}
+      {!cryptoReady && (
+        <section className="panel2 payoutGate">
+          <h2><ShieldCheck size={16} /> Payout wallet</h2>
           <p className="modalNote">
-            {profile.stripe_account_id
-              ? "Your payout account isn't fully verified yet. Finish onboarding to enable withdrawals."
-              : "Connect a payout account (Stripe Express) to withdraw. Onboarding takes a minute and is handled securely by Stripe."}
+            Add your crypto wallet address to enable withdrawals. Payouts are sent directly to your wallet.
           </p>
-          <div className="stripeGateStatus">
-            <span className={`statusChip ${profile.stripe_onboarding_complete ? "s-paid" : "s-pending"}`}>Onboarding {profile.stripe_onboarding_complete ? "complete" : "incomplete"}</span>
-            <span className={`statusChip ${profile.stripe_payouts_enabled ? "s-paid" : "s-pending"}`}>Payouts {profile.stripe_payouts_enabled ? "enabled" : "disabled"}</span>
-            <span className="statusChip">{profile.stripe_verification_status || "unverified"}</span>
-          </div>
           <div className="walletActions" style={{ marginTop: 14 }}>
-            <Button variant="primary" onClick={connectStripe}>
-              <ExternalLink size={15} /> {profile.stripe_account_id ? "Finish onboarding" : "Connect payout account"}
+            <Button variant="primary" onClick={() => setWalletSetupOpen(true)}>
+              Set up payout wallet
             </Button>
-            {profile.stripe_account_id && (
-              <Button variant="ghost" loading={syncing} onClick={syncStripe}><RefreshCw size={15} /> Refresh status</Button>
-            )}
+          </div>
+        </section>
+      )}
+
+      {cryptoReady && (
+        <section className="panel2 payoutGate">
+          <h2><ShieldCheck size={16} /> Payout wallet</h2>
+          <div className="cryptoWalletInfo">
+            <span className="badge accent">{(profile.crypto_wallet_currency || "usdttrc20").toUpperCase()}</span>
+            <code className="walletAddr">{profile.crypto_wallet_address}</code>
+            <Button variant="ghost" className="sm" onClick={() => setWalletSetupOpen(true)}>Change</Button>
           </div>
         </section>
       )}
@@ -226,9 +208,16 @@ export function WalletPage() {
         open={wdOpen}
         onClose={() => setWdOpen(false)}
         wd={wd}
-        stripeReady={stripeReady}
-        onConnect={connectStripe}
+        cryptoReady={cryptoReady}
+        onSetupWallet={() => { setWdOpen(false); setWalletSetupOpen(true); }}
         onDone={() => { reload(); refreshProfile(); }}
+      />
+      <WalletSetupModal
+        open={walletSetupOpen}
+        onClose={() => setWalletSetupOpen(false)}
+        current={profile.crypto_wallet_address}
+        currentCurrency={profile.crypto_wallet_currency}
+        onDone={() => { refreshProfile(); setWalletSetupOpen(false); }}
       />
     </main>
   );
@@ -238,8 +227,8 @@ export function WalletPage() {
     const [busy, setBusy] = useState(false);
     return (
       <Modal open={open} onClose={onClose} eyebrow="DEPOSIT" title="Add funds" size="sm">
-        <p className="modalNote">Card payments processed securely by Stripe. Funds appear in your balance immediately after checkout.</p>
-        <label className="fieldLbl">Amount</label>
+        <p className="modalNote">Pay with crypto. You'll be redirected to a secure checkout where you can choose your coin. Funds appear in your balance once the transaction confirms on-chain.</p>
+        <label className="fieldLbl">Amount (USD)</label>
         <input className="field" type="number" min="5" value={amount} onChange={(e) => setAmount(e.target.value)} />
         <div className="chipRow">{[10, 25, 50, 100].map((a) => (
           <button key={a} className={Number(amount) === a ? "on" : ""} onClick={() => setAmount(a)}>{money(a)}</button>
@@ -252,14 +241,14 @@ export function WalletPage() {
           setBusy(false);
           if (res.error) return toast.error(res.error);
           track.deposit(Number(amount));
-          toast.success(`Deposited ${money(amount)}.`);
+          toast.success(`Redirecting to payment...`);
           onDone(); onClose();
         }}>Deposit {money(Number(amount) || 0)}</Button>
       </Modal>
     );
   }
 
-  function WithdrawModal({ open, onClose, wd, stripeReady, onConnect, onDone }) {
+  function WithdrawModal({ open, onClose, wd, cryptoReady, onSetupWallet, onDone }) {
     const [amount, setAmount] = useState("");
     const [busy, setBusy] = useState(false);
     const max = wd.available;
@@ -267,11 +256,11 @@ export function WalletPage() {
 
     return (
       <Modal open={open} onClose={onClose} eyebrow="WITHDRAW" title="Request a withdrawal" size="sm">
-        {!stripeReady ? (
+        {!cryptoReady ? (
           <>
-            <p className="modalNote">You need a verified payout account before you can withdraw.</p>
-            <Button variant="primary" className="wide" onClick={() => { onClose(); onConnect(); }}>
-              <ExternalLink size={15} /> Connect payout account
+            <p className="modalNote">You need a crypto wallet address before you can withdraw.</p>
+            <Button variant="primary" className="wide" onClick={onSetupWallet}>
+              Set up payout wallet
             </Button>
           </>
         ) : blocked ? (
@@ -282,7 +271,7 @@ export function WalletPage() {
         ) : (
           <>
             <p className="modalNote">
-              Most withdrawals are auto-approved and sent instantly ({WITHDRAWAL_PROCESSING_COPY} to arrive). Higher amounts or first-time withdrawals go through a quick manual review. If rejected, funds return to your balance automatically.
+              Most withdrawals are auto-approved and sent instantly. Crypto payouts typically confirm within minutes. Higher amounts or first-time withdrawals go through a quick manual review.
             </p>
             <p className="modalNote" style={{ fontSize: 12, color: "var(--text2)" }}>
               Fee: {WITHDRAWAL_FEE.percent * 100}% + {money(WITHDRAWAL_FEE.flat)} per withdrawal.
@@ -307,7 +296,7 @@ export function WalletPage() {
               if (!Number.isFinite(n) || n < 5) return toast.error("Minimum withdrawal is $5.");
               if (n > max) return toast.error("Amount exceeds available balance.");
               setBusy(true);
-              const res = await wd.submit(n, `stripe:${profile.stripe_account_id}`);
+              const res = await wd.submit(n, `crypto:${profile.crypto_wallet_address}`);
               setBusy(false);
               if (res.error) return toast.error(res.error);
               track.withdraw(n);
@@ -318,6 +307,34 @@ export function WalletPage() {
             }}>Request {money(Number(amount) || 0)} (receive {money(calculateWithdrawalNet(Number(amount) || 0))})</Button>
           </>
         )}
+      </Modal>
+    );
+  }
+
+  function WalletSetupModal({ open, onClose, current, currentCurrency, onDone }) {
+    const [address, setAddress] = useState(current || "");
+    const [currency, setCurrency] = useState(currentCurrency || "usdttrc20");
+    const [busy, setBusy] = useState(false);
+    return (
+      <Modal open={open} onClose={onClose} eyebrow="PAYOUT SETUP" title="Crypto wallet address" size="sm">
+        <p className="modalNote">Enter the wallet address where you want to receive withdrawals. Make sure it matches the selected network.</p>
+        <label className="fieldLbl">Network</label>
+        <select className="field" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+          {CRYPTO_NETWORKS.map((n) => (
+            <option key={n.value} value={n.value}>{n.label}</option>
+          ))}
+        </select>
+        <label className="fieldLbl">Wallet address</label>
+        <input className="field" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Enter your wallet address" />
+        <Button variant="primary" className="wide" loading={busy} onClick={async () => {
+          if (!address.trim() || address.trim().length < 10) return toast.error("Enter a valid wallet address.");
+          setBusy(true);
+          const res = await saveCryptoWallet(address.trim(), currency);
+          setBusy(false);
+          if (res.error) return toast.error(res.error);
+          toast.success("Payout wallet saved.");
+          onDone();
+        }}>Save wallet address</Button>
       </Modal>
     );
   }

@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { Crown, PenLine, RotateCcw, Sparkles, Check, ExternalLink, Wallet, Zap } from "lucide-react";
+import { Crown, PenLine, RotateCcw, Sparkles, Check, Wallet, Zap } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import {
-  SHOP_CATALOG, purchaseWithWallet, startCheckout, changeUsername,
-  performStatReset, getUnusedStatReset, openBillingPortal
+  SHOP_CATALOG, purchaseWithWallet, changeUsername,
+  performStatReset, getUnusedStatReset, cancelMembership
 } from "../services/shopService";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
@@ -22,14 +22,13 @@ export function ShopPage({ onLogin, onNavigate }) {
   const [resetOpen, setResetOpen] = useState(false);
   const [resetAvailable, setResetAvailable] = useState(false);
   const [busyItem, setBusyItem] = useState(null);
-
   const [busyWagr, setBusyWagr] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
 
   const wagr = SHOP_CATALOG.wagr_membership;
   const services = [SHOP_CATALOG.username_change, SHOP_CATALOG.stat_reset, SHOP_CATALOG.double_xp_token];
 
   const doubleXpActive = profile?.double_xp_active_until && new Date(profile.double_xp_active_until) > new Date();
-
   const canWalletWagr = profile && Number(profile.balance) >= wagr.price;
 
   useEffect(() => {
@@ -37,18 +36,8 @@ export function ShopPage({ onLogin, onNavigate }) {
     getUnusedStatReset(profile.id).then(({ available }) => setResetAvailable(available));
   }, [profile]);
 
-  // Handle Stripe Checkout return.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const c = params.get("checkout");
-    if (c === "success") { toast.success("Purchase complete."); refreshProfile(); }
-    if (c === "cancel") toast.error("Checkout canceled.");
-    if (c) window.history.replaceState({}, "", window.location.pathname);
-  }, []); // eslint-disable-line
-
   async function buyService(item) {
     if (!profile) return onLogin();
-    // Wallet if sufficient, otherwise Stripe Checkout.
     if (Number(profile.balance) >= item.price) {
       setBusyItem(item.key);
       const res = await purchaseWithWallet(item.key);
@@ -60,23 +49,25 @@ export function ShopPage({ onLogin, onNavigate }) {
       if (item.key === "username_change") setUsernameOpen(true);
       if (item.key === "stat_reset") { setResetAvailable(true); }
     } else {
-      const res = await startCheckout(item.key, "/shop");
-      if (res.error) return toast.error(res.error);
-      if (res.url) window.location.href = res.url;
+      toast.error(`Insufficient balance. Deposit at least ${money(item.price - Number(profile.balance))} first.`);
+      if (onNavigate) onNavigate("/wallet");
     }
   }
 
-  async function subscribeWagr() {
+  async function buyWagr() {
     if (!profile) return onLogin();
-    const res = await startCheckout("wagr_membership", "/shop");
+    if (!canWalletWagr) {
+      toast.error(`Insufficient balance. Deposit at least ${money(wagr.price - Number(profile.balance))} first.`);
+      if (onNavigate) onNavigate("/wallet");
+      return;
+    }
+    setBusyWagr(true);
+    const res = await purchaseWithWallet("wagr_membership");
+    setBusyWagr(false);
     if (res.error) return toast.error(res.error);
-    if (res.url) window.location.href = res.url;
-  }
-
-  async function manageMembership() {
-    const res = await openBillingPortal("/shop");
-    if (res.error) return toast.error(res.error);
-    if (res.url) window.location.href = res.url;
+    track.wagrUpgrade();
+    toast.success("WAGR Membership activated for 30 days.");
+    refreshProfile();
   }
 
   const isMember = profile?.wagr_member;
@@ -86,7 +77,7 @@ export function ShopPage({ onLogin, onNavigate }) {
       <div className="pageHead">
         <div className="eyebrow">SHOP</div>
         <h1>Shop</h1>
-        <p className="sub">Memberships and account services. Tournament entries aren't sold here. Those come straight from your wallet at registration.</p>
+        <p className="sub">Memberships and account services. Everything pays from your wallet balance — deposit crypto first if needed.</p>
       </div>
 
       {/* Memberships */}
@@ -109,39 +100,27 @@ export function ShopPage({ onLogin, onNavigate }) {
           {isMember ? (
             <div className="shopMemberOwned">
               <span className="badge accent"><Crown size={12} /> WAGR Member</span>
-              {profile?.subscription_provider === "stripe" && (
-                <Button variant="ghost" onClick={manageMembership}><ExternalLink size={14} /> Manage / cancel</Button>
-              )}
+              <Button variant="ghost" loading={cancelBusy} onClick={async () => {
+                if (!confirm("Cancel your WAGR membership? You'll keep benefits until the end of your current period.")) return;
+                setCancelBusy(true);
+                const res = await cancelMembership();
+                setCancelBusy(false);
+                if (res.error) return toast.error(res.error);
+                toast.success("Membership canceled. Benefits active until period end.");
+                refreshProfile();
+              }}>Cancel membership</Button>
               {profile?.subscription_end && (
                 <small className="subtle">Active until {new Date(profile.subscription_end).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small>
               )}
             </div>
           ) : (
             <div className="shopMemberActions">
-              <Button variant="primary" className="wide" loading={busyWagr} onClick={async () => {
-                if (!profile) return onLogin();
-                if (canWalletWagr) {
-                  setBusyWagr(true);
-                  const res = await purchaseWithWallet("wagr_membership");
-                  setBusyWagr(false);
-                  if (res.error) return toast.error(res.error);
-                  track.wagrUpgrade();
-                  toast.success("WAGR Membership activated for 30 days.");
-                  refreshProfile();
-                } else {
-                  subscribeWagr();
-                }
-              }}>
-                {canWalletWagr
-                  ? <><Wallet size={14} /> Buy 30 days · {money(wagr.price)}</>
-                  : <>Subscribe · {money(wagr.price)}/mo</>
-                }
+              <Button variant="primary" className="wide" loading={busyWagr} onClick={buyWagr}>
+                <Wallet size={14} /> Buy 30 days · {money(wagr.price)}
               </Button>
-              {canWalletWagr && (
-                <Button variant="ghost" className="wide" onClick={subscribeWagr}>Or auto-renew with Stripe</Button>
-              )}
+              <small className="subtle">Auto-renews monthly from your wallet balance. Cancel anytime.</small>
               {profile && !canWalletWagr && (
-                <small className="subtle">Balance {money(profile.balance)}. Pays via Stripe Checkout, or deposit funds first.</small>
+                <small className="subtle">Balance {money(profile.balance)}. Deposit funds first.</small>
               )}
             </div>
           )}
@@ -173,11 +152,11 @@ export function ShopPage({ onLogin, onNavigate }) {
                   <Button variant="primary" className="wide" onClick={() => setUsernameOpen(true)}>Use your change</Button>
                 ) : (
                   <Button variant="primary" className="wide" loading={busyItem === item.key} onClick={() => buyService(item)}>
-                    {canWallet ? <><Wallet size={14} /> Buy · {money(item.price)}</> : <>Checkout · {money(item.price)}</>}
+                    <Wallet size={14} /> Buy · {money(item.price)}
                   </Button>
                 )}
               </div>
-              {profile && !canWallet && <small className="subtle">Balance {money(profile.balance)}. Pays via Stripe Checkout.</small>}
+              {profile && !canWallet && <small className="subtle">Balance {money(profile.balance)}. Deposit first.</small>}
             </div>
           );
         })}

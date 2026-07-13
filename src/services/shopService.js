@@ -55,19 +55,11 @@ export const COMING_SOON = [
 ];
 
 // ---------------------------------------------------------------------------
-// Purchases
+// Purchases — everything pays from wallet balance now
 // ---------------------------------------------------------------------------
 export async function purchaseWithWallet(itemKey) {
   const { data, error } = await supabase.rpc("purchase_with_wallet", { p_item: itemKey });
   return { data, error: error?.message };
-}
-
-// Card checkout via Edge Function (account services or membership subscription).
-export async function startCheckout(itemKey) {
-  const { data, error } = await supabase.functions.invoke("stripe-shop-checkout", {
-    body: { item: itemKey }
-  });
-  return { url: data?.url || null, error: error?.message || data?.error };
 }
 
 export async function changeUsername(newName) {
@@ -80,7 +72,6 @@ export async function performStatReset() {
   return { error: error?.message };
 }
 
-// A stat_reset is "available" when there's a completed, not-yet-applied purchase.
 export async function getUnusedStatReset(userId) {
   const { data, error } = await supabase
     .from("shop_purchases")
@@ -92,6 +83,12 @@ export async function getUnusedStatReset(userId) {
     .limit(5);
   const available = (data || []).some((p) => !(p.meta && p.meta.applied));
   return { available, error: error?.message };
+}
+
+// Cancel WAGR membership (wallet-based auto-renewal).
+export async function cancelMembership() {
+  const { error } = await supabase.rpc("cancel_wagr_membership");
+  return { error: error?.message };
 }
 
 // ---------------------------------------------------------------------------
@@ -113,17 +110,6 @@ export async function getUsernameHistory(userId) {
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
   return { data: data || [], error: error?.message };
-}
-
-// ---------------------------------------------------------------------------
-// Membership subscription management
-// ---------------------------------------------------------------------------
-// Opens the Stripe billing portal so the user can cancel/manage the sub.
-export async function openBillingPortal() {
-  const { data, error } = await supabase.functions.invoke("stripe-billing-portal", {
-    body: {}
-  });
-  return { url: data?.url || null, error: error?.message || data?.error };
 }
 
 // ---------------------------------------------------------------------------

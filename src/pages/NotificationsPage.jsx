@@ -13,7 +13,7 @@ function classifyNotif(text) {
   const t = (text || "").toLowerCase();
   if (/trophy|tournament|bracket|1st|2nd|3rd|winner|placed/.test(t))
     return { icon: Trophy, cls: "notifTrophy", label: "Tournament" };
-  if (/withdraw|payout|deposit|balance|wallet|cash.*out|stripe/.test(t))
+  if (/withdraw|payout|deposit|balance|wallet|cash.*out|crypto/.test(t))
     return { icon: DollarSign, cls: "notifWallet", label: "Wallet" };
   if (/match|lobby|joined|settled|report|dispute|forfeit|no.show/.test(t))
     return { icon: Swords, cls: "notifMatch", label: "Match" };
@@ -56,7 +56,7 @@ function groupByDate(items) {
 
 function routeForNotif(text) {
   const t = (text || "").toLowerCase();
-  if (/withdraw|payout|deposit|balance|wallet|cash.*out|stripe/.test(t)) return "wallet";
+  if (/withdraw|payout|deposit|balance|wallet|cash.*out|crypto/.test(t)) return "wallet";
   if (/tournament|bracket/.test(t)) return "tournaments";
   if (/team|invite|roster/.test(t)) return "teams";
   if (/leaderboard/.test(t)) return "leaderboard";

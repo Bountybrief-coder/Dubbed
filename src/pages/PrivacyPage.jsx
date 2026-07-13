@@ -15,7 +15,7 @@ export function PrivacyPage() {
         <p>When you create an account and use Dubbed, we collect the following types of information:</p>
         <ul>
           <li><b>Account information:</b> email address, username, and avatar image.</li>
-          <li><b>Payment information:</b> processed securely by Stripe. We never store your credit card numbers, CVVs, or full card details on our servers.</li>
+          <li><b>Payment information:</b> crypto deposits and payouts are processed through NOWPayments. We store only your wallet address for payouts — no private keys or seed phrases are ever collected.</li>
           <li><b>Game identifiers:</b> PlayStation Network (PSN) ID, Xbox Gamertag, and Activision ID, as provided by you for matchmaking purposes.</li>
           <li><b>Match data:</b> match history, results, win/loss records, and performance statistics generated through your use of the platform.</li>
           <li><b>Social media handles:</b> any social profiles you choose to link to your Dubbed account (e.g., X/Twitter, Discord).</li>
@@ -39,7 +39,7 @@ export function PrivacyPage() {
         <h2>3. Third-Party Services</h2>
         <p>Dubbed relies on a limited number of trusted third-party services to operate the platform:</p>
         <ul>
-          <li><b>Stripe</b> handles all payment processing. When you add a payment method or receive a payout, your financial data is transmitted directly to Stripe and governed by their privacy policy at <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">stripe.com/privacy</a>.</li>
+          <li><b>NOWPayments</b> handles all crypto payment processing. When you make a deposit or receive a payout, your transaction data is processed by NOWPayments and governed by their privacy policy at <a href="https://nowpayments.io/privacy-policy" target="_blank" rel="noopener noreferrer">nowpayments.io/privacy-policy</a>.</li>
           <li><b>Supabase</b> provides our database hosting and user authentication infrastructure. Your account data is stored securely within Supabase's managed environment.</li>
           <li><b>Google Analytics (GA4)</b> is used via Google Tag Manager to collect anonymous, aggregated usage data such as page views, button clicks, and feature engagement. This helps us understand how the platform is used and improve it. No personally identifiable information is sent to Google. You can opt out by using a browser extension such as the <a href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener noreferrer">Google Analytics Opt-out Browser Add-on</a>.</li>
         </ul>
@@ -61,7 +61,7 @@ export function PrivacyPage() {
         <p><b>We do not sell your personal data.</b> Under no circumstances is your information sold to third parties for marketing, advertising, or any other commercial purpose.</p>
         <p>Your information may be shared only in the following limited situations:</p>
         <ul>
-          <li><b>With Stripe:</b> payment-related data necessary to process transactions, deposits, and withdrawals.</li>
+          <li><b>With NOWPayments:</b> payment-related data necessary to process crypto deposits and withdrawals.</li>
           <li><b>With Google:</b> anonymous usage events (page views, feature clicks) via Google Analytics. No personal information, payment data, or match results are shared.</li>
           <li><b>With other players:</b> only your public profile information is visible to other users. This includes your username, avatar, linked game IDs, and match statistics. Your email address, payment details, and private account data are never exposed to other players.</li>
           <li><b>With law enforcement:</b> if we are legally compelled by a valid court order, subpoena, or other binding legal process, we may disclose information as required by law.</li>

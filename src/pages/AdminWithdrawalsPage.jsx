@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { ShieldCheck, Search, Check, X, Send, ExternalLink, ToggleLeft, ToggleRight } from "lucide-react";
+import { ShieldCheck, Search, Check, X, Send, ToggleLeft, ToggleRight } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import {
@@ -60,7 +60,7 @@ export function AdminWithdrawalsPage() {
     const res = await adminApproveWithdrawal(id);
     setBusyId(null);
     if (res.error) return toast.error(res.error);
-    toast.success("Payout sent to Stripe. It'll flip to paid on confirmation.");
+    toast.success("Payout sent. It'll flip to paid on confirmation.");
     load();
   }
 
@@ -112,9 +112,9 @@ export function AdminWithdrawalsPage() {
                 <span>Requested {shortDate(w.created_at)}</span>
                 {w.meta?.auto_approved && <span className="statusChip s-paid" style={{ fontSize: 10 }}>auto-approved</span>}
                 {w.meta?.auto_approved === false && <span className="statusChip s-pending" style={{ fontSize: 10 }}>held: {w.meta?.hold_reason || "review"}</span>}
-                <span className={`statusChip ${w.stripe_payouts_enabled ? "s-paid" : "s-pending"}`}>Stripe {w.stripe_payouts_enabled ? "ready" : w.stripe_verification_status || "incomplete"}</span>
+                <span className={`statusChip ${w.crypto_wallet_address ? "s-paid" : "s-pending"}`}>Wallet {w.crypto_wallet_address ? "set" : "missing"}</span>
                 {w.suspended && <span className="statusChip s-rejected">suspended</span>}
-                {w.payout_id && <a className="txId" href={`https://dashboard.stripe.com/payouts/${w.payout_id}`} target="_blank" rel="noreferrer">{w.payout_id} <ExternalLink size={11} /></a>}
+                {w.payout_id && <span className="txId">{w.payout_id}</span>}
                 <small className="txId">#{(w.transaction_id || w.id).slice(0, 8)}</small>
               </div>
               {(w.status === "pending" || w.status === "processing") && (
@@ -122,7 +122,7 @@ export function AdminWithdrawalsPage() {
                   {w.status === "pending" && (
                     <Button variant="ghost" className="sm" loading={busyId === w.id} onClick={() => process(w.id)}>Mark processing</Button>
                   )}
-                  <Button variant="primary" className="sm" loading={busyId === w.id} disabled={!w.stripe_payouts_enabled} onClick={() => approve(w.id)}><Send size={13} /> Approve & pay</Button>
+                  <Button variant="primary" className="sm" loading={busyId === w.id} disabled={!w.crypto_wallet_address} onClick={() => approve(w.id)}><Send size={13} /> Approve & pay</Button>
                   <Button variant="danger" className="sm" onClick={() => setRejectFor(w)}><X size={13} /> Reject</Button>
                 </div>
               )}
@@ -143,7 +143,7 @@ export function AdminWithdrawalsPage() {
       <Modal open onClose={onClose} eyebrow="REJECT WITHDRAWAL" title={`Reject ${w.username}'s ${money(w.amount)}`} size="sm">
         <p className="modalNote">The held funds are returned to the user's available balance and they're notified with this reason.</p>
         <label className="fieldLbl">Reason</label>
-        <textarea className="field area" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Stripe verification incomplete" />
+        <textarea className="field area" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. wallet address invalid" />
         <Button variant="danger" className="wide" loading={busy} onClick={async () => {
           if (!reason.trim()) return toast.error("Add a reason.");
           setBusy(true);
