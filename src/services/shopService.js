@@ -63,14 +63,9 @@ export async function purchaseWithWallet(itemKey) {
 }
 
 // Card checkout via Edge Function (account services or membership subscription).
-export async function startCheckout(itemKey, returnPath = "/shop") {
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
+export async function startCheckout(itemKey) {
   const { data, error } = await supabase.functions.invoke("stripe-shop-checkout", {
-    body: {
-      item: itemKey,
-      success_url: `${origin}${returnPath}?checkout=success`,
-      cancel_url: `${origin}${returnPath}?checkout=cancel`
-    }
+    body: { item: itemKey }
   });
   return { url: data?.url || null, error: error?.message || data?.error };
 }
@@ -124,10 +119,9 @@ export async function getUsernameHistory(userId) {
 // Membership subscription management
 // ---------------------------------------------------------------------------
 // Opens the Stripe billing portal so the user can cancel/manage the sub.
-export async function openBillingPortal(returnPath = "/shop") {
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
+export async function openBillingPortal() {
   const { data, error } = await supabase.functions.invoke("stripe-billing-portal", {
-    body: { return_url: `${origin}${returnPath}` }
+    body: {}
   });
   return { url: data?.url || null, error: error?.message || data?.error };
 }

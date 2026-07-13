@@ -11,8 +11,9 @@ Deno.serve(async (req) => {
     const caller = await getCaller(req);
     if (!caller) return json({ error: "unauthenticated" }, 401);
 
-    const { return_url, refresh_url } = await req.json().catch(() => ({}));
-    if (!return_url || !refresh_url) return json({ error: "return_url and refresh_url required" }, 400);
+    const base = "https://dubbed.pro/wallet";
+    const return_url = `${base}?stripe=return`;
+    const refresh_url = `${base}?stripe=refresh`;
 
     const stripe = stripeClient();
     const db = serviceClient();
@@ -53,6 +54,7 @@ Deno.serve(async (req) => {
 
     return json({ url: link.url });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error("connect-onboard error:", (e as Error).message);
+    return json({ error: "Something went wrong. Please try again." }, 500);
   }
 });

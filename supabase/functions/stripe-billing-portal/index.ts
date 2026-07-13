@@ -11,8 +11,7 @@ Deno.serve(async (req) => {
     const caller = await getCaller(req);
     if (!caller) return json({ error: "unauthenticated" }, 401);
 
-    const { return_url } = await req.json().catch(() => ({}));
-    if (!return_url) return json({ error: "return_url required" }, 400);
+    const return_url = "https://dubbed.pro/shop";
 
     const db = serviceClient();
     const { data: row } = await db
@@ -30,6 +29,7 @@ Deno.serve(async (req) => {
 
     return json({ url: session.url });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error("billing-portal error:", (e as Error).message);
+    return json({ error: "Something went wrong. Please try again." }, 500);
   }
 });

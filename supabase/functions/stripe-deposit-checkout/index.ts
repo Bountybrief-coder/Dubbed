@@ -9,8 +9,11 @@ Deno.serve(async (req) => {
     if (!caller) return json({ error: "unauthenticated" }, 401);
 
     const { amount, return_url } = await req.json().catch(() => ({}));
-    if (!amount || Number(amount) < 5) return json({ error: "Minimum deposit is $5" }, 400);
+    const cents = Math.round(Number(amount) * 100);
+    if (!Number.isFinite(cents) || cents < 500) return json({ error: "Minimum deposit is $5" }, 400);
+    if (cents > 100000) return json({ error: "Maximum deposit is $1,000" }, 400);
 
+    const base = "https://dubbed.pro/wallet";
     const stripe = stripeClient();
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
@@ -18,17 +21,18 @@ Deno.serve(async (req) => {
         price_data: {
           currency: "usd",
           product_data: { name: "Dubbed Wallet Deposit" },
-          unit_amount: Math.round(Number(amount) * 100),
+          unit_amount: cents,
         },
         quantity: 1,
       }],
-      metadata: { dubbed_user_id: caller.id, type: "deposit", amount: String(amount) },
-      success_url: `${return_url || "https://dubbed.pro/wallet"}?deposit=success`,
-      cancel_url: `${return_url || "https://dubbed.pro/wallet"}?deposit=cancel`,
+      metadata: { dubbed_user_id: caller.id, type: "deposit", amount: String(cents / 100) },
+      success_url: `${base}?deposit=success`,
+      cancel_url: `${base}?deposit=cancel`,
     });
 
     return json({ url: session.url });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error("deposit-checkout error:", (e as Error).message);
+    return json({ error: "Something went wrong. Please try again." }, 500);
   }
 });

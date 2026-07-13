@@ -127,11 +127,14 @@ export function LeaderboardPage({ onOpenProfile }) {
   }
 
   return (
-    <main className="page">
-      <div className="pageHead">
-        <div className="eyebrow">{activeSeason ? activeSeason.name.toUpperCase() : "RANKINGS"}</div>
-        <h1>Leaderboard</h1>
-        <p className="sub">Compete, climb, get rewarded. Top weekly players earn credits.</p>
+    <main className="page lbPage">
+      <div className="lbHero">
+        <div className="lbHeroBg" />
+        <div className="pageHead">
+          <div className="eyebrow">{activeSeason ? activeSeason.name.toUpperCase() : "RANKINGS"}</div>
+          <h1>Leaderboard</h1>
+          <p className="sub">Compete, climb, get rewarded. Top weekly players earn credits.</p>
+        </div>
       </div>
 
       {/* ── Board Tabs ── */}
@@ -263,6 +266,11 @@ export function LeaderboardPage({ onOpenProfile }) {
           {rows.length >= 3 && <Podium players={rows} metric={metric} onOpenProfile={onOpenProfile} />}
 
           {/* ── Table ── */}
+          <div className="lbTableLabel">
+            <Trophy size={14} />
+            <span>Full Rankings</span>
+            <span className="lbTableCount">{rows.length} players</span>
+          </div>
           <div className="lbTable">
             <div className="lbHeader">
               <span>#</span>

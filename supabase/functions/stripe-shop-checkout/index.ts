@@ -15,8 +15,11 @@ Deno.serve(async (req) => {
     const caller = await getCaller(req);
     if (!caller) return json({ error: "unauthenticated" }, 401);
 
-    const { item, success_url, cancel_url } = await req.json().catch(() => ({}));
-    if (!item || !success_url || !cancel_url) return json({ error: "item, success_url, cancel_url required" }, 400);
+    const { item } = await req.json().catch(() => ({}));
+    if (!item) return json({ error: "item required" }, 400);
+    const base = "https://dubbed.pro/shop";
+    const success_url = `${base}?purchase=success&item=${encodeURIComponent(item)}`;
+    const cancel_url = `${base}?purchase=cancel`;
 
     const db = serviceClient();
     const stripe = stripeClient();
@@ -70,6 +73,7 @@ Deno.serve(async (req) => {
 
     return json({ url: session.url });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error("shop-checkout error:", (e as Error).message);
+    return json({ error: "Something went wrong. Please try again." }, 500);
   }
 });

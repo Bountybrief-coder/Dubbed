@@ -62,6 +62,7 @@ Deno.serve(async (req) => {
 
     const stripe = stripeClient();
     const amountCents = Math.round((Number(w.amount) - Number(w.fee || 0)) * 100);
+    if (!Number.isFinite(amountCents) || amountCents < 1) return json({ error: "payout amount too small after fees" }, 400);
 
     const transfer = await stripe.transfers.create(
       {
@@ -77,6 +78,7 @@ Deno.serve(async (req) => {
 
     return json({ ok: true, transfer_id: transfer.id });
   } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+    console.error("payout error:", (e as Error).message);
+    return json({ error: "Payout failed. Please try again or contact support." }, 500);
   }
 });

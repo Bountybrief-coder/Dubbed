@@ -17,9 +17,8 @@ export async function getLedger(userId, limit = 50) {
 // Function credits the balance on confirmation. Falls back to the old direct
 // RPC if the Edge Function isn't deployed yet (dev/test convenience).
 export async function deposit(amount) {
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
   const { data, error } = await supabase.functions.invoke("stripe-deposit-checkout", {
-    body: { amount: Number(amount), return_url: `${origin}/wallet` }
+    body: { amount: Number(amount) }
   });
   if (error?.message?.includes("not found") || error?.message?.includes("FunctionNotFound")) {
     // Edge Function not deployed — fall back to direct RPC for testing.
@@ -91,13 +90,9 @@ export function subscribeToWithdrawals(userId, onChange) {
 // ---------------------------------------------------------------------------
 // Creates (or reuses) the user's Express account and returns a one-time
 // onboarding link. All secret-key work happens in the Edge Function.
-export async function startStripeOnboarding(returnPath = "/wallet") {
-  const origin = typeof window !== "undefined" ? window.location.origin : "";
+export async function startStripeOnboarding() {
   const { data, error } = await supabase.functions.invoke("stripe-connect-onboard", {
-    body: {
-      return_url: `${origin}${returnPath}?stripe=return`,
-      refresh_url: `${origin}${returnPath}?stripe=refresh`
-    }
+    body: {}
   });
   return { url: data?.url || null, error: error?.message || data?.error };
 }

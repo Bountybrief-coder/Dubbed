@@ -71,7 +71,7 @@ Verification and password-reset emails from `noreply@dubbed.pro` are being sent 
 3. Add a **TXT** record:
    - **Host/Name**: `_dmarc`
    - **Type**: TXT
-   - **Value**: `v=DMARC1; p=none; rua=mailto:webdeansolutions@gmail.com`
+   - **Value**: `v=DMARC1; p=none; rua=mailto:admin@dubbed.pro`
    - **TTL**: 300
 
 ### 3. Verify Resend DKIM (may already be correct)

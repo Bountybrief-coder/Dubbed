@@ -41,8 +41,9 @@ export function PrivacyPage() {
         <ul>
           <li><b>Stripe</b> handles all payment processing. When you add a payment method or receive a payout, your financial data is transmitted directly to Stripe and governed by their privacy policy at <a href="https://stripe.com/privacy" target="_blank" rel="noopener noreferrer">stripe.com/privacy</a>.</li>
           <li><b>Supabase</b> provides our database hosting and user authentication infrastructure. Your account data is stored securely within Supabase's managed environment.</li>
+          <li><b>Google Analytics (GA4)</b> is used via Google Tag Manager to collect anonymous, aggregated usage data such as page views, button clicks, and feature engagement. This helps us understand how the platform is used and improve it. No personally identifiable information is sent to Google. You can opt out by using a browser extension such as the <a href="https://tools.google.com/dlpage/gaoptout" target="_blank" rel="noopener noreferrer">Google Analytics Opt-out Browser Add-on</a>.</li>
         </ul>
-        <p>We do not use advertising networks, third-party analytics trackers, or data brokers. Your data is not monetized through ads.</p>
+        <p>We do not use advertising networks or data brokers. Your data is not monetized through ads.</p>
       </section>
 
       <section className="panel2 rulesSection">
@@ -52,7 +53,7 @@ export function PrivacyPage() {
           <li><b>Session authentication tokens:</b> used to keep you logged in and verify your identity across page loads.</li>
           <li><b>Essential site functionality cookies:</b> used to remember preferences and maintain session state.</li>
         </ul>
-        <p>We do not use third-party tracking cookies. No advertising or analytics cookies are set by Dubbed. Your browsing activity on our site is not tracked for marketing purposes.</p>
+        <p>We do not use advertising or retargeting cookies. Google Analytics may set a cookie to distinguish unique visitors; this cookie contains no personal information and is not used for advertising. Your browsing activity on our site is never sold or shared for marketing purposes.</p>
       </section>
 
       <section className="panel2 rulesSection">
@@ -61,6 +62,7 @@ export function PrivacyPage() {
         <p>Your information may be shared only in the following limited situations:</p>
         <ul>
           <li><b>With Stripe:</b> payment-related data necessary to process transactions, deposits, and withdrawals.</li>
+          <li><b>With Google:</b> anonymous usage events (page views, feature clicks) via Google Analytics. No personal information, payment data, or match results are shared.</li>
           <li><b>With other players:</b> only your public profile information is visible to other users. This includes your username, avatar, linked game IDs, and match statistics. Your email address, payment details, and private account data are never exposed to other players.</li>
           <li><b>With law enforcement:</b> if we are legally compelled by a valid court order, subpoena, or other binding legal process, we may disclose information as required by law.</li>
         </ul>

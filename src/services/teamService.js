@@ -130,7 +130,7 @@ export function subscribeToTeamMatches(teamId, onChange) {
 
 export function subscribeToInvites(userId, onChange) {
   const channel = supabase
-    .channel(`team-invites:${userId}`)
+    .channel(`team-invites:${userId}:${Math.random().toString(36).slice(2, 8)}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "team_invites", filter: `user_id=eq.${userId}` }, onChange)
     .subscribe();
   return () => supabase.removeChannel(channel);
