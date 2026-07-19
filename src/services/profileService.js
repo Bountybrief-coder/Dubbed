@@ -10,11 +10,13 @@ export async function getProfile(userId) {
   return { data, error: error?.message };
 }
 
+const PUBLIC_PROFILE_COLS = "id, username, username_lower, avatar_url, xp, wins, losses, earnings, wagr_member, verified, region, platform, country, state_code, activision_id, psn, xbox, steam, battlenet, twitch_username, twitter, youtube, member_since, favorite_game, favorite_mode, username_change_tokens, double_xp_active_until";
+
 export async function getProfileByUsername(username) {
   if (!username) return { data: null, error: "No username" };
   const { data, error } = await supabase
     .from("profiles")
-    .select("*")
+    .select(PUBLIC_PROFILE_COLS)
     .eq("username_lower", username.toLowerCase())
     .maybeSingle();
   return { data, error: error?.message };
@@ -23,7 +25,7 @@ export async function getProfileByUsername(username) {
 // Only non-money, non-stat fields. Balance/xp/wins are locked at the DB level.
 export async function updateProfile(userId, patch) {
   const allowed = {};
-  for (const k of ["avatar_url", "psn", "xbox", "activision_id", "twitter", "youtube", "twitch_username", "region", "platform", "favorite_game", "favorite_mode"]) {
+  for (const k of ["avatar_url", "psn", "xbox", "activision_id", "battlenet", "steam", "twitter", "youtube", "twitch_username", "region", "platform", "favorite_game", "favorite_mode", "country", "state_code"]) {
     if (k in patch) allowed[k] = patch[k];
   }
   const { data, error } = await supabase
@@ -40,7 +42,7 @@ export async function searchUsers(query, limit = 8) {
   const { data, error } = await supabase
     .from("profiles")
     .select("id, username, xp, avatar_url")
-    .ilike("username", `%${query}%`)
+    .ilike("username", `%${query.replace(/[%_]/g, "\\$&")}%`)
     .limit(limit);
   return { data: data || [], error: error?.message };
 }

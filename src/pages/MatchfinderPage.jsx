@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { usePageMeta } from "../hooks/usePageMeta";
 import { Plus, Crosshair, AlertTriangle, Info, Users, ToggleLeft, ToggleRight } from "lucide-react";
 import { WagerIcon } from "../components/WagerIcon";
 import { useAuth } from "../hooks/useAuth.jsx";
@@ -6,8 +7,10 @@ import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { listOpenMatches, joinMatch, subscribeToOpenMatches } from "../services/matchService";
+import { supabase } from "../lib/supabase";
 import { getMyTeams } from "../services/teamService";
 import { CreateMatchModal } from "../components/CreateMatchModal";
+import { AcceptMatchModal } from "../components/AcceptMatchModal";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { SkeletonRows } from "../components/Skeleton";
@@ -27,13 +30,14 @@ import bo1Img from "../assets/bo1.png";
 import bo2Img from "../assets/bo2.png";
 
 const GAME_COVERS = {
-  "Call of Duty: Black Ops 7": bo7, "Warzone": wz, "Black Ops Royale": wz,
+  "Call of Duty: Black Ops 7": bo7, "Warzone": wz, "Black Ops Royale": bo7,
   "Call of Duty: Modern Warfare 4": mw4Img, "Call of Duty: WWII": wwiiImg,
   "Call of Duty: Black Ops": bo1Img, "Call of Duty: Black Ops II": bo2Img,
 };
 const cover = (game) => GAME_COVERS[game] || bo7;
 
 export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
+  usePageMeta("Matchfinder", "Browse open COD lobbies and accept cash or XP matches. 1v1 to 4v4, Search and Destroy, Hardpoint, Kill Race and more.");
   const { profile, refreshProfile } = useAuth();
   const toast = useToast();
   const [kind, setKind] = useState("all");
@@ -46,6 +50,30 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
   );
   const { data: myTeams } = useAsync(
     () => profile ? getMyTeams(profile.id) : Promise.resolve({ data: [] }),
+    [profile?.id]
+  );
+
+  const { data: activeMatches } = useAsync(
+    () => profile
+      ? supabase
+          .from("match_players")
+          .select("matches!inner(id, code, game, mode, status, kind, entry, created_at, winner_id, match_number)")
+          .eq("user_id", profile.id)
+          .in("matches.status", ["open", "live", "reported", "disputed"])
+      : Promise.resolve({ data: [] }),
+    [profile?.id]
+  );
+
+  const { data: recentMatches } = useAsync(
+    () => profile
+      ? supabase
+          .from("match_players")
+          .select("matches!inner(id, code, game, status, winner_id, match_number, created_at)")
+          .eq("user_id", profile.id)
+          .eq("matches.status", "settled")
+          .order("created_at", { referencedTable: "matches", ascending: false })
+          .limit(5)
+      : Promise.resolve({ data: [] }),
     [profile?.id]
   );
 
@@ -68,7 +96,7 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
     if (res.error) {
       const msg = res.error.toLowerCase();
       if (msg.includes("not open") || msg.includes("already joined") || msg.includes("not found")) {
-        toast.error("Match already taken — someone beat you to it.");
+        toast.error("Match already taken. Someone beat you to it.");
       } else if (msg.includes("insufficient balance")) {
         toast.error("Insufficient balance. Deposit to play.");
       } else {
@@ -78,14 +106,64 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
       return;
     }
     track.matchJoin("match", 0);
-    toast.success("Joined! Match is live — GL.");
+    toast.success("Joined! Match is live. GL.");
     refreshProfile();
     reload();
     onOpenMatch?.(matchId);
   }
 
+  const activeList = (activeMatches || []).map((r) => r.matches).filter(Boolean);
+  const recentList = (recentMatches || []).map((r) => r.matches).filter(Boolean);
+
   return (
     <main className="page">
+      {/* ── My Matches (logged-in only) ── */}
+      {profile && (activeList.length > 0 || recentList.length > 0) && (
+        <div className="myMatchSection">
+          {activeList.length > 0 && (
+            <>
+              <div className="eyebrow" style={{ marginBottom: 10 }}>YOUR ACTIVE MATCHES</div>
+              <div className="myMatchList">
+                {activeList.map((m) => (
+                  <div className="myMatchRow" key={m.id} onClick={() => onOpenMatch?.(m.id)}>
+                    <img className="myMatchCover" src={cover(m.game)} alt="" loading="lazy" />
+                    <div className="myMatchInfo">
+                      <b>{m.game}</b>
+                      <span className="myMatchCode">#{m.match_number || m.code}</span>
+                    </div>
+                    <span className={`statusChip s-${m.status}`}>{m.status}</span>
+                    <Button variant="ghost" className="btn-sm" onClick={(e) => { e.stopPropagation(); onOpenMatch?.(m.id); }}>
+                      Go to Match
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {recentList.length > 0 && (
+            <>
+              <div className="eyebrow" style={{ marginBottom: 10, marginTop: activeList.length > 0 ? 20 : 0 }}>RECENT MATCHES</div>
+              <div className="myMatchList">
+                {recentList.map((m) => {
+                  const won = m.winner_id === profile.id;
+                  return (
+                    <div className="myMatchRow" key={m.id} onClick={() => onOpenMatch?.(m.id)}>
+                      <img className="myMatchCover" src={cover(m.game)} alt="" loading="lazy" />
+                      <div className="myMatchInfo">
+                        <b>{m.game}</b>
+                        <span className="myMatchCode">#{m.match_number || m.code}</span>
+                      </div>
+                      <span className={`myMatchResult ${won ? "win" : "loss"}`}>{won ? "W" : "L"}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="pageHead rowHead">
         <div>
           <div className="eyebrow">OPEN LOBBIES</div>
@@ -121,7 +199,7 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
             const isMine = profile && m.created_by === profile.id;
             const mElig = profile ? checkGameEligibility(m.game, profile, myTeams) : { eligible: true };
             return (
-            <div className="matchTile" key={m.id} onClick={() => isMine ? onOpenMatch?.(m.id) : handleAccept(m)} style={{ cursor: "pointer" }}>
+            <div className="matchTile" key={m.id} role="button" tabIndex={0} onClick={() => isMine ? onOpenMatch?.(m.id) : mElig.eligible ? handleAccept(m) : toast.error(mElig.reason)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isMine ? onOpenMatch?.(m.id) : mElig.eligible ? handleAccept(m) : toast.error(mElig.reason); } }} style={{ cursor: "pointer" }}>
               <img className="matchCover" src={cover(m.game)} alt="" loading="lazy" />
               <div className="matchMeta">
                 <b>{m.game}</b>
@@ -199,114 +277,3 @@ function MatchInfoTooltip({ match }) {
   );
 }
 
-// ─── Section 7: Accept confirmation modal (info bar + veto + roster) ───
-
-function AcceptMatchModal({ match, teams, onClose, onConfirm }) {
-  const { profile } = useAuth();
-  const wwii = isConsoleOnlyGame(match.game);
-  const teamSize = parseInt(match.format) || 1;
-  const isSquad = teamSize >= 3;
-  const pool = mapsForGameMode(match.game, match.mode);
-  const creatorBan = match.veto?.creator_ban;
-  const needsVeto = pool.length >= 3 && creatorBan;
-  const available = needsVeto ? pool.filter((m) => m !== creatorBan) : [];
-
-  const [banned, setBanned] = useState(null);
-  const [roster, setRoster] = useState(profile ? [profile.id] : []);
-
-  const eligibleTeam = getEligibleTeam(match.game, teams, {
-    platform: wwii ? match.platform : undefined,
-    type: match.kind || undefined
-  });
-
-  const squadMembers = useMemo(() => {
-    if (!isSquad || !eligibleTeam) return [];
-    return (eligibleTeam.team_members || []).map(m => ({
-      id: m.user_id,
-      name: m.profiles?.username || "?",
-      avatar: m.profiles?.avatar_url,
-      isMe: m.user_id === profile?.id
-    }));
-  }, [isSquad, eligibleTeam, profile?.id]);
-
-  const rosterValid = !isSquad || roster.length === teamSize;
-  const vetoValid = !needsVeto || banned;
-
-  function toggleRoster(uid) {
-    setRoster(prev => {
-      if (prev.includes(uid)) return prev.filter(x => x !== uid);
-      if (prev.length >= teamSize) return prev;
-      return [...prev, uid];
-    });
-  }
-
-  return (
-    <Modal open onClose={onClose} eyebrow="ACCEPT MATCH" title="Confirm & join" size="sm">
-      {/* Full info bar */}
-      <div className="acceptInfoBar">
-        <div className="mipRow"><span>Game</span><b>{shortForGame(match.game)} · {match.mode}</b></div>
-        <div className="mipRow"><span>Team Size</span><b>{match.format} {formatLabel(match.format)}</b></div>
-        <div className="mipRow"><span>Series</span><b>{seriesLabel(match.series)}</b></div>
-        <div className="mipRow"><span>Platform</span><b>{match.platform}</b></div>
-        {!wwii && <div className="mipRow"><span>PC Players</span><b>{pcPlayersFromPlatform(match.platform)}</b></div>}
-        {!wwii && <div className="mipRow"><span>Input</span><b>{match.allowed_input || "Controller + M&K"}</b></div>}
-        <div className="mipRow"><span>Region</span><b>{match.region}</b></div>
-        {match.skill_tier !== "Open" && <div className="mipRow"><span>Skill</span><b>{match.skill_tier}</b></div>}
-        {match.weapon_restriction && <div className="mipRow"><span>Weapon</span><b className="warn">{match.weapon_restriction}</b></div>}
-        {match.kind === "cash" && <div className="mipRow"><span>Entry</span><b className="cash">{money(match.entry)}</b></div>}
-      </div>
-      <div className="ruleNote">{seriesRule(match.series)}</div>
-
-      {/* Squad roster toggle */}
-      {isSquad && eligibleTeam && squadMembers.length > 0 && (
-        <div className="cmRosterSection">
-          <label className="fieldLbl"><Users size={13} /> Your lineup — select {teamSize}</label>
-          <p className="modalNote">Playing as <b>{eligibleTeam.name}</b></p>
-          <div className="cmRosterGrid">
-            {squadMembers.map(m => {
-              const active = roster.includes(m.id);
-              const full = roster.length >= teamSize && !active;
-              return (
-                <button key={m.id} className={`cmRosterPlayer ${active ? "active" : ""} ${full ? "disabled" : ""}`}
-                  onClick={() => toggleRoster(m.id)} disabled={full && !active}>
-                  <div className="cmRosterAvatar">
-                    {m.avatar ? <img src={m.avatar} alt="" /> : <span>{m.name.slice(0, 2)}</span>}
-                  </div>
-                  <span className="cmRosterName">{m.name}{m.isMe ? " (you)" : ""}</span>
-                  {active ? <ToggleRight size={18} className="cmRosterToggleOn" /> : <ToggleLeft size={18} className="cmRosterToggleOff" />}
-                </button>
-              );
-            })}
-          </div>
-          <small className={rosterValid ? "subtle" : "subtle danger"}>
-            {roster.length}/{teamSize} selected
-          </small>
-        </div>
-      )}
-
-      {/* Map veto (if needed) */}
-      {needsVeto && (
-        <>
-          <label className="fieldLbl">Ban a map</label>
-          <p className="modalNote">Your opponent banned a map. Pick one to ban — match plays on a random remaining map.</p>
-          <div className="mapGrid" style={{ marginTop: 8 }}>
-            {available.map((m) => (
-              <MapCard key={m} map={m} game={match.game} size="sm" selected={banned === m} onClick={() => setBanned(banned === m ? null : m)} />
-            ))}
-          </div>
-          {banned && <p className="modalNote" style={{ marginTop: 8 }}>Banning <b>{banned}</b> — {available.length - 1} map{available.length - 1 !== 1 ? "s" : ""} remain.</p>}
-        </>
-      )}
-
-      {eligibleTeam && !isSquad && (
-        <p className="modalNote">Playing as <b>{eligibleTeam.name}</b> [{eligibleTeam.tag}]</p>
-      )}
-
-      <Button variant="primary" className="wide" disabled={!vetoValid || !rosterValid}
-        onClick={() => onConfirm(banned || null, isSquad ? roster.slice(0, teamSize) : null)}
-        style={{ marginTop: 12 }}>
-        <Crosshair size={14} /> {needsVeto ? `Ban ${banned || "..."} & ` : ""}Accept Match
-      </Button>
-    </Modal>
-  );
-}

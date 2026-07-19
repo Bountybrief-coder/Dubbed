@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /wallet
+Disallow: /notifications
+Disallow: /support
+
+Sitemap: https://dubbed.pro/sitemap.xml

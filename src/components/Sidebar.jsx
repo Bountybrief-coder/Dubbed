@@ -1,34 +1,37 @@
 import React from "react";
 import {
-  Home, Crosshair, Trophy, Users, BarChart3, Radio, ShoppingBag,
-  BookOpen, Wallet, ChevronLeft, ChevronRight, Gamepad2, Shield,
+  Flame, Target, Crown, ShieldHalf, TrendingUp, Radar, Coins, Tv,
+  Banknote, Gem, Scale, Flag, EyeOff, ScrollText,
+  ChevronLeft, ChevronRight,
   AlertTriangle, Ban, CreditCard, Swords, Gavel, DollarSign,
-  HelpCircle, FileText, Calendar, TicketCheck, UserSearch
+  ShoppingBag, Trophy, Calendar, TicketCheck
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { CURRENT_GAMES, THROWBACK_GAMES } from "../utils/games";
+import { GameIcon } from "./GameIcons";
 import logoMark from "../assets/dubbed-mark.png";
 
 const MAIN_NAV = [
-  { key: "home", label: "Home", icon: Home },
-  { key: "matchfinder", label: "Matchfinder", icon: Crosshair },
-  { key: "tournaments", label: "Tournaments", icon: Trophy },
-  { key: "teams", label: "Teams", icon: Users },
+  { key: "home", label: "Home", icon: Flame },
+  { key: "matchfinder", label: "Matchfinder", icon: Target },
+  { key: "tournaments", label: "Tournaments", icon: Crown },
+  { key: "teams", label: "Teams", icon: ShieldHalf },
 ];
 
 const COMMUNITY_NAV = [
-  { key: "leaderboard", label: "Leaderboard", icon: BarChart3 },
-  { key: "lfg", label: "Find Teammates", icon: UserSearch },
-  { key: "betting", label: "Betting", icon: Swords },
-  { key: "live", label: "Live", icon: Radio },
+  { key: "leaderboard", label: "Leaderboard", icon: TrendingUp },
+  { key: "lfg", label: "Find Teammates", icon: Radar },
+  { key: "betting", label: "Betting", icon: Coins },
+  { key: "live", label: "Live", icon: Tv },
 ];
 
 const ACCOUNT_NAV = [
-  { key: "wallet", label: "Wallet", icon: Wallet },
-  { key: "shop", label: "Shop", icon: ShoppingBag },
-  { key: "rules", label: "Rules", icon: BookOpen },
-  { key: "support", label: "Support", icon: HelpCircle },
-  { key: "privacy", label: "Privacy", icon: FileText },
+  { key: "wallet", label: "Wallet", icon: Banknote },
+  { key: "shop", label: "Shop", icon: Gem },
+  { key: "rules", label: "Rules", icon: Scale },
+  { key: "support", label: "Tickets", icon: Flag },
+  { key: "privacy", label: "Privacy", icon: EyeOff },
+  { key: "terms", label: "Terms", icon: ScrollText },
 ];
 
 const ADMIN_NAV = [
@@ -87,7 +90,7 @@ export function Sidebar({ view, onNavigate, collapsed, onToggle, onHoverRoute, i
             onClick={() => onNavigate("game", g.slug)}
             title={collapsed ? g.short : undefined}
           >
-            <Gamepad2 size={16} />
+            <GameIcon slug={g.slug} size={16} />
             {!collapsed && <span>{g.short}</span>}
             {view === `game-${g.slug}` && <div className="sideActiveBar" />}
           </button>
@@ -101,7 +104,7 @@ export function Sidebar({ view, onNavigate, collapsed, onToggle, onHoverRoute, i
             onClick={() => onNavigate("game", g.slug)}
             title={collapsed ? g.short : undefined}
           >
-            <Gamepad2 size={16} />
+            <GameIcon slug={g.slug} size={16} />
             {!collapsed && <span>{g.short}</span>}
             {view === `game-${g.slug}` && <div className="sideActiveBar" />}
           </button>

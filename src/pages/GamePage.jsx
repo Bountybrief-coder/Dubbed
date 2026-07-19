@@ -1,50 +1,55 @@
 import React, { useState } from "react";
+import { usePageMeta } from "../hooks/usePageMeta";
 import { Plus, Crosshair, Gamepad2, ChevronRight, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { listOpenMatches, joinMatch } from "../services/matchService";
+import { getMyTeams } from "../services/teamService";
 import { CreateMatchModal } from "../components/CreateMatchModal";
+import { AcceptMatchModal } from "../components/AcceptMatchModal";
 import { Button } from "../components/Button";
 import { SkeletonRows } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
+import { AlertTriangle } from "lucide-react";
 import { money } from "../utils/format";
+import { track } from "../utils/analytics";
 import {
   gameBySlug, shortForGame, formatLabel, formatsForGameMode,
   modesForGameByCategory, CATEGORY_LABELS, modeRule, isKillRaceMode,
-  isBattleRoyaleGame, FORMAT_LABELS, seriesLabel
+  isBattleRoyaleGame, FORMAT_LABELS, seriesLabel, checkGameEligibility
 } from "../utils/games";
 import bo7Cover from "../assets/black-ops-7.png";
 import wzCover from "../assets/warzone.png";
 import mw4Cover from "../assets/mw4.png";
-import bo4Cover from "../assets/bo4.png";
-import bo3Cover from "../assets/bo3.png";
-import mwCover from "../assets/mw-2019.png";
-import mw2Cover from "../assets/mw2.png";
-import wawCover from "../assets/waw.png";
-
 import bo1Cover from "../assets/bo1.png";
 import bo2Cover from "../assets/bo2.png";
 import wwiiCover from "../assets/wwii.png";
 
 const COVERS = {
-  bo7: bo7Cover, warzone: wzCover, bor: wzCover, mw4: mw4Cover,
-  bo4: bo4Cover, bo3: bo3Cover, mw: mwCover, mw2: mw2Cover, waw: wawCover,
+  bo7: bo7Cover, warzone: wzCover, bor: bo7Cover, mw4: mw4Cover,
   bo1: bo1Cover, bo2: bo2Cover, wwii: wwiiCover
 };
 
 export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
   const game = gameBySlug(slug);
+  usePageMeta(game ? `${game.short} Matches` : "Game", game ? `Find ${game.name} cash matches and XP lobbies. Browse open games, check formats, and jump in.` : "Game page on Dubbed.");
   const { profile, refreshProfile } = useAuth();
   const toast = useToast();
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedMode, setSelectedMode] = useState(null);
   const [activeCat, setActiveCat] = useState("all");
+  const [acceptMatch, setAcceptMatch] = useState(null);
+  const [joiningId, setJoiningId] = useState(null);
 
   const { data, loading, error, reload } = useAsync(
     () => game ? listOpenMatches({ game: game.name }) : Promise.resolve([]),
     [slug]
+  );
+  const { data: myTeams } = useAsync(
+    () => profile ? getMyTeams(profile.id) : Promise.resolve({ data: [] }),
+    [profile?.id]
   );
   const matches = data || [];
 
@@ -66,14 +71,32 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
     ? game.modes
     : (categories[activeCat] || []);
 
-  async function accept(m) {
+  function handleAccept(m) {
     if (!profile) return onLogin();
-    const res = await joinMatch(m.id);
-    if (res.error) return toast.error(res.error);
-    toast.success("Joined. Match is live.");
+    setAcceptMatch(m);
+  }
+
+  async function doJoin(matchId, vetoBan, roster) {
+    setJoiningId(matchId);
+    const res = await joinMatch(matchId, vetoBan, roster);
+    setJoiningId(null);
+    if (res.error) {
+      const msg = res.error.toLowerCase();
+      if (msg.includes("not open") || msg.includes("already joined") || msg.includes("not found")) {
+        toast.error("Match already taken. Someone beat you to it.");
+      } else if (msg.includes("insufficient balance")) {
+        toast.error("Insufficient balance. Deposit to play.");
+      } else {
+        toast.error(res.error);
+      }
+      reload();
+      return;
+    }
+    track.matchJoin(game.name, 0);
+    toast.success("Joined! Match is live. GL.");
     refreshProfile();
     reload();
-    onOpenMatch?.(m.id);
+    onOpenMatch?.(matchId);
   }
 
   return (
@@ -168,8 +191,14 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
           </EmptyState>
         ) : (
           <div className="matchList">
-            {matches.map((m) => (
-              <div className="matchTile" key={m.id}>
+            {matches.map((m) => {
+              const isMine = profile && m.created_by === profile.id;
+              const mElig = profile ? checkGameEligibility(m.game, profile, myTeams) : { eligible: true };
+              return (
+              <div className="matchTile" key={m.id} role="button" tabIndex={0}
+                onClick={() => isMine ? onOpenMatch?.(m.id) : mElig.eligible ? handleAccept(m) : toast.error(mElig.reason)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isMine ? onOpenMatch?.(m.id) : mElig.eligible ? handleAccept(m) : toast.error(mElig.reason); } }}
+                style={{ cursor: "pointer" }}>
                 <img className="matchCover" src={COVERS[game.slug]} alt="" loading="lazy" />
                 <div className="matchMeta">
                   <b>{m.mode}</b>
@@ -179,15 +208,21 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
                     {m.skill_tier !== "Open" && <span className="badge accent">{m.skill_tier}</span>}
                     {m.weapon_restriction && <span className="badge warn">{m.weapon_restriction}</span>}
                   </div>
-                  <span className="matchTicket">{m.code}</span>
+                  <span className="matchTicket">#{m.match_number || m.code}</span>
                 </div>
                 <div className="matchStakeCol">
                   <span className="matchStakeLbl">{m.kind === "cash" ? "ENTRY" : "MODE"}</span>
                   <b className={m.kind === "cash" ? "cash" : "xp"}>{m.kind === "cash" ? money(m.entry) : "XP"}</b>
                 </div>
-                <Button variant="primary" onClick={() => accept(m)}>Accept</Button>
+                {isMine
+                  ? <Button variant="ghost" onClick={(e) => { e.stopPropagation(); onOpenMatch?.(m.id); }}>View</Button>
+                  : !mElig.eligible
+                    ? <span className="matchGateHint" title={mElig.reason}><AlertTriangle size={14} /> {mElig.cta === "account" ? "Link acct" : "Need team"}</span>
+                    : <Button variant="primary" loading={joiningId === m.id} onClick={(e) => { e.stopPropagation(); handleAccept(m); }}>{joiningId === m.id ? "Joining…" : "Accept"}</Button>
+                }
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -195,11 +230,24 @@ export function GamePage({ slug, onNavigate, onLogin, onOpenMatch }) {
       <CreateMatchModal
         open={createOpen}
         onClose={() => { setCreateOpen(false); setSelectedMode(null); }}
-        onCreated={reload}
+        onCreated={(matchId) => { reload(); if (matchId) onOpenMatch?.(matchId); }}
         defaultGame={game.name}
         defaultMode={selectedMode}
         onNavigate={onNavigate}
       />
+
+      {acceptMatch && (
+        <AcceptMatchModal
+          match={acceptMatch}
+          teams={myTeams}
+          onClose={() => setAcceptMatch(null)}
+          onConfirm={(vetoBan, roster) => {
+            const mid = acceptMatch.id;
+            setAcceptMatch(null);
+            doJoin(mid, vetoBan, roster);
+          }}
+        />
+      )}
     </main>
   );
 }

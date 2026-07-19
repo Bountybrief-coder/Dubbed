@@ -2,6 +2,7 @@ import React, { useState, useCallback } from "react";
 import { ShieldCheck, Plus, Trophy, Calendar, Flag, Users } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
+import { useConfirm } from "../hooks/useConfirm.jsx";
 import { useAsync } from "../hooks/useAsync";
 import { listSeasons, adminCreateSeason, adminEndSeason } from "../services/seasonService";
 import { Button } from "../components/Button";
@@ -16,13 +17,14 @@ const STATUS_LABELS = { upcoming: "Upcoming", active: "Active", completed: "Comp
 export function AdminSeasonsPage() {
   const { isAdmin } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
   const { data, loading, error, reload } = useAsync(() => listSeasons(), []);
   const [createOpen, setCreateOpen] = useState(false);
 
   if (!isAdmin) return <main className="page"><EmptyState icon={ShieldCheck} title="Admins only" /></main>;
 
   async function handleEndSeason(season) {
-    if (!confirm(`End "${season.name}" and create the playoff tournament from the top ${season.playoff_size} players?`)) return;
+    if (!await confirm({ title: "End season?", message: `This will end "${season.name}" and create the playoff tournament from the top ${season.playoff_size} players.`, confirmLabel: "End Season" })) return;
     const res = await adminEndSeason(season.id);
     if (res.error) return toast.error(res.error);
     toast.success(`Season ended. Playoff tournament created.`);
@@ -57,7 +59,7 @@ export function AdminSeasonsPage() {
                 </span>
                 <b className="adminSeasonName">{s.name}</b>
                 <span className="adminSeasonDates">
-                  {new Date(s.start_date).toLocaleDateString()} — {new Date(s.end_date).toLocaleDateString()}
+                  {new Date(s.start_date).toLocaleDateString()} - {new Date(s.end_date).toLocaleDateString()}
                 </span>
               </div>
               <div className="adminSeasonStats">
@@ -129,7 +131,7 @@ function CreateSeasonModal({ onClose, onCreated }) {
   }
 
   return (
-    <Modal title="Create Season" onClose={onClose}>
+    <Modal open title="Create Season" onClose={onClose}>
       <form onSubmit={handleCreate} className="adminSeasonForm">
         <label>
           <span>Season Name</span>

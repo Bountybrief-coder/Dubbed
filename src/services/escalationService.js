@@ -5,10 +5,11 @@ export async function canEscalateMatch(matchId) {
   return { data: data?.[0] || { can_escalate: false, reason: "unknown" }, error: error?.message };
 }
 
-export async function escalateMatch(matchId, reason) {
+export async function escalateMatch(matchId, reason, priority = false) {
   const { data, error } = await supabase.rpc("escalate_match", {
     p_match: matchId,
     p_reason: reason,
+    p_priority: priority,
   });
   return { id: data, error: error?.message };
 }

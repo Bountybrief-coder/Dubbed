@@ -9,7 +9,7 @@ export const SHOP_CATALOG = {
     key: "wagr_membership",
     name: "WAGR Membership",
     category: "membership",
-    price: 4.99,
+    price: 7.99,
     interval: "month",
     tagline: "Compete smarter. Zero rake, free monthly credit, and premium perks.",
     benefits: [
@@ -62,10 +62,7 @@ export async function purchaseWithWallet(itemKey) {
   return { data, error: error?.message };
 }
 
-export async function changeUsername(newName) {
-  const { error } = await supabase.rpc("change_username", { p_new: newName });
-  return { error: error?.message };
-}
+export { changeUsername } from "./profileService";
 
 export async function performStatReset() {
   const { error } = await supabase.rpc("perform_stat_reset");

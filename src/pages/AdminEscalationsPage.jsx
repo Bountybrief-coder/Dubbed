@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { ShieldCheck, AlertTriangle, CheckCircle, XCircle, Clock, DollarSign } from "lucide-react";
+import { clickable } from "../utils/a11y";
+import { ShieldCheck, AlertTriangle, CheckCircle, XCircle, Clock, DollarSign, Zap } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
@@ -79,12 +80,13 @@ export function AdminEscalationsPage({ onNavigate }) {
                   <Icon size={16} style={{ color: STATUS_COLOR[t.status] }} />
                   <span className="escStatus" style={{ color: STATUS_COLOR[t.status] }}>{t.status.toUpperCase()}</span>
                   <b className="escUser">{t.username}</b>
-                  <span className="escMatch" onClick={() => onNavigate?.("match", t.match_id)}>
+                  <span className="escMatch" {...clickable(() => onNavigate?.("match", t.match_id))}>
                     Match #{t.match_code || t.match_id.slice(0, 8)}
                   </span>
                   {t.match_entry > 0 && (
                     <span className="escEntry"><DollarSign size={12} /> {money(t.match_entry)}</span>
                   )}
+                  {t.priority && <span style={{ background: "rgba(255,194,60,.15)", color: "var(--gold)", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, display: "inline-flex", alignItems: "center", gap: 3 }}><Zap size={10} /> PRIORITY</span>}
                   <span className="escTime">{shortDate(t.created_at)}</span>
                 </div>
                 <p className="escReason">{t.reason}</p>
@@ -133,12 +135,12 @@ function ResolveModal({ ticket, onClose, onDone }) {
   }
 
   return (
-    <Modal title="Resolve Escalation" onClose={onClose}>
+    <Modal open title="Resolve Escalation" onClose={onClose}>
       <form onSubmit={handleResolve} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         <div style={{ fontSize: 13, color: "var(--muted)" }}>
-          <b style={{ color: "var(--fg)" }}>{ticket.username}</b> — Match #{ticket.match_code || ticket.match_id.slice(0, 8)}
+          <b style={{ color: "var(--text)" }}>{ticket.username}</b> · Match #{ticket.match_code || ticket.match_id.slice(0, 8)}
         </div>
-        <div style={{ fontSize: 13, color: "var(--fg)", background: "var(--panel2)", padding: "10px 14px", borderRadius: 8 }}>
+        <div style={{ fontSize: 13, color: "var(--text)", background: "var(--panel2)", padding: "10px 14px", borderRadius: 8 }}>
           {ticket.reason}
         </div>
         <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -148,7 +150,7 @@ function ResolveModal({ ticket, onClose, onDone }) {
             onChange={e => setNotes(e.target.value)}
             placeholder="Describe what action was taken..."
             rows={3}
-            style={{ background: "var(--panel2)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", color: "var(--fg)", fontSize: 14, resize: "vertical" }}
+            style={{ background: "var(--panel2)", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", color: "var(--text)", fontSize: 14, resize: "vertical" }}
           />
         </label>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

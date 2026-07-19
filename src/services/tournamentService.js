@@ -33,24 +33,34 @@ export async function joinTournament(tournamentId, entrantName, teamId = null) {
   return { error: error?.message };
 }
 
-export function pooledPrize(entry, joined) {
+// Prize split percentages for a bracket of `size` teams.
+// Mirrors settle_tournament_auto() — keep the two in sync.
+//   >= 8 teams -> 80 / 15 / 5   (top 3 paid)
+//   >= 4 teams -> 85 / 15       (top 2 paid)
+//   <= 2 teams -> 100           (winner takes all)
+export function prizeSplitPct(size) {
+  const n = Math.max(0, size || 0);
+  if (n >= 8) return { first: 0.80, second: 0.15, third: 0.05 };
+  if (n >= 3) return { first: 0.85, second: 0.15, third: 0 };
+  return { first: 1, second: 0, third: 0 };
+}
+
+// `entry` × `joined` sets the actual pot. `fieldSize` (the bracket capacity, if
+// passed) decides how many places pay out, so the advertised split is stable
+// before the bracket fills. Falls back to `joined` when capacity is unknown.
+export function pooledPrize(entry, joined, fieldSize = null) {
+  const r2 = (x) => Math.round(x * 100) / 100;
   const n = Math.max(0, joined || 0);
   const gross = Number(entry) * n;
-  const houseCut = Math.round(gross * 0.02 * 100) / 100;
-  const pot = Math.round((gross - houseCut) * 100) / 100;
-  let first, second, third;
-  if (n <= 2) {
-    first = pot; second = 0; third = 0;
-  } else if (n < 8) {
-    first = Math.round(pot * 0.85 * 100) / 100;
-    second = Math.round(pot * 0.15 * 100) / 100;
-    third = 0;
-  } else {
-    first = Math.round(pot * 0.80 * 100) / 100;
-    second = Math.round(pot * 0.15 * 100) / 100;
-    third = Math.round(pot * 0.05 * 100) / 100;
-  }
-  return { gross, houseCut, pot, first, second, third };
+  const houseCut = r2(gross * 0.02);
+  const pot = r2(gross - houseCut);
+  const pct = prizeSplitPct(fieldSize != null ? fieldSize : n);
+  return {
+    gross, houseCut, pot, pct,
+    first: r2(pot * pct.first),
+    second: r2(pot * pct.second),
+    third: r2(pot * pct.third),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -59,10 +69,10 @@ export function pooledPrize(entry, joined) {
 export async function getTournamentBracket(tournamentId) {
   const [r, m] = await Promise.all([
     supabase.from("tournament_rounds").select("*").eq("tournament_id", tournamentId).order("round_number"),
-    supabase.from("tournament_matches").select("*, match:match_id(id, code, status, winner_id)")
+    supabase.from("tournament_matches").select("*, match:match_id(id, code, status, winner_id, map)")
       .eq("tournament_id", tournamentId).order("match_number")
   ]);
-  return { rounds: r.data || [], matches: m.data || [], error: r.error?.message || m.error?.message };
+  return { data: { rounds: r.data || [], matches: m.data || [] }, error: r.error?.message || m.error?.message };
 }
 
 export async function adminGenerateBracket(tournamentId) {
@@ -87,10 +97,6 @@ export function subscribeToTournament(tournamentId, onChange) {
 
 export const subscribeToTournamentMatches = subscribeToTournament;
 
-export async function checkinTournament(tournamentId) {
-  const { error } = await supabase.rpc("checkin_tournament", { p_tournament: tournamentId });
-  return { error: error?.message };
-}
 
 export async function fundTournamentEntry(tournamentId, forUserId, entrantName, teamId = null) {
   const params = { p_tournament: tournamentId, p_for_user: forUserId, p_entrant: entrantName };
@@ -105,7 +111,8 @@ export async function adminCreateTournament(params) {
     p_series: params.series, p_region: params.region, p_entry: Number(params.entry),
     p_capacity: Number(params.capacity), p_platform: params.platform, p_skill_tier: params.skillTier,
     p_starts_at: params.startsAt, p_weapon_restriction: params.weaponRestriction || null,
-    p_host_rule: params.hostRule || "auto"
+    p_host_rule: params.hostRule || "auto",
+    p_wagr_only: params.wagrOnly || false
   });
   return { id: data, error: error?.message };
 }

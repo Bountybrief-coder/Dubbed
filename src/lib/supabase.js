@@ -8,15 +8,12 @@ export const authCallback = {
   type: _hash.get("type") || _search.get("type"),
   error: _hash.get("error") || _search.get("error"),
   errorDesc: _hash.get("error_description") || _search.get("error_description"),
+  code: _search.get("code"),
 };
 
-// Vite exposes env vars prefixed with VITE_. Copy .env.example to .env and fill,
-// and set the same vars in your host (e.g. Netlify) BEFORE the build runs —
-// Vite inlines them at build time.
 const url = import.meta.env.VITE_SUPABASE_URL;
 const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Convenience flag the app checks to show a "configure Supabase" banner.
 export const supabaseConfigured = Boolean(url && anonKey);
 
 let client;
@@ -26,13 +23,10 @@ if (supabaseConfigured) {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true // needed for email-verification / magic redirects
+      detectSessionInUrl: false,
     }
   });
 } else {
-  // No keys: DON'T call createClient (it throws on an empty url and would blank
-  // the whole page before React can render). Instead expose a stub that rejects
-  // any call gracefully, so the app still mounts and shows the config banner.
   console.warn(
     "[Dubbed] Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. " +
     "Set them in your environment (and rebuild) to enable auth and data."
@@ -49,7 +43,8 @@ if (supabaseConfigured) {
     signInWithPassword: err,
     signOut: () => Promise.resolve({ error: null }),
     resend: err,
-    resetPasswordForEmail: err
+    resetPasswordForEmail: err,
+    exchangeCodeForSession: err,
   };
 
   const queryStub = {
@@ -64,7 +59,7 @@ if (supabaseConfigured) {
     match: err,
     maybeSingle: err,
     single: err,
-    then: (resolve) => resolve({ data: [], error: null }) // awaitable
+    then: (resolve) => resolve({ data: [], error: null })
   };
 
   client = {
@@ -78,3 +73,24 @@ if (supabaseConfigured) {
 }
 
 export const supabase = client;
+
+// Explicit PKCE code exchange — resolves once the exchange is done (or skipped).
+// This prevents race conditions where the app renders before the session is ready.
+export const codeExchangePromise = (authCallback.code && supabaseConfigured)
+  ? client.auth.exchangeCodeForSession(authCallback.code).then(
+      ({ data, error }) => {
+        if (error) {
+          console.warn("[dubbed] Code exchange failed:", error.message);
+          authCallback.error = authCallback.error || "exchange_failed";
+          authCallback.errorDesc = authCallback.errorDesc || error.message;
+        }
+        return { data, error };
+      },
+      (err) => {
+        console.warn("[dubbed] Code exchange threw:", err?.message);
+        authCallback.error = authCallback.error || "exchange_failed";
+        authCallback.errorDesc = authCallback.errorDesc || (err?.message || "Verification failed. Please log in manually.");
+        return { data: null, error: err };
+      }
+    )
+  : Promise.resolve(null);

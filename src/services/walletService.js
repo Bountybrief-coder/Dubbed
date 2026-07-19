@@ -20,8 +20,8 @@ export async function deposit(amount) {
     body: { amount: Number(amount) }
   });
   if (error || data?.error) return { error: error?.message || data?.error };
-  if (data?.url) window.location.href = data.url;
-  return { error: null };
+  if (data?.url) { window.location.href = data.url; return { error: null }; }
+  return { error: "Couldn't start checkout. Please try again." };
 }
 
 // ---------------------------------------------------------------------------
@@ -45,9 +45,12 @@ export async function requestWithdrawal(amount, destination) {
   if (error) return { data: null, error: error.message };
 
   if (data?.auto_approved) {
-    supabase.functions.invoke("nowpayments-payout", {
+    const payout = await supabase.functions.invoke("nowpayments-payout", {
       body: { withdrawal_id: data.id }
-    }).catch(() => {});
+    });
+    if (payout.error || payout.data?.error) {
+      return { data, error: `Withdrawal approved but payout failed: ${payout.error?.message || payout.data?.error}. Contact support.` };
+    }
   }
 
   return { data, error: null };
@@ -78,10 +81,13 @@ export function subscribeToWithdrawals(userId, onChange) {
 // Crypto wallet setup (replaces Stripe Connect onboarding)
 // ---------------------------------------------------------------------------
 export async function saveCryptoWallet(address, currency = "usdttrc20") {
+  const { data } = await supabase.auth.getUser();
+  const user = data?.user;
+  if (!user) return { error: "Not authenticated" };
   const { error } = await supabase
     .from("profiles")
     .update({ crypto_wallet_address: address, crypto_wallet_currency: currency })
-    .eq("id", (await supabase.auth.getUser()).data.user.id);
+    .eq("id", user.id);
   return { error: error?.message };
 }
 
@@ -129,4 +135,23 @@ export function summarizeWithdrawals(rows = []) {
   const lifetime = paid.reduce((s, r) => s + Number(r.amount), 0);
   const last = paid[0] || null;
   return { pendingTotal, lifetime, last, pendingCount: pending.length };
+}
+
+// Fires when a winning payout lands in the current user's ledger — powers the
+// win-celebration moment. RLS restricts wallet_ledger to its owner, so this
+// only ever delivers the user's own rows.
+const WIN_REASONS = ["match_payout", "tournament_payout", "bet_offer_payout", "side_bet_payout", "bet_payout"];
+export function subscribeToMyPayouts(userId, onPayout) {
+  const channel = supabase
+    .channel(`payouts:${userId}`)
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "wallet_ledger", filter: `user_id=eq.${userId}` },
+      (payload) => {
+        const row = payload.new;
+        if (row && Number(row.delta) > 0 && WIN_REASONS.includes(row.reason)) onPayout(row);
+      }
+    )
+    .subscribe();
+  return () => supabase.removeChannel(channel);
 }

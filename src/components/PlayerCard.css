@@ -1,104 +1,99 @@
-/* ── PlayerCard ── */
+/* ── Rank-ladder player card ── */
 .pcCard{
-  background:linear-gradient(135deg,#0a0e14,var(--panel));
-  border:1px solid var(--line);
-  border-radius:var(--radius);
-  padding:24px 26px;
+  background:var(--panel);
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:10px;
+  padding:20px 24px;
   position:relative;
   overflow:hidden;
+  transition:border-color .15s,box-shadow .15s;
+}
+.pcCard:hover{
+  border-color:rgba(255,255,255,.12);
+  box-shadow:0 4px 16px rgba(0,0,0,.25);
 }
 .pcCard::before{
   content:"";position:absolute;top:0;left:0;right:0;height:2px;
-  background:linear-gradient(90deg,transparent,var(--rank-glow),transparent);
-  opacity:.7;
-}
-.pcCard::after{
-  content:"";position:absolute;inset:0;
-  background:radial-gradient(500px 250px at 50% 0%,color-mix(in srgb,var(--rank-glow) 6%,transparent),transparent 60%);
-  pointer-events:none;
+  background:var(--rank-glow,var(--neon));
+  opacity:.4;
 }
 
-/* ── Progression Bar ── */
-.pcProgress{
-  position:relative;z-index:1;
-}
-.pcProgressLabels{
-  display:flex;align-items:center;justify-content:space-between;
-  margin-bottom:10px;
-}
-.pcRankCurrent{
-  display:flex;align-items:center;gap:6px;
-}
-.pcRankName{
-  font-size:14px;font-weight:900;letter-spacing:.08em;
-  color:var(--rank-glow);text-transform:uppercase;
-}
-.pcRankNext{
-  font-size:11px;font-weight:800;letter-spacing:.1em;
-  color:var(--muted);text-transform:uppercase;
-}
-
-/* Bar track */
-.pcBar{
-  height:10px;
-  background:#080b0f;
-  border:1px solid var(--line);
-  border-radius:99px;
-  overflow:hidden;
-  position:relative;
-}
-
-/* Bar fill */
-.pcBarFill{
-  height:100%;border-radius:99px;
-  background:linear-gradient(90deg,var(--rank-glow),color-mix(in srgb,var(--rank-glow) 75%,#fff));
-  box-shadow:0 0 12px color-mix(in srgb,var(--rank-glow) 40%,transparent);
-  transition:width .6s cubic-bezier(.4,0,.2,1);
-  position:relative;
-}
-
-/* Shimmer sweep */
-.pcBarFill::after{
-  content:"";
-  position:absolute;inset:0;
-  background:linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255,255,255,.28) 40%,
-    rgba(255,255,255,.28) 60%,
-    transparent 100%
-  );
-  width:40%;
-  animation:pcShimmer 3s ease-in-out infinite;
-}
-@keyframes pcShimmer{
-  0%{transform:translateX(-100%)}
-  100%{transform:translateX(350%)}
-}
-@media(prefers-reduced-motion:reduce){
-  .pcBarFill::after{animation:none;display:none}
-  .pcBarFill{transition:none}
-}
-
-/* XP counter row */
-.pcProgressXp{
+/* Header */
+.pcHead{
   display:flex;align-items:baseline;justify-content:space-between;
-  margin-top:8px;
+  margin-bottom:18px;
 }
-.pcXpCount{
-  font-size:14px;font-weight:800;color:#fff;
+.pcHeadLabel{
+  font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;
+  color:rgba(255,255,255,.45);
 }
-.pcXpTotal{
-  color:var(--muted);font-weight:600;
+.pcHeadXp{
+  font-size:13px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums;
 }
-.pcXpRemain{
-  font-size:11px;font-weight:700;color:var(--muted);
+
+/* ── Tier ladder ── */
+.pcLadder{
+  display:flex;align-items:flex-start;justify-content:space-between;
+  gap:0;
 }
+.pcTier{
+  display:flex;flex-direction:column;align-items:center;gap:5px;
+  flex:0 0 auto;width:64px;text-align:center;
+  transition:opacity .2s;
+}
+.pcTierStar{
+  height:36px;display:flex;align-items:center;justify-content:center;
+  filter:grayscale(1);opacity:.4;transition:filter .25s,opacity .25s,transform .25s;
+}
+.pcTier.is-done .pcTierStar{filter:grayscale(0);opacity:.85}
+.pcTier.is-current .pcTierStar{
+  filter:grayscale(0);opacity:1;transform:scale(1.06);
+}
+.pcTierName{
+  font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+  color:rgba(255,255,255,.4);
+}
+.pcTier.is-done .pcTierName{color:rgba(255,255,255,.6)}
+.pcTier.is-current .pcTierName{color:var(--tier-glow)}
+.pcTierXp{
+  font-size:10px;font-weight:700;color:rgba(255,255,255,.28);
+  font-variant-numeric:tabular-nums;
+}
+.pcTier.is-current .pcTierXp{color:rgba(255,255,255,.5)}
+
+/* Connecting track between tiers */
+.pcTrack{
+  flex:1 1 auto;height:3px;border-radius:2px;margin-top:16px;
+  background:rgba(255,255,255,.07);
+  position:relative;overflow:hidden;min-width:14px;
+}
+.pcTrack.filled{background:color-mix(in srgb,var(--rank-glow) 55%,rgba(255,255,255,.07))}
+.pcTrackFill{
+  position:absolute;inset:0;border-radius:2px;
+  background:linear-gradient(90deg,var(--rank-glow),color-mix(in srgb,var(--rank-glow) 70%,#fff));
+  box-shadow:0 0 6px color-mix(in srgb,var(--rank-glow) 25%,transparent);
+  transition:width .6s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── Next-tier line ── */
+.pcNext{
+  display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  margin-top:18px;padding-top:14px;border-top:1px solid rgba(255,255,255,.06);
+}
+.pcNextLead{font-size:13px;font-weight:700;color:rgba(255,255,255,.75)}
+.pcNextLead b{font-weight:800}
+.pcNextRemain{
+  font-size:11px;font-weight:700;color:rgba(255,255,255,.35);
+  font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+.pcNextMax{font-size:13px;font-weight:700;color:rgba(255,255,255,.7)}
+.pcNextMax b{font-weight:800}
 
 /* ── Responsive ── */
 @media(max-width:480px){
-  .pcCard{padding:18px 16px}
-  .pcRankName{font-size:12px}
-  .pcBar{height:8px}
-  .pcXpCount{font-size:12px}
+  .pcCard{padding:16px 14px}
+  .pcTier{width:52px}
+  .pcTierStar{height:30px}
+  .pcTierName{font-size:10px}
+  .pcNextLead{font-size:12px}
 }

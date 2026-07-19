@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
+import { usePageMeta } from "../hooks/usePageMeta";
 import { Crown, PenLine, RotateCcw, Sparkles, Check, Wallet, Zap } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
+import { useConfirm } from "../hooks/useConfirm.jsx";
 import {
   SHOP_CATALOG, purchaseWithWallet, changeUsername,
   performStatReset, getUnusedStatReset, cancelMembership
@@ -16,8 +18,10 @@ import wagrEmblem from "../assets/wagr-emblem.png";
 const SERVICE_ICON = { username_change: PenLine, stat_reset: RotateCcw, double_xp_token: Zap };
 
 export function ShopPage({ onLogin, onNavigate }) {
+  usePageMeta("Shop", "Get WAGR membership for 0% rake on all cash matches. Buy username changes, Double XP, and more.");
   const { profile, refreshProfile } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
   const [usernameOpen, setUsernameOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [resetAvailable, setResetAvailable] = useState(false);
@@ -50,7 +54,7 @@ export function ShopPage({ onLogin, onNavigate }) {
       if (item.key === "stat_reset") { setResetAvailable(true); }
     } else {
       toast.error(`Insufficient balance. Deposit at least ${money(item.price - Number(profile.balance))} first.`);
-      if (onNavigate) onNavigate("/wallet");
+      if (onNavigate) onNavigate("wallet");
     }
   }
 
@@ -58,7 +62,7 @@ export function ShopPage({ onLogin, onNavigate }) {
     if (!profile) return onLogin();
     if (!canWalletWagr) {
       toast.error(`Insufficient balance. Deposit at least ${money(wagr.price - Number(profile.balance))} first.`);
-      if (onNavigate) onNavigate("/wallet");
+      if (onNavigate) onNavigate("wallet");
       return;
     }
     setBusyWagr(true);
@@ -77,7 +81,7 @@ export function ShopPage({ onLogin, onNavigate }) {
       <div className="pageHead">
         <div className="eyebrow">SHOP</div>
         <h1>Shop</h1>
-        <p className="sub">Memberships and account services. Everything pays from your wallet balance — deposit crypto first if needed.</p>
+        <p className="sub">Memberships and account services. Everything pays from your wallet balance. Deposit crypto first if needed.</p>
       </div>
 
       {/* Memberships */}
@@ -101,7 +105,7 @@ export function ShopPage({ onLogin, onNavigate }) {
             <div className="shopMemberOwned">
               <span className="badge accent"><Crown size={12} /> WAGR Member</span>
               <Button variant="ghost" loading={cancelBusy} onClick={async () => {
-                if (!confirm("Cancel your WAGR membership? You'll keep benefits until the end of your current period.")) return;
+                if (!await confirm({ title: "Cancel WAGR membership?", message: "You'll keep benefits until the end of your current billing period.", confirmLabel: "Cancel membership" })) return;
                 setCancelBusy(true);
                 const res = await cancelMembership();
                 setCancelBusy(false);
@@ -172,9 +176,9 @@ export function ShopPage({ onLogin, onNavigate }) {
     const [busy, setBusy] = useState(false);
     return (
       <Modal open={open} onClose={onClose} eyebrow="USERNAME CHANGE" title="Pick a new username" size="sm">
-        <p className="modalNote">1–8 characters, no spaces, must be unique and not reserved. This uses one purchased change.</p>
+        <p className="modalNote">1–12 characters, no spaces, must be unique and not reserved. This uses one purchased change.</p>
         <label className="fieldLbl">New username</label>
-        <input className="field" maxLength={8} value={name} onChange={(e) => setName(e.target.value)} placeholder="newname" />
+        <input className="field" maxLength={12} value={name} onChange={(e) => setName(e.target.value)} placeholder="newname" />
         <Button variant="primary" className="wide" loading={busy} onClick={async () => {
           const err = validateUsername(name);
           if (err) return toast.error(err);

@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Flag, AlertTriangle, Upload, ChevronLeft, Crosshair, Send, XCircle, Check, X, Gamepad2, Monitor, Tv, ExternalLink, Shield, Copy, ChevronDown, UserX, Headphones, Paperclip, Scale, Link as LinkIcon, TicketCheck } from "lucide-react";
+import { clickable } from "../utils/a11y";
+import { Flag, AlertTriangle, Upload, ChevronLeft, Crosshair, Send, XCircle, Check, X, Gamepad2, Monitor, Tv, ExternalLink, Shield, Copy, ChevronDown, UserX, Headphones, Paperclip, Scale, Link as LinkIcon, TicketCheck, Clock, Hash, Users, Globe, MapPin, Zap, Trophy, Swords } from "lucide-react";
+import { PSNIcon, XboxIcon } from "../components/PlatformIcons";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import {
   getMatch, reportMatch, openDispute, subscribeToMatch,
   submitVeto, requestMatchCancel, respondMatchCancel, getCancelRequest,
   subscribeToCancelRequests, getTournamentContext,
-  getMatchDispute, submitDisputeProof, adminAwardMatch
+  getMatchDispute, submitDisputeProof, adminAwardMatch, getMatchReports
 } from "../services/matchService";
+import { useCountdown } from "../hooks/useAsync";
 import { getMatchMessages, sendMatchMessage, subscribeToMatchMessages } from "../services/matchChatService";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
@@ -16,7 +19,7 @@ import { WagrBadge } from "../components/WagrBadge";
 import { RankStar } from "../components/RankStar";
 import { TrophyIcon } from "../components/TrophyIcon";
 import { money, shortTime } from "../utils/format";
-import { modeRule, seriesRule, formatLabel, RAKE_CONFIG, mapsForGameMode, mapsNeededForSeries, seriesLabel, pcPlayersFromPlatform, isConsoleOnlyGame, NO_SHOW_MINUTES } from "../utils/games";
+import { modeRule, seriesRule, formatLabel, RAKE_CONFIG, mapsForGameMode, mapsNeededForSeries, seriesLabel, pcPlayersFromPlatform, isConsoleOnlyGame, NO_SHOW_MINUTES, getMatchSetup, countryFlag } from "../utils/games";
 import { uploadEvidence } from "../utils/storage";
 import { canEscalateMatch, escalateMatch } from "../services/escalationService";
 import { MapCard } from "../components/MapCard";
@@ -24,12 +27,6 @@ import { mapHue as getMapHue } from "../utils/mapImages";
 import { rankForXp } from "../utils/ranks";
 import { supabase } from "../lib/supabase";
 
-function deriveClanTags(code) {
-  const raw = (code || "DUBBED").replace(/[^A-Z0-9]/gi, "").toUpperCase();
-  const a = raw.slice(0, 3).padEnd(3, "X");
-  const b = raw.slice(3, 6).padEnd(3, "Y");
-  return [a, b];
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
@@ -48,8 +45,14 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
   const [cancelReq, setCancelReq] = useState(null);
   const [trophyCounts, setTrophyCounts] = useState({});
   const [dispute, setDispute] = useState(null);
+  const [reports, setReports] = useState([]);
   const [escalation, setEscalation] = useState({ can: false, reason: "" });
   const [escOpen, setEscOpen] = useState(false);
+
+  async function loadReports() {
+    const { data } = await getMatchReports(matchId);
+    setReports(data || []);
+  }
 
   async function loadEscalation() {
     if (!user) return;
@@ -97,8 +100,8 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
     setTournamentCtx(data);
   }
 
-  useEffect(() => { load(); loadCancel(); loadTournamentCtx(); loadDispute(); loadEscalation(); }, [matchId]); // eslint-disable-line
-  useEffect(() => subscribeToMatch(matchId, () => { load(); loadDispute(); }), [matchId]); // eslint-disable-line
+  useEffect(() => { load(); loadCancel(); loadTournamentCtx(); loadDispute(); loadEscalation(); loadReports(); }, [matchId]); // eslint-disable-line
+  useEffect(() => subscribeToMatch(matchId, () => { load(); loadDispute(); loadReports(); }), [matchId]); // eslint-disable-line
   useEffect(() => subscribeToCancelRequests(matchId, loadCancel), [matchId]); // eslint-disable-line
 
   if (loading) return <main className="page"><Skeleton w="40%" h={28} /><div style={{ height: 16 }} /><Skeleton h={180} r={14} /></main>;
@@ -108,6 +111,7 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
   const players = (match.match_players || []).map((p) => ({
     id: p.user_id,
     name: p.profiles?.username || "Player",
+    country: p.profiles?.country,
     region: p.region,
     wagr: p.profiles?.wagr_member,
     teamName: p.team_name,
@@ -132,74 +136,35 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
   }[match.status];
   const naCount = players.filter((p) => p.region === "NA").length;
   const euCount = players.filter((p) => p.region === "EU").length;
-  const pot = match.kind === "cash" ? match.entry * (parseInt(match.format) || 1) * 2 : 0;
+  const pot = match.kind === "cash" ? match.entry * 2 : 0;
   const winner = match.winner_id ? players.find((p) => p.id === match.winner_id) : null;
-  const clanTags = deriveClanTags(match.code);
   const teamSize = parseInt(match.format) || 1;
   const mapHue = match.map ? getMapHue(match.map, match.game) : 200;
+  const needsAdmin = match.kind === "cash" || !!tournamentCtx;
 
   return (
     <main className="page matchRoomPage" aria-label="Match room">
-      {/* §1 — Context strip */}
+      {/* §1 -- Context strip */}
       <ContextStrip
         tournamentCtx={tournamentCtx}
         onBack={onBack}
         onNavigate={onNavigate}
       />
 
-      {/* §2a — Map hero (when map is locked) */}
-      {match.map && (
-        <section className="mrMapHero" style={{ background: `linear-gradient(135deg, hsla(${mapHue}, 60%, 8%, 1) 0%, hsla(${mapHue}, 80%, 4%, 1) 100%)` }}>
-          <div className="mrMapHeroInner">
-            <div className="mrMapHeroCard">
-              <MapCard map={match.map} game={match.game} size="lg" />
-            </div>
-            <div className="mrMapHeroInfo">
-              <small className="mrMapLabel">MAP 1</small>
-              <div className="mrMapName">{match.map}</div>
-              <div className="mrMapHeroStatus">
-                <span className={`roomStatus s-${match.status}`} aria-live="polite">{statusLabel}</span>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* §2b — Match header */}
-      <MatchHeader
+      {/* §2 -- Banner */}
+      <MatchBanner
         match={match}
         statusLabel={statusLabel}
         pot={pot}
-        naCount={naCount}
-        euCount={euCount}
+        mapHue={mapHue}
+        tournamentCtx={tournamentCtx}
       />
 
-      {!match.map && match.veto_status !== "pending" && (
-        <section className="mrInfoBar">
-          <div className="mrInfoItem"><Crosshair size={14} /><span>Map: <b>TBD (veto)</b></span></div>
-        </section>
-      )}
+      {/* §3 -- Detail grid */}
+      <DetailGrid match={match} naCount={naCount} euCount={euCount} />
 
-      {/* Clan tags */}
-      {match.status !== "open" && match.status !== "cancelled" && (
-        <ClanTagSection clanTags={clanTags} />
-      )}
-
-      {/* Info bar */}
-      <section className="mrInfoBar">
-        <div className="mrInfoItem"><small>{seriesLabel(match.series)} · {match.platform}</small></div>
-        {!isConsoleOnlyGame(match.game) && (
-          <div className="mrInfoItem"><small>PC: {pcPlayersFromPlatform(match.platform)} · Input: {match.allowed_input || "Controller + M&K"}</small></div>
-        )}
-        <div className="mrInfoItem">
-          <small>Created {new Date(match.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</small>
-        </div>
-        {match.region === "NA + EU" && (
-          <div className="mrInfoItem">
-            <small>Host: {match.host_region || "TBD"} · {naCount} NA / {euCount} EU</small>
-          </div>
-        )}
-      </section>
+      {/* §4 -- Quick tools row */}
+      <QuickTools match={match} tournamentCtx={tournamentCtx} onNavigate={onNavigate} />
 
       {/* Weapon restriction banner */}
       {match.weapon_restriction && (
@@ -208,66 +173,76 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
         </div>
       )}
 
-      {/* Cancel request banner */}
-      {cancelReq && (
+      {/* Cancel request banner (not for tournament matches) */}
+      {cancelReq && !tournamentCtx && (
         <CancelBanner req={cancelReq} isParticipant={isParticipant} onDone={() => { loadCancel(); load(); }} />
       )}
 
-      {/* §5 — Map veto */}
+      {/* Map veto */}
       {isParticipant && inVeto && (
         <VetoPanel match={match} players={players} userId={user.id} onDone={load} />
       )}
 
-      {/* §3 — Teams VS panel */}
-      <TeamsVsPanel
+      {/* §5 -- Map schedule cards */}
+      <MapScheduleCards match={match} players={players} teamSize={teamSize} />
+
+      {/* §6 -- Rosters */}
+      <RosterSection
         match={match}
         players={players}
         teamSize={teamSize}
-        clanTags={clanTags}
         winner={winner}
         onNavigate={onNavigate}
         showGamertags={isParticipant}
       />
 
+      {/* Reported result — who claimed what + auto-resolve countdown */}
+      {(match.status === "reported" || match.status === "disputed") && reports.length > 0 && (
+        <ReportedResultPanel
+          reports={reports}
+          players={players}
+          userId={user?.id}
+          isParticipant={isParticipant}
+          status={match.status}
+          onConfirm={() => setReportOpen(true)}
+          onContest={() => setDisputeOpen(true)}
+        />
+      )}
+
       {/* No-show timer */}
       {isParticipant && match.status === "live" && !inVeto && (
-        <NoShowTimer match={match} userId={user.id} onClaim={() => {
-          openDispute(match.id, { reason: `No-show: opponent did not join within the ${NO_SHOW_MINUTES}-minute window.` });
+        <NoShowTimer match={match} userId={user.id} onClaim={async () => {
+          const res = await openDispute(match.id, { reason: `No-show: opponent did not join within the ${NO_SHOW_MINUTES}-minute window.` });
+          if (res?.error) return toast.error(res.error);
           toast.success("No-show claimed. Match will be reviewed.");
           load();
         }} />
       )}
 
-      {/* §4 — Per-map host table (step 2) */}
-      <HostMapTable match={match} players={players} teamSize={teamSize} />
-
-      {/* §8 — Rules / proof strip */}
-      <RulesStrip match={match} />
-
-      {/* §6 — Actions */}
-      {isParticipant && (match.status === "live" || match.status === "reported") && !inVeto && (
+      {/* Actions (live only — once reported, the ReportedResultPanel drives confirm/contest) */}
+      {isParticipant && match.status === "live" && !inVeto && (
         <div className="roomActions">
           <Button variant="primary" onClick={() => setReportOpen(true)}><Flag size={15} /> Report result</Button>
           <Button variant="ghost" onClick={() => setDisputeOpen(true)}><AlertTriangle size={15} /> Contest result</Button>
-          {!cancelReq && <Button variant="ghost" onClick={() => setCancelOpen(true)}><XCircle size={15} /> Request cancel</Button>}
+          {!cancelReq && !tournamentCtx && <Button variant="ghost" onClick={() => setCancelOpen(true)}><XCircle size={15} /> Request cancel</Button>}
         </div>
       )}
 
-      {/* §6b — Dispute panel (when match is disputed) */}
+      {/* Dispute panel */}
       {match.status === "disputed" && dispute && (
         <DisputePanel
           dispute={dispute}
           match={match}
           players={players}
           userId={user?.id}
-          isAdmin={isAdmin}
+          isAdmin={isAdmin && needsAdmin}
           isParticipant={isParticipant}
           onDone={() => { load(); loadDispute(); }}
         />
       )}
 
-      {/* §6c — Escalation (settled/disputed cash matches only) */}
-      {isParticipant && escalation.can_escalate && (match.status === "settled" || match.status === "disputed") && (
+      {/* Escalation — cash + tournament only */}
+      {needsAdmin && isParticipant && escalation.can_escalate && (match.status === "settled" || match.status === "disputed") && (
         <div className="mrEscalation">
           <div className="mrEscInfo">
             <TicketCheck size={16} />
@@ -279,26 +254,28 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
         </div>
       )}
 
-      {/* §7 — Chat dock */}
-      {(isParticipant || isAdmin) && (
+      {/* Chat dock — admin only joins for cash/tournament */}
+      {(isParticipant || (isAdmin && needsAdmin)) && (
         <ChatDock
           matchId={matchId}
           userId={user?.id}
           username={profile?.username}
-          isAdmin={isAdmin}
+          isAdmin={isAdmin && needsAdmin}
           isParticipant={isParticipant}
           matchStatus={match.status}
+          needsAdmin={needsAdmin}
           inVeto={inVeto}
-          onNoShow={() => {
-            openDispute(match.id, { reason: `No-show: opponent did not join within the ${NO_SHOW_MINUTES}-minute window.` });
-            toast.success("No-show reported. An admin will review.");
+          onNoShow={async () => {
+            const res = await openDispute(match.id, { reason: `No-show: opponent did not join within the ${NO_SHOW_MINUTES}-minute window.` });
+            if (res?.error) return toast.error(res.error);
+            toast.success(needsAdmin ? "No-show reported. An admin will review." : "No-show reported. Match will be reviewed.");
           }}
-          onRequestAdmin={async () => {
+          onRequestAdmin={needsAdmin ? async () => {
             const res = await openDispute(match.id, { reason: "Admin requested from chat.", evidenceUrl: null });
             if (res.error) return toast.error(res.error);
             toast.success("Admin assigned. Check the dispute panel.");
             load(); loadDispute();
-          }}
+          } : null}
         />
       )}
 
@@ -314,6 +291,81 @@ export function MatchRoomPage({ matchId, onBack, onNavigate }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // NO-SHOW TIMER
 // ═══════════════════════════════════════════════════════════════════════════
+
+function AutoResolveTimer({ deadline }) {
+  const { h, m, s } = useCountdown(deadline);
+  if (h <= 0 && m <= 0 && s <= 0) return <b>moments</b>;
+  return <b>{h > 0 ? `${h}h ` : ""}{m}m {String(s).padStart(2, "0")}s</b>;
+}
+
+function ReportedResultPanel({ reports, players, userId, isParticipant, status, onConfirm, onContest }) {
+  const nameOf = (id) => players.find((p) => p.id === id)?.name || "Player";
+  const winnerName = (r) => (r.winner_id ? nameOf(r.winner_id) : "Draw / unclear");
+  const reporterName = (r) => r.reporter?.username || nameOf(r.reported_by);
+
+  const myReport = reports.find((r) => r.reported_by === userId);
+  const winnersClaimed = new Set(reports.map((r) => r.winner_id));
+  const conflict = reports.length >= 2 && winnersClaimed.size > 1;
+  const single = reports.length === 1;
+  const deadline = single ? new Date(reports[0].created_at).getTime() + 2 * 60 * 60 * 1000 : null;
+
+  return (
+    <section className="roomCard reportPanel">
+      <h3><Flag size={15} /> Reported Result</h3>
+
+      <div className="reportClaims">
+        {reports.map((r) => (
+          <div className={`reportClaim ${conflict ? "conflict" : ""}`} key={r.id}>
+            <div className="reportClaimTop">
+              <span className="reportClaimWho">{reporterName(r)}{r.reported_by === userId ? " (you)" : ""}</span>
+              <span className="reportClaimTime"><Clock size={11} /> {shortTime(r.created_at)}</span>
+            </div>
+            <div className="reportClaimBody">
+              <span className="reportClaimWinner"><Trophy size={13} /> {winnerName(r)} <small>won</small></span>
+              {r.score && <span className="reportClaimScore">{r.score}</span>}
+              {r.evidence_url && (
+                <a className="reportClaimProof" href={r.evidence_url} target="_blank" rel="noreferrer">
+                  <Paperclip size={12} /> Evidence
+                </a>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {status === "reported" && conflict && (
+        <div className="reportNotice conflict">
+          <AlertTriangle size={15} />
+          <span>Both sides reported different winners. This won't auto-settle — open a dispute to get an admin to review the evidence.</span>
+        </div>
+      )}
+
+      {status === "reported" && single && (
+        <div className="reportNotice">
+          <Clock size={15} />
+          {myReport ? (
+            <span>You submitted your result. Waiting on your opponent to confirm — if they don't respond, your result stands in <AutoResolveTimer deadline={deadline} />.</span>
+          ) : (
+            <span><b>{reporterName(reports[0])}</b> reported <b>{winnerName(reports[0])}</b> as the winner. Confirm if that's right, or contest it — it auto-settles in <AutoResolveTimer deadline={deadline} /> if you don't respond.</span>
+          )}
+        </div>
+      )}
+
+      {status === "disputed" && (
+        <div className="reportNotice"><Scale size={15} /><span>This match is under admin review. The submitted results above are what each side claimed.</span></div>
+      )}
+
+      {isParticipant && status === "reported" && (
+        <div className="reportActions">
+          {!myReport && !conflict && (
+            <Button variant="primary" onClick={onConfirm}><Check size={15} /> Confirm result</Button>
+          )}
+          <Button variant="ghost" onClick={onContest}><AlertTriangle size={15} /> Contest result</Button>
+        </div>
+      )}
+    </section>
+  );
+}
 
 function NoShowTimer({ match, userId, onClaim }) {
   const [secsLeft, setSecsLeft] = useState(() => {
@@ -385,67 +437,288 @@ function ContextStrip({ tournamentCtx, onBack, onNavigate }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// §2 — MATCH HEADER
+// §2 — BANNER
 // ═══════════════════════════════════════════════════════════════════════════
 
-function MatchHeader({ match, statusLabel, pot, naCount, euCount }) {
+function MatchBanner({ match, statusLabel, pot, mapHue, tournamentCtx }) {
+  const eyebrow = tournamentCtx ? "TOURNAMENT MATCH" : match.kind === "cash" ? "CASH MATCH" : "XP MATCH";
+  const isCash = match.kind === "cash";
+
   return (
-    <section className="mrHead">
-      <div className="mrHeadLeft">
-        <div className="mrId">MATCH #{match.match_number || "?"}</div>
-        <h1>{match.game}</h1>
-        <p className="mrSub">{formatLabel(match.format)} · {match.mode} · {seriesLabel(match.series)}</p>
-        <div className="matchBadges">
-          <span className="badge">{match.platform}</span>
-          {match.skill_tier !== "Open" && <span className="badge accent">{match.skill_tier}</span>}
-          {match.weapon_restriction && <span className="badge warn">{match.weapon_restriction}</span>}
-          <span className="badge">{match.region}</span>
+    <section className="dbHead" style={{ "--db-accent": isCash ? "var(--gold)" : "var(--neon)" }}>
+      <div className="dbHeadStripe" />
+      <div className="dbHeadBody">
+        <div className="dbHeadTop">
+          <span className={`dbKind ${isCash ? "cash" : "xp"}`}>
+            {!isCash && <Zap size={11} />}{eyebrow}
+          </span>
+          <span className={`roomStatus s-${match.status}`} aria-live="polite">{statusLabel}</span>
+        </div>
+        <h1 className="dbHeadTitle">{match.game}</h1>
+        <p className="dbHeadSub">
+          {formatLabel(match.format)} &middot; {match.mode} &middot; {seriesLabel(match.series)}
+        </p>
+        <div className="dbHeadPills">
+          <span className="dbPill">{match.platform}</span>
+          <span className="dbPill">{match.region}</span>
+          {match.skill_tier !== "Open" && <span className="dbPill hi">{match.skill_tier}</span>}
+          {match.weapon_restriction && <span className="dbPill warn">{match.weapon_restriction}</span>}
         </div>
       </div>
-      <div className="mrHeadRight">
-        {!match.map && <span className={`roomStatus s-${match.status}`} aria-live="polite">{statusLabel}</span>}
-        {match.kind === "cash" && (
-          <div className="mrPrize">
-            <small>POT</small>
-            <b className="cash">{money(pot)}</b>
-          </div>
-        )}
-        <div className="mrCode">
-          <small>TICKET</small>
-          <span>{match.code}</span>
+      {isCash && pot > 0 && (
+        <div className="dbHeadPot">
+          <small>POT</small>
+          <b className="cash">{money(pot)}</b>
         </div>
-      </div>
+      )}
+      {match.map && (
+        <div className="dbHeadMap">
+          <MapCard map={match.map} game={match.game} size="lg" />
+        </div>
+      )}
     </section>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// §3 — TEAMS VS PANEL
+// §3 — DETAIL GRID
 // ═══════════════════════════════════════════════════════════════════════════
 
-function TeamsVsPanel({ match, players, teamSize, clanTags, winner, onNavigate, showGamertags }) {
-  if (teamSize === 1) {
-    if (players.length >= 2) {
-      return (
-        <section className="mrPlayers">
-          <PlayerCard player={players[0]} isWinner={match.winner_id === players[0].id} settled={match.status === "settled"} clanTag={clanTags[0]} onNavigate={onNavigate} showGamertags={showGamertags} />
-          <div className="mrVs">
-            <span>VS</span>
-            {match.status === "settled" && winner && <div className="mrVerdict">{winner.name} wins</div>}
+function DetailGrid({ match, naCount, euCount }) {
+  const items = [
+    [Clock, new Date(match.created_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })],
+    [Hash, match.code],
+    [Users, formatLabel(match.format)],
+    [Crosshair, match.mode],
+    [Gamepad2, seriesLabel(match.series)],
+  ];
+  if (match.region === "NA + EU") items.push([Globe, `${match.host_region || "TBD"} · ${naCount}NA / ${euCount}EU`]);
+  if (!isConsoleOnlyGame(match.game)) items.push([Monitor, match.allowed_input || "Controller + M&K"]);
+  if (match.map) items.push([MapPin, match.map]);
+  else if (match.veto_status !== "pending") items.push([MapPin, "TBD (veto)"]);
+
+  return (
+    <section className="dbInfoStrip">
+      {items.map(([Icon, label], i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span className="dbInfoDot">·</span>}
+          <div className="dbInfoItem">
+            <Icon size={13} />
+            <span>{label}</span>
           </div>
-          <PlayerCard player={players[1]} isWinner={match.winner_id === players[1].id} settled={match.status === "settled"} clanTag={clanTags[1]} onNavigate={onNavigate} showGamertags={showGamertags} />
+        </React.Fragment>
+      ))}
+    </section>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §4 — QUICK TOOLS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function QuickTools({ match, tournamentCtx, onNavigate }) {
+  const toast = useToast();
+  const [panel, setPanel] = useState(null);
+  const toggle = (p) => setPanel(panel === p ? null : p);
+  const setup = getMatchSetup(match.game, match.mode);
+
+  return (
+    <section className="dbTools">
+      <div className="dbToolRow">
+        <button className={`dbToolBtn ${panel === "rules" ? "active" : ""}`} onClick={() => toggle("rules")}>
+          <Shield size={14} />
+          <span>Rules</span>
+          <ChevronDown size={12} className={`dbToolChev ${panel === "rules" ? "open" : ""}`} />
+        </button>
+        {setup && (
+          <button className={`dbToolBtn ${panel === "setup" ? "active" : ""}`} onClick={() => toggle("setup")}>
+            <Gamepad2 size={14} />
+            <span>Match Setup</span>
+            <ChevronDown size={12} className={`dbToolChev ${panel === "setup" ? "open" : ""}`} />
+          </button>
+        )}
+        <button className="dbToolBtn" onClick={() => { navigator.clipboard.writeText(window.location.href); toast.success("Match link copied!"); }}>
+          <Copy size={14} />
+          <span>Copy Link</span>
+        </button>
+        {tournamentCtx && (
+          <button className="dbToolBtn" onClick={() => onNavigate?.("tournament", tournamentCtx.tournamentId)}>
+            <ExternalLink size={14} />
+            <span>Bracket</span>
+          </button>
+        )}
+      </div>
+
+      {panel === "rules" && (
+        <div className="dbRulesBody">
+          <p className="ruleNote inline">{modeRule(match.mode)}</p>
+          <p className="ruleNote inline">{seriesRule(match.series)}</p>
+          <ul className="roomRules">
+            <li>{match.platform === "PC + Console Mixed" ? "PC and console players share this lobby." : match.platform === "Console Only" ? "Console only. No PC." : `${match.platform} lobby.`}{match.allowed_input === "Controller Only" ? " Controller only. No M&K." : ""}</li>
+            <li>All proof must be <b>video format</b> (VOD, clip, DVR recording). Screenshots alone are insufficient.</li>
+            <li>Proof must show the <b>full scoreboard with gamertags</b> clearly visible.</li>
+            <li>PC players must stream with past broadcasts enabled. VOD must stay up for 24 hours.</li>
+            <li>Conversations outside Dubbed (DMs, Xbox/PSN messages) are not valid proof.</li>
+            <li>Match ticket: <b>#{match.match_number || match.code}</b>. Reference this in any dispute.</li>
+            {match.kind === "cash" && <li>Rake: {RAKE_CONFIG.standard * 100}% standard / {RAKE_CONFIG.wagr * 100}% WAGR members (min {money(RAKE_CONFIG.minimum)}).</li>}
+            <li>If your opponent doesn't show within <b>{NO_SHOW_MINUTES} minutes</b>, you can claim a no-show forfeit.</li>
+            <li>If one team reports a result and the opponent does not respond within <b>2 hours</b>, the reported result stands.</li>
+          </ul>
+        </div>
+      )}
+
+      {panel === "setup" && setup && <MatchSetupPanel setup={setup} />}
+    </section>
+  );
+}
+
+function MatchSetupPanel({ setup }) {
+  return (
+    <div className="dbRulesBody dbSetupBody">
+      <div className="dbSetupHead">
+        <Gamepad2 size={14} />
+        <b>{setup.gameMode}</b>
+      </div>
+      {setup.note && <p className="ruleNote inline">{setup.note}</p>}
+
+      {setup.settings?.length > 0 && (
+        <table className="dbSetupTable">
+          <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+          <tbody>
+            {setup.settings.map((r) => (
+              <tr key={r.s}><td>{r.s}</td><td className={r.ban ? "dbSetupBan" : ""}>{r.v}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {setup.weapons && typeof setup.weapons === "object" && (
+        <div className="dbSetupSection">
+          <b>Weapons</b>
+          {setup.weapons.allowed && <p className="dbSetupAllowed">Allowed: {setup.weapons.allowed.join(", ")}</p>}
+          {setup.weapons.secondary && <p className="dbSetupAllowed">Secondary: {setup.weapons.secondary.join(", ")}</p>}
+          {setup.weapons.banned && <p className="dbSetupBanned">Banned: {setup.weapons.banned}</p>}
+          {setup.weapons.bannedAttachments && <p className="dbSetupBanned">Banned attachments: {setup.weapons.bannedAttachments}</p>}
+        </div>
+      )}
+      {setup.weapons && typeof setup.weapons === "string" && (
+        <div className="dbSetupSection"><b>Weapons</b><p className="ruleNote inline">{setup.weapons}</p></div>
+      )}
+
+      {setup.equipment && typeof setup.equipment === "object" && (
+        <div className="dbSetupSection">
+          <b>Equipment</b>
+          {setup.equipment.lethals && <p className="dbSetupAllowed">Lethals: {setup.equipment.lethals.join(", ")}</p>}
+          {setup.equipment.tacticals && <p className="dbSetupAllowed">Tacticals: {setup.equipment.tacticals.join(", ")}</p>}
+          {setup.equipment.fieldUpgrades && <p className="dbSetupAllowed">Field Upgrades: {setup.equipment.fieldUpgrades.join(", ")}</p>}
+          {setup.equipment.wildcard && <p className="dbSetupAllowed">Wildcard: {setup.equipment.wildcard}</p>}
+        </div>
+      )}
+      {setup.equipment && typeof setup.equipment === "string" && (
+        <div className="dbSetupSection"><b>Equipment</b><p className="ruleNote inline">{setup.equipment}</p></div>
+      )}
+
+      {setup.perks && Array.isArray(setup.perks) && (
+        <div className="dbSetupSection">
+          <b>Perks</b>
+          {setup.perks.map((p) => (
+            <p key={p.slot} className="dbSetupAllowed"><span className="dbSetupPerkSlot">{p.slot}:</span> {p.allowed}</p>
+          ))}
+        </div>
+      )}
+      {setup.perks && typeof setup.perks === "string" && (
+        <div className="dbSetupSection"><b>Perks</b><p className="ruleNote inline">{setup.perks}</p></div>
+      )}
+
+      {setup.extra && <p className="dbSetupExtra">{setup.extra}</p>}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// §6 — ROSTERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+function RosterSection({ match, players, teamSize, winner, onNavigate, showGamertags }) {
+  const settled = match.status === "settled";
+
+  if (teamSize === 1) {
+    /* 1v1 — face-off card (tale of the tape) */
+    if (players.length >= 2) {
+      const [p1, p2] = players;
+      const r1 = rankForXp(p1.xp), r2 = rankForXp(p2.xp);
+      const t1 = p1.wins + p1.losses, t2 = p2.wins + p2.losses;
+      const wr1 = t1 ? Math.round((p1.wins / t1) * 100) : 0;
+      const wr2 = t2 ? Math.round((p2.wins / t2) * 100) : 0;
+      const w1 = match.winner_id === p1.id, w2 = match.winner_id === p2.id;
+
+      return (
+        <section className="dbRosters">
+          <div className="dbSectionHead"><Swords size={15} /><h3>Rosters</h3></div>
+          {settled && winner && (
+            <div className="dbResult">
+              <Trophy size={18} />
+              <span><b>{winner.name}</b> {match.kind === "cash" ? `takes ${money(match.entry * 2)}` : "earns the W"}</span>
+            </div>
+          )}
+          <div className="dbFaceoff">
+            <div className="dbFoPlayers">
+              <FoSide player={p1} rank={r1} won={w1} settled={settled} onNavigate={onNavigate} showGamertags={showGamertags} />
+              <div className="dbFoCenter">
+                <div className="dbFoCenterLine" />
+                <span className="dbFoVs">VS</span>
+                <div className="dbFoCenterLine" />
+              </div>
+              <FoSide player={p2} rank={r2} won={w2} settled={settled} onNavigate={onNavigate} showGamertags={showGamertags} />
+            </div>
+            <div className="dbFoStats">
+              <div className="dbFoStatRow">
+                <span className={w1 ? "hi" : ""}>{p1.wins}W-{p1.losses}L</span>
+                <small>RECORD</small>
+                <span className={w2 ? "hi" : ""}>{p2.wins}W-{p2.losses}L</span>
+              </div>
+              <div className="dbFoStatRow">
+                <span className={w1 ? "hi" : ""}>{wr1}%</span>
+                <small>WIN %</small>
+                <span className={w2 ? "hi" : ""}>{wr2}%</span>
+              </div>
+              <div className="dbFoStatRow">
+                <span className={w1 ? "hi" : ""}>{money(p1.earnings)}</span>
+                <small>EARNINGS</small>
+                <span className={w2 ? "hi" : ""}>{money(p2.earnings)}</span>
+              </div>
+            </div>
+          </div>
         </section>
       );
     }
+
+    /* 1v1 waiting for opponent */
+    const p = players[0];
+    const pRank = p ? rankForXp(p.xp) : null;
     return (
-      <section className="mrPlayers">
-        {players[0] ? <PlayerCard player={players[0]} isWinner={false} settled={false} clanTag={clanTags[0]} onNavigate={onNavigate} showGamertags={showGamertags} /> : <div className="mrPlayerCard empty"><div className="mrPcAvatar"><span>?</span></div><b>Waiting...</b></div>}
-        <div className="mrVs"><span>VS</span></div>
-        <div className="mrPlayerCard empty"><div className="mrPcAvatar"><span>?</span></div><b>Waiting for opponent...</b></div>
+      <section className="dbRosters">
+        <div className="dbSectionHead"><Swords size={15} /><h3>Rosters</h3></div>
+        <div className="dbFaceoff">
+          <div className="dbFoPlayers">
+            {p ? (
+              <FoSide player={p} rank={pRank} won={false} settled={false} onNavigate={onNavigate} showGamertags={showGamertags} />
+            ) : (
+              <div className="dbFoSide empty"><div className="dbFoAvatar"><span>?</span></div><b className="dbFoName">Waiting...</b></div>
+            )}
+            <div className="dbFoCenter">
+              <div className="dbFoCenterLine" />
+              <span className="dbFoVs">VS</span>
+              <div className="dbFoCenterLine" />
+            </div>
+            <div className="dbFoSide empty"><div className="dbFoAvatar"><span>?</span></div><b className="dbFoName">Waiting...</b></div>
+          </div>
+        </div>
       </section>
     );
   }
 
+  /* Team matches (2v2+) — stacked roster cards */
   const teams = {};
   players.forEach(p => { const t = p.teamName || "Team"; (teams[t] = teams[t] || []).push(p); });
   const sides = Object.entries(teams);
@@ -454,37 +727,94 @@ function TeamsVsPanel({ match, players, teamSize, clanTags, winner, onNavigate, 
   const aWon = sideA[1].some(p => match.winner_id === p.id);
   const bWon = sideB[1].some(p => match.winner_id === p.id);
 
-  return (
-    <section className="mrPlayers">
-      <div className="mrTeamSide">
-        <div className="mrTeamHeader">
-          <h3 className="mrTeamName">{sideA[0]}</h3>
-          <span className="mrTeamTag">[{clanTags[0]}]</span>
-        </div>
-        {sideA[1].map(p => <PlayerCard key={p.id} player={p} isWinner={aWon} settled={match.status === "settled"} onNavigate={onNavigate} showGamertags={showGamertags} />)}
-      </div>
-      <div className="mrVs">
-        <span>VS</span>
-        {match.status === "settled" && (aWon || bWon) && <div className="mrVerdict">{aWon ? sideA[0] : sideB[0]} wins</div>}
-      </div>
-      <div className="mrTeamSide">
-        {sideB[1].length > 0 ? <>
-          <div className="mrTeamHeader">
-            <h3 className="mrTeamName">{sideB[0]}</h3>
-            <span className="mrTeamTag">[{clanTags[1]}]</span>
+  function TeamRosterCard({ teamName, teamPlayers, won }) {
+    const totalWins = teamPlayers.reduce((s, p) => s + p.wins, 0);
+    const totalLosses = teamPlayers.reduce((s, p) => s + p.losses, 0);
+    const totalGames = totalWins + totalLosses;
+    const winPct = totalGames ? Math.round((totalWins / totalGames) * 100) : 0;
+    return (
+      <div className={`dbTeamCard ${won ? "winner" : ""} ${settled && !won ? "loser" : ""}`}>
+        <div className="dbTeamHead">
+          <div className="dbTeamAvatar">{teamName.slice(0, 2)}</div>
+          <div className="dbTeamInfo">
+            <b>{teamName}</b>
+            <small>{winPct}% Win &middot; {totalWins}W-{totalLosses}L</small>
           </div>
-          {sideB[1].map(p => <PlayerCard key={p.id} player={p} isWinner={bWon} settled={match.status === "settled"} onNavigate={onNavigate} showGamertags={showGamertags} />)}
-        </> : <div className="mrPlayerCard empty"><div className="mrPcAvatar"><span>?</span></div><b>Waiting for opponents...</b></div>}
+          {settled && <span className={`dbFoBadge ${won ? "w" : "l"}`}>{won ? "W" : "L"}</span>}
+        </div>
+        <div className="dbTeamPlayers">
+          {teamPlayers.map(p => {
+            const rank = rankForXp(p.xp);
+            return (
+              <div key={p.id} className="dbTeamPlayer" {...clickable(() => onNavigate?.("profile", p.name))}>
+                <div className="dbTeamPlayerAvatar" style={{ borderColor: rank.glow }}>
+                  {p.avatar_url ? <img src={p.avatar_url} alt="" /> : <span>{p.name.slice(0,2)}</span>}
+                </div>
+                <div className="dbTeamPlayerInfo">
+                  <b>{p.name}{p.country && <img className="countryFlag" src={countryFlag(p.country)} alt={p.country} />}{p.wagr && <WagrBadge size={11} />}</b>
+                  <small style={{ color: rank.glow }}>{rank.name} &middot; {p.wins}W-{p.losses}L</small>
+                </div>
+                {showGamertags && p.psn && <span className="dbTeamPlayerTag"><PSNIcon size={11} /> {p.psn}</span>}
+                {showGamertags && p.xbox && <span className="dbTeamPlayerTag"><XboxIcon size={11} /> {p.xbox}</span>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <section className="dbRosters">
+      <div className="dbSectionHead"><Swords size={15} /><h3>Rosters</h3></div>
+      {settled && (aWon || bWon) && (
+        <div className="dbResult">
+          <Trophy size={18} />
+          <span><b>{aWon ? sideA[0] : sideB[0]}</b> {match.kind === "cash" ? `takes ${money(match.entry * 2)}` : "earns the W"}</span>
+        </div>
+      )}
+      <div className="dbTeamVs">
+        <TeamRosterCard teamName={sideA[0]} teamPlayers={sideA[1]} won={aWon} />
+        <div className="dbTeamVsDivider"><span>VS</span></div>
+        {sideB[1].length > 0 ? (
+          <TeamRosterCard teamName={sideB[0]} teamPlayers={sideB[1]} won={bWon} />
+        ) : (
+          <div className="dbTeamCard empty"><div className="dbTeamHead"><div className="dbTeamAvatar">?</div><b>Waiting for opponents...</b></div></div>
+        )}
       </div>
     </section>
   );
 }
 
+function FoSide({ player, rank, won, settled, onNavigate, showGamertags }) {
+  return (
+    <div className={`dbFoSide ${settled && won ? "winner" : ""} ${settled && !won ? "loser" : ""}`}>
+      {settled && <span className={`dbFoBadge ${won ? "w" : "l"}`}>{won ? "W" : "L"}</span>}
+      <div className="dbFoAvatar" style={{ borderColor: rank.glow }} {...clickable(() => onNavigate?.("profile", player.name))}>
+        {player.avatar_url ? <img src={player.avatar_url} alt="" /> : <span>{player.name.slice(0, 2)}</span>}
+      </div>
+      <b className="dbFoName" {...clickable(() => onNavigate?.("profile", player.name))}>
+        {player.name}{player.country && <img className="countryFlag" src={countryFlag(player.country)} alt={player.country} />}{player.wagr && <WagrBadge size={12} />}
+      </b>
+      <small className="dbFoRank" style={{ color: rank.glow }}>
+        <RankStar rank={rank} size={16} /> {rank.name}
+      </small>
+      {showGamertags && (player.psn || player.xbox || player.activision_id) && (
+        <div className="dbFoTags">
+          {player.activision_id && <span><Crosshair size={11} /> {player.activision_id}</span>}
+          {player.psn && <span><PSNIcon size={12} /> {player.psn}</span>}
+          {player.xbox && <span><XboxIcon size={12} /> {player.xbox}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
-// §4 — PER-MAP HOST TABLE
+// §5 — MAP SCHEDULE CARDS
 // ═══════════════════════════════════════════════════════════════════════════
 
-function HostMapTable({ match, players, teamSize }) {
+function MapScheduleCards({ match, players, teamSize }) {
   const mapsNeeded = mapsNeededForSeries(match.series);
   if (mapsNeeded <= 1 && !match.map) return null;
 
@@ -510,7 +840,7 @@ function HostMapTable({ match, players, teamSize }) {
   const higherRankTeam = teamAXp >= teamBXp ? teamALabel : teamBLabel;
   const lowerRankTeam = teamAXp >= teamBXp ? teamBLabel : teamALabel;
 
-  const rows = [];
+  const cards = [];
   for (let i = 0; i < mapsNeeded; i++) {
     const mapName = lockedMaps[i] || "TBD";
     let host, rule;
@@ -530,172 +860,35 @@ function HostMapTable({ match, players, teamSize }) {
     if (match.region === "NA + EU" && match.host_region) {
       host = `${host} (${match.host_region})`;
     }
-    rows.push({ num: i + 1, map: mapName, host, rule });
+    cards.push({ num: i + 1, map: mapName, host, rule });
   }
 
+  const isTbd = (name) => name === "TBD";
+
   return (
-    <section className="roomCard mrHostTable">
-      <h3>Map & Host Schedule</h3>
-      <div className="mrHostTableWrap">
-        <table className="mrHostGrid" aria-label="Per-map host assignments">
-          <thead>
-            <tr>
-              <th>Map #</th>
-              <th>Map</th>
-              <th>Host</th>
-              <th>Rule</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.num}>
-                <td>{r.num}</td>
-                <td>{r.map}</td>
-                <td>{r.host}</td>
-                <td className="mrHostRule">{r.rule}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <section className="dbMapSchedule">
+      <div className="dbSectionHead">
+        <MapPin size={15} />
+        <h3>Map & Host Schedule</h3>
+      </div>
+      <div className="dbMapGrid" style={{ gridTemplateColumns: `repeat(${Math.min(cards.length, 3)}, 1fr)` }}>
+        {cards.map((c) => (
+          <div key={c.num} className="dbMapCard">
+            <span className="dbMapBadge">MAP {c.num}</span>
+            <div className="dbMapCardBody">
+              {c.map !== "TBD" && <div className="dbMapCardThumb"><MapCard map={c.map} game={match.game} size="sm" /></div>}
+              <div className="dbMapCardName">{c.map}</div>
+              <div className="dbMapCardRule">{c.rule}</div>
+            </div>
+            <div className="dbMapCardHost">
+              <Headphones size={14} />
+              <span className="dbMapHostLabel">Host</span>
+              <span className={`dbMapHostName ${isTbd(c.host) ? "tbd" : ""}`}>{c.host}</span>
+            </div>
+          </div>
+        ))}
       </div>
     </section>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// §8 — RULES / PROOF STRIP
-// ═══════════════════════════════════════════════════════════════════════════
-
-function RulesStrip({ match }) {
-  return (
-    <section className="roomCard mrRulesStrip">
-      <details>
-        <summary className="mrRulesSummary">
-          <Shield size={14} />
-          <span>Ruleset & Proof Requirements</span>
-          <ChevronDown size={14} className="mrRulesChevron" />
-        </summary>
-        <div className="mrRulesBody">
-          <p className="ruleNote inline">{modeRule(match.mode)}</p>
-          <p className="ruleNote inline">{seriesRule(match.series)}</p>
-          <ul className="roomRules">
-            <li>{match.platform === "PC + Console Mixed" ? "PC and console players share this lobby." : match.platform === "Console Only" ? "Console only — PC players not allowed." : `${match.platform} lobby.`}{match.allowed_input === "Controller Only" ? " Controller only — M&K not allowed." : ""}</li>
-            <li>All proof must be <b>video format</b> (VOD, clip, DVR recording). Screenshots alone are insufficient.</li>
-            <li>Proof must show the <b>full scoreboard with gamertags</b> clearly visible.</li>
-            <li>PC players must stream with past broadcasts enabled. VOD must stay up for 24 hours.</li>
-            <li>Conversations outside Dubbed (DMs, Xbox/PSN messages) are not valid proof.</li>
-            <li>Match ticket: <b>#{match.match_number || match.code}</b>. Reference this in any dispute.</li>
-            {match.kind === "cash" && <li>Rake: {RAKE_CONFIG.standard * 100}% standard / {RAKE_CONFIG.wagr * 100}% WAGR members (min {money(RAKE_CONFIG.minimum)}).</li>}
-            <li>If your opponent doesn't show within <b>{NO_SHOW_MINUTES} minutes</b>, you can claim a no-show forfeit.</li>
-            <li>If one team reports a result and the opponent does not respond within <b>2 hours</b>, the reported result stands.</li>
-          </ul>
-        </div>
-      </details>
-    </section>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CLAN TAGS
-// ═══════════════════════════════════════════════════════════════════════════
-
-function ClanTagSection({ clanTags }) {
-  return (
-    <section className="mrClanTags">
-      <div className="mrClanTagHead">
-        <Shield size={14} />
-        <b>Clan Tags — Use These In-Game</b>
-      </div>
-      <p className="mrClanTagNote">Both teams must set their in-game clan tag before playing. Screenshots or clips without the correct clan tag will not be accepted as proof.</p>
-      <div className="mrClanTagRow">
-        <ClanTagBox label="TEAM A" tag={clanTags[0]} />
-        <span className="mrClanTagVs">VS</span>
-        <ClanTagBox label="TEAM B" tag={clanTags[1]} />
-      </div>
-    </section>
-  );
-}
-
-function ClanTagBox({ label, tag }) {
-  const toast = useToast();
-  return (
-    <div className="mrClanTagBox">
-      <small>{label}</small>
-      <b>[{tag}]</b>
-      <button className="mrClanCopy" onClick={() => { navigator.clipboard.writeText(tag); toast.success("Copied!"); }} title="Copy tag">
-        <Copy size={12} />
-      </button>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PLAYER CARD
-// ═══════════════════════════════════════════════════════════════════════════
-
-function PlayerCard({ player, isWinner, settled, clanTag, onNavigate, showGamertags = true }) {
-  const rank = rankForXp(player.xp);
-  const total = player.wins + player.losses;
-  const winRate = total ? Math.round((player.wins / total) * 100) : 0;
-  const tc = player.trophies || { gold: 0, silver: 0, bronze: 0 };
-  const hasTrophies = tc.gold + tc.silver + tc.bronze > 0;
-
-  return (
-    <div className={`mrPlayerCard ${isWinner ? "winner" : ""} ${settled && !isWinner ? "loser" : ""}`}>
-      {settled && <div className={`mrWL ${isWinner ? "w" : "l"}`}>{isWinner ? "W" : "L"}</div>}
-      <div className="mrPcTop">
-        <div className="mrPcAvatar" style={{ borderColor: rank.glow }}>
-          {player.avatar_url ? <img src={player.avatar_url} alt="" /> : <span>{player.name.slice(0, 2)}</span>}
-        </div>
-        <div className="mrPcIdent">
-          <b className="mrPcName" onClick={() => onNavigate?.("profile", player.name)} style={{ cursor: "pointer" }}>
-            {player.name}{player.wagr && <WagrBadge size={14} />}
-          </b>
-          {player.teamName && <small className="mrPcTeam">{player.teamName}</small>}
-          <small className="mrPcRank" style={{ color: rank.glow }}>{rank.name}</small>
-        </div>
-        <RankStar rank={rank} size={48} />
-      </div>
-
-      {(hasTrophies || player.wagr) && (
-        <div className="mrPcTrophyRow">
-          {player.wagr && (
-            <div className="mrPcTrophyItem wagr" title="WAGR Member"><TrophyIcon tone="wagr" size={28} /><span>WAGR</span></div>
-          )}
-          {tc.gold > 0 && (
-            <div className="mrPcTrophyItem" title={`${tc.gold} Gold`}><TrophyIcon tone="gold" size={28} /><span>{tc.gold}</span></div>
-          )}
-          {tc.silver > 0 && (
-            <div className="mrPcTrophyItem" title={`${tc.silver} Silver`}><TrophyIcon tone="silver" size={28} /><span>{tc.silver}</span></div>
-          )}
-          {tc.bronze > 0 && (
-            <div className="mrPcTrophyItem" title={`${tc.bronze} Bronze`}><TrophyIcon tone="bronze" size={28} /><span>{tc.bronze}</span></div>
-          )}
-        </div>
-      )}
-
-      <div className="mrPcStats">
-        <div><small>Record</small><b>{player.wins}-{player.losses}</b></div>
-        <div><small>Win %</small><b>{winRate}%</b></div>
-        <div><small>Earnings</small><b className="cash">{money(player.earnings)}</b></div>
-      </div>
-
-      {showGamertags && (player.activision_id || player.psn || player.xbox) && (
-        <div className="mrPcTags">
-          {player.activision_id && <div className="mrTag"><Crosshair size={12} /> <span>{player.activision_id}</span></div>}
-          {player.psn && <div className="mrTag"><Gamepad2 size={12} /> <span>PSN: {player.psn}</span></div>}
-          {player.xbox && <div className="mrTag"><Monitor size={12} /> <span>Xbox: {player.xbox}</span></div>}
-        </div>
-      )}
-
-      {(player.twitch || player.twitter || player.youtube) && (
-        <div className="mrPcSocials">
-          {player.twitch && <a href={`https://twitch.tv/${player.twitch}`} target="_blank" rel="noopener noreferrer" title="Twitch"><Tv size={14} /></a>}
-          {player.twitter && <a href={`https://twitter.com/${player.twitter}`} target="_blank" rel="noopener noreferrer" title="Twitter/X"><ExternalLink size={14} /></a>}
-          {player.youtube && <a href={`https://youtube.com/${player.youtube.startsWith("@") ? player.youtube : `@${player.youtube}`}`} target="_blank" rel="noopener noreferrer" title="YouTube"><ExternalLink size={14} /></a>}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -788,7 +981,7 @@ function VetoPanel({ match, players, userId, onDone }) {
 // §7 — CHAT DOCK
 // ═══════════════════════════════════════════════════════════════════════════
 
-function ChatDock({ matchId, userId, username, isAdmin, isParticipant, matchStatus, inVeto, onNoShow, onRequestAdmin }) {
+function ChatDock({ matchId, userId, username, isAdmin, isParticipant, matchStatus, needsAdmin, inVeto, onNoShow, onRequestAdmin }) {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const bodyRef = useRef(null);
@@ -821,9 +1014,11 @@ function ChatDock({ matchId, userId, username, isAdmin, isParticipant, matchStat
             <button className="mrChatAction noshow" onClick={onNoShow} title="Report no-show">
               <UserX size={14} /> No Show
             </button>
-            <button className="mrChatAction admin" onClick={onRequestAdmin} title="Request an admin">
-              <Headphones size={14} /> Request Admin
-            </button>
+            {needsAdmin && onRequestAdmin && (
+              <button className="mrChatAction admin" onClick={onRequestAdmin} title="Request an admin">
+                <Headphones size={14} /> Request Admin
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1017,7 +1212,7 @@ function ReportModal({ open, onClose, match, players, onDone, toast }) {
             <div key={i} className="mrScoreRow">
               <span className="mrScoreLabel">Map {i + 1}</span>
               <input className="field mrScoreInput" value={s.a} onChange={(e) => updateMapScore(i, "a", e.target.value)} placeholder="0" aria-label={`Map ${i + 1} team A score`} />
-              <span className="mrScoreDash">—</span>
+              <span className="mrScoreDash">-</span>
               <input className="field mrScoreInput" value={s.b} onChange={(e) => updateMapScore(i, "b", e.target.value)} placeholder="0" aria-label={`Map ${i + 1} team B score`} />
             </div>
           ))}
@@ -1128,16 +1323,17 @@ function CancelModal({ open, onClose, match, onDone, toast }) {
 function EscalateModal({ open, onClose, matchId, onDone }) {
   const toast = useToast();
   const [reason, setReason] = useState("");
+  const [priority, setPriority] = useState(false);
   const [busy, setBusy] = useState(false);
 
   if (!open) return null;
   return (
-    <Modal title="Escalate Match" onClose={onClose}>
+    <Modal open={open} title="Escalate Match" onClose={onClose}>
       <p style={{ fontSize: 13, color: "var(--muted)", marginBottom: 12 }}>
         This creates a ticket that an admin will manually review. You can only escalate once per match, within 24 hours of settlement. Cash matches only.
       </p>
       <textarea
-        className="inputBlock"
+        className="field area"
         placeholder="Explain why you're escalating this match..."
         value={reason}
         onChange={e => setReason(e.target.value)}
@@ -1145,17 +1341,27 @@ function EscalateModal({ open, onClose, matchId, onDone }) {
         maxLength={1000}
         style={{ marginBottom: 12, width: "100%", resize: "vertical" }}
       />
+      <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 10, background: priority ? "rgba(255,194,60,.08)" : "rgba(255,255,255,.03)", border: `1px solid ${priority ? "rgba(255,194,60,.3)" : "rgba(255,255,255,.06)"}`, cursor: "pointer", marginBottom: 12, transition: "all .15s" }}>
+        <input type="checkbox" checked={priority} onChange={e => setPriority(e.target.checked)} style={{ accentColor: "var(--gold)" }} />
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>
+            <Zap size={12} style={{ color: "var(--gold)", marginRight: 4 }} />
+            Priority Review — $1.00
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>Jump the queue. Your ticket gets reviewed first.</div>
+        </div>
+      </label>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" loading={busy} disabled={!reason.trim()} onClick={async () => {
           setBusy(true);
-          const res = await escalateMatch(matchId, reason.trim());
+          const res = await escalateMatch(matchId, reason.trim(), priority);
           setBusy(false);
           if (res.error) return toast.error(res.error);
-          toast.success("Escalation ticket created. An admin will review your case.");
+          toast.success(priority ? "Priority escalation created. An admin will review your case ASAP." : "Escalation ticket created. An admin will review your case.");
           onDone();
         }}>
-          <TicketCheck size={14} /> Submit Escalation
+          <TicketCheck size={14} /> {priority ? "Submit Priority ($1)" : "Submit Escalation"}
         </Button>
       </div>
     </Modal>

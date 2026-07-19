@@ -13,9 +13,9 @@ const SOURCE_LABELS = {
   side_bet_rake: "Side Bet Rake",
 };
 const SOURCE_COLORS = {
-  match_rake: "#22c5fb",
-  tournament_fee: "#ffc23c",
-  side_bet_rake: "#a78bfa",
+  match_rake: "var(--neon)",
+  tournament_fee: "var(--gold)",
+  side_bet_rake: "var(--violet)",
 };
 
 export function AdminRevenuePage() {
@@ -71,7 +71,7 @@ export function AdminRevenuePage() {
             <div className="revSourceGrid">
               {(data.by_source || []).map((s) => (
                 <div className="revSourceCard" key={s.source}>
-                  <div className="revSourceDot" style={{ background: SOURCE_COLORS[s.source] || "#888" }} />
+                  <div className="revSourceDot" style={{ background: SOURCE_COLORS[s.source] || "var(--muted)" }} />
                   <div className="revSourceInfo">
                     <b>{SOURCE_LABELS[s.source] || s.source}</b>
                     <span className="revSourceAmount">{money(s.total)}</span>
@@ -114,7 +114,7 @@ export function AdminRevenuePage() {
                 {(data.recent || []).map((r) => (
                   <div className="adminWdRow" key={r.id}>
                     <div className="adminWdMain">
-                      <div className="revSourceDot" style={{ background: SOURCE_COLORS[r.source] || "#888", width: 8, height: 8 }} />
+                      <div className="revSourceDot" style={{ background: SOURCE_COLORS[r.source] || "var(--muted)", width: 8, height: 8 }} />
                       <span className="badge">{SOURCE_LABELS[r.source] || r.source}</span>
                       <span className="adminWdAmount cash">{money(r.amount)}</span>
                     </div>

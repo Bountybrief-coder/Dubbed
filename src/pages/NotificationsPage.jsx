@@ -166,7 +166,7 @@ export function NotificationsPage({ onNavigate }) {
                         <p className="notifText">{n.text}</p>
                       </div>
                       {route && <ChevronRight size={14} className="notifArrow" />}
-                      <span className="notifDelete" onClick={(e) => handleDelete(e, n.id)} title="Delete"><X size={14} /></span>
+                      <span className="notifDelete" role="button" tabIndex={0} aria-label="Delete notification" onClick={(e) => handleDelete(e, n.id)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleDelete(e, n.id); } }} title="Delete"><X size={14} /></span>
                     </button>
                   );
                 })}

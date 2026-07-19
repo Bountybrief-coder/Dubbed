@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
-import { supabase } from "../lib/supabase";
+import { supabase, authCallback, codeExchangePromise } from "../lib/supabase";
 import * as auth from "../services/authService";
 import { getProfile } from "../services/profileService";
 
@@ -77,15 +77,15 @@ export function AuthProvider({ children }) {
     cancelled.current = false;
     bootStart.current = Date.now();
 
-    // Quick-boot: show the app after 2s even if auth hasn't resolved
-    const quickBoot = setTimeout(() => {
+    // Quick-boot: show the app after 2s even if auth hasn't resolved.
+    // Skip during auth callbacks — we need to wait for the code exchange.
+    const quickBoot = authCallback.isCallback ? null : setTimeout(() => {
       if (!cancelled.current) setLoading(false);
     }, 2000);
 
-    // Absolute failsafe: no matter what, stop loading
     const failsafe = setTimeout(() => {
       if (!cancelled.current) {
-        console.error("[dubbed] Boot failsafe triggered — forcing load complete");
+        console.error("[dubbed] Boot failsafe triggered");
         setLoading(false);
         setBootError("Boot timed out. Some features may be unavailable.");
       }
@@ -93,6 +93,15 @@ export function AuthProvider({ children }) {
 
     (async () => {
       try {
+        // If this is a PKCE callback, wait for the code exchange first.
+        if (authCallback.isCallback) {
+          try {
+            await codeExchangePromise;
+          } catch (err) {
+            console.warn("[dubbed] codeExchangePromise error:", err?.message);
+          }
+        }
+
         let s = null;
         try {
           s = await withTimeout(auth.getSession(), BOOT_TIMEOUT, "getSession");
@@ -113,7 +122,7 @@ export function AuthProvider({ children }) {
         }
       } finally {
         clearTimeout(failsafe);
-        clearTimeout(quickBoot);
+        if (quickBoot) clearTimeout(quickBoot);
         if (!cancelled.current) setLoading(false);
       }
     })();
@@ -128,7 +137,7 @@ export function AuthProvider({ children }) {
     return () => {
       cancelled.current = true;
       clearTimeout(failsafe);
-      clearTimeout(quickBoot);
+      if (quickBoot) clearTimeout(quickBoot);
       unsub();
     };
   }, [loadProfile]);

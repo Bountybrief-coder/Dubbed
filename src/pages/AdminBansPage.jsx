@@ -14,12 +14,12 @@ const DURATIONS = ["24h", "7d", "30d", "permanent"];
 const DURATION_LABEL = { "24h": "24 hours", "7d": "7 days", "30d": "30 days", "permanent": "Permanent" };
 
 const BAN_TYPES = [
-  { id: "cheating", label: "Cheating", color: "#ff4d5e", desc: "Player caught cheating. Login blocked, withdrawal blocked. One-time $100 redemption available." },
-  { id: "toxic", label: "Toxic Behavior", color: "#ff9e3d", desc: "Toxic conduct, hate speech, harassment. Login blocked, withdrawal blocked until ban is lifted." },
-  { id: "ringing", label: "Ringing / Boosting", color: "#ff9e3d", desc: "Using a higher-skilled player or alt to boost. Same as toxic — blocked until lifted." },
-  { id: "fake_proof", label: "Fake Proof", color: "#ff4d5e", desc: "Submitting fake/edited screenshots or clips. Treated as cheating — $100 redemption available." },
-  { id: "self_ban", label: "Self-Ban (Player Request)", color: "#3aa0ff", desc: "Player requested a break. Login blocked. Admin can still process their withdrawal — no funds locked." },
-  { id: "other", label: "Other", color: "#8b8fa3", desc: "Custom reason. Specify below." },
+  { id: "cheating", label: "Cheating", color: "var(--danger)", desc: "Player caught cheating. Login blocked, withdrawal blocked. One-time $100 redemption available." },
+  { id: "toxic", label: "Toxic Behavior", color: "var(--gold)", desc: "Toxic conduct, hate speech, harassment. Login blocked, withdrawal blocked until ban is lifted." },
+  { id: "ringing", label: "Ringing / Boosting", color: "var(--gold)", desc: "Using a higher-skilled player or alt to boost. Same as toxic. Blocked until lifted." },
+  { id: "fake_proof", label: "Fake Proof", color: "var(--danger)", desc: "Submitting fake/edited screenshots or clips. Treated as cheating. $100 redemption available." },
+  { id: "self_ban", label: "Self-Ban (Player Request)", color: "var(--neon)", desc: "Player requested a break. Login blocked. Admin can still process their withdrawal. No funds locked." },
+  { id: "other", label: "Other", color: "var(--muted)", desc: "Custom reason. Specify below." },
 ];
 
 const REASONS = ["Cheating", "Ringing", "Hacking", "Boosting", "Toxic behavior", "Fake proof", "Smurfing/Alt account", "Self-ban request", "Other"];
@@ -66,9 +66,9 @@ export function AdminBansPage() {
       <section className="banPolicyBox">
         <h3><AlertTriangle size={14} /> Ban Policy</h3>
         <ul>
-          <li><b style={{ color: "#ff4d5e" }}>Cheating / Fake Proof:</b> Login + withdrawal blocked. One chance to redeem for a flat $100 fee. Second offense = permanent, no appeal.</li>
-          <li><b style={{ color: "#ff9e3d" }}>Toxic / Ringing / Boosting:</b> Login + withdrawal blocked until ban expires or is manually lifted.</li>
-          <li><b style={{ color: "#3aa0ff" }}>Self-Ban:</b> Player requested it. Login blocked but admin can still process their withdrawal on request.</li>
+          <li><b style={{ color: "var(--danger)" }}>Cheating / Fake Proof:</b> Login + withdrawal blocked. One chance to redeem for a flat $100 fee. Second offense = permanent, no appeal.</li>
+          <li><b style={{ color: "var(--gold)" }}>Toxic / Ringing / Boosting:</b> Login + withdrawal blocked until ban expires or is manually lifted.</li>
+          <li><b style={{ color: "var(--neon)" }}>Self-Ban:</b> Player requested it. Login blocked but admin can still process their withdrawal on request.</li>
         </ul>
       </section>
 
@@ -113,16 +113,16 @@ export function AdminBansPage() {
                   {b.banned_by_name && <span>By: {b.banned_by_name}</span>}
                   {b.unban_note && <span>Unban note: {b.unban_note}</span>}
                   {b.active && isCheating && !b.redeemed && (
-                    <span style={{ color: "#ff9e3d" }}>Redemption available ($100)</span>
+                    <span style={{ color: "var(--gold)" }}>Redemption available ($100)</span>
                   )}
                   {b.redeemed && (
-                    <span style={{ color: "#3aa0ff" }}>Redeemed {b.redeemed_at ? shortDate(b.redeemed_at) : ""}</span>
+                    <span style={{ color: "var(--neon)" }}>Redeemed {b.redeemed_at ? shortDate(b.redeemed_at) : ""}</span>
                   )}
                   {b.active && isSelfBan && (
-                    <span style={{ color: "#3aa0ff" }}>Withdrawal: can be processed by admin on request</span>
+                    <span style={{ color: "var(--neon)" }}>Withdrawal: can be processed by admin on request</span>
                   )}
                   {b.active && !isSelfBan && (
-                    <span style={{ color: "#ff4d5e" }}>Withdrawal: BLOCKED</span>
+                    <span style={{ color: "var(--danger)" }}>Withdrawal: BLOCKED</span>
                   )}
                 </div>
                 {b.active && (
@@ -215,12 +215,12 @@ export function AdminBansPage() {
             <div className="banImpactBox">
               <h4>Impact</h4>
               <ul>
-                <li>Login: <b style={{ color: "#ff4d5e" }}>BLOCKED</b></li>
-                <li>Withdrawal: <b style={{ color: banType === "self_ban" ? "#3aa0ff" : "#ff4d5e" }}>
+                <li>Login: <b style={{ color: "var(--danger)" }}>BLOCKED</b></li>
+                <li>Withdrawal: <b style={{ color: banType === "self_ban" ? "var(--neon)" : "var(--danger)" }}>
                   {banType === "self_ban" ? "ADMIN CAN PROCESS" : "BLOCKED"}
                 </b></li>
                 {(banType === "cheating" || banType === "fake_proof") && (
-                  <li>Redemption: <b style={{ color: "#ff9e3d" }}>$100 fee, one-time only</b></li>
+                  <li>Redemption: <b style={{ color: "var(--gold)" }}>$100 fee, one-time only</b></li>
                 )}
                 {ipAddress && <li>IP block: <b>{ipAddress}</b></li>}
               </ul>
@@ -250,13 +250,13 @@ export function AdminBansPage() {
       <Modal open onClose={onClose} eyebrow="UNBAN" title={`Unban ${ban.username}?`} size="sm">
         <p className="modalNote">This removes the active ban and restores full account access. The ban record stays in the audit log.</p>
         {isCheating && !ban.redeemed && (
-          <div className="errBanner" style={{ borderColor: "#ff9e3d", background: "rgba(255,158,61,.08)" }}>
-            <AlertTriangle size={14} /> This user was banned for {ban.ban_type === "fake_proof" ? "fake proof" : "cheating"}. If this is a redemption, collect the $100 fee first. They only get one chance — next offense is permanent.
+          <div className="errBanner" style={{ borderColor: "var(--gold)", background: "rgba(255,158,61,.08)" }}>
+            <AlertTriangle size={14} /> This user was banned for {ban.ban_type === "fake_proof" ? "fake proof" : "cheating"}. If this is a redemption, collect the $100 fee first. They only get one chance. Next offense is permanent.
           </div>
         )}
         {ban.redeemed && (
-          <div className="errBanner" style={{ borderColor: "#ff4d5e", background: "rgba(255,77,94,.08)" }}>
-            <AlertTriangle size={14} /> This user already used their one-time redemption. If unbanning again, this is purely at admin discretion — there are no more second chances.
+          <div className="errBanner" style={{ borderColor: "var(--danger)", background: "rgba(255,77,94,.08)" }}>
+            <AlertTriangle size={14} /> This user already used their one-time redemption. If unbanning again, this is purely at admin discretion. There are no more second chances.
           </div>
         )}
         <label className="fieldLbl">Note (optional)</label>

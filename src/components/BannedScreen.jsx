@@ -41,7 +41,7 @@ export function BannedScreen() {
             <span className="bannedValue">
               {expiresAt ? (
                 <>
-                  {countdown ? <strong>{countdown}</strong> : <span>Expired — refreshing...</span>}
+                  {countdown ? <strong>{countdown}</strong> : <span>Expired. Refreshing...</span>}
                   <small>Ban lifts: {formatDate(expiresAt)}</small>
                 </>
               ) : (

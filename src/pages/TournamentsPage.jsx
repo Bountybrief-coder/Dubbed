@@ -1,9 +1,10 @@
 import React, { useState } from "react";
+import { usePageMeta } from "../hooks/usePageMeta";
 import { Trophy, ChevronLeft, Users, Swords, BookOpen, Crown, Clock, CheckCircle, AlertCircle, Info } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useAsync } from "../hooks/useAsync";
-import { listTournaments, getTournament, joinTournament, fundTournamentEntry, checkinTournament, pooledPrize, getTournamentBracket, adminGenerateBracket, startTournamentMatch, subscribeToTournament } from "../services/tournamentService";
+import { listTournaments, getTournament, joinTournament, fundTournamentEntry, pooledPrize, getTournamentBracket, adminGenerateBracket, subscribeToTournament } from "../services/tournamentService";
 import { getMyTeams } from "../services/teamService";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { Countdown } from "../components/Countdown";
@@ -22,7 +23,7 @@ import bo1Img from "../assets/bo1.png";
 import bo2Img from "../assets/bo2.png";
 
 const GAME_COVERS = {
-  "Call of Duty: Black Ops 7": bo7, "Warzone": wz, "Black Ops Royale": wz,
+  "Call of Duty: Black Ops 7": bo7, "Warzone": wz, "Black Ops Royale": bo7,
   "Call of Duty: Modern Warfare 4": mw4Img, "Call of Duty: WWII": wwiiImg,
   "Call of Duty: Black Ops": bo1Img, "Call of Duty: Black Ops II": bo2Img,
 };
@@ -52,6 +53,7 @@ function bucketTournaments(all) {
 }
 
 export function TournamentsPage({ onLogin, onNavigate }) {
+  usePageMeta("Tournaments", "Compete in organized COD tournaments with real brackets, prize pools, and trophies. SnD, Hardpoint, Kill Race events.");
   const { profile, isAdmin } = useAuth();
   const { data, loading, error, reload } = useAsync(() => listTournaments(), []);
   const [joinT, setJoinT] = useState(null);
@@ -112,8 +114,8 @@ export function TournamentsPage({ onLogin, onNavigate }) {
       ) : error ? (
         <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : visible.length === 0 ? (
-        <EmptyState icon={Trophy} title={listTab === "results" ? "No recent results" : "Tournaments coming soon"}>
-          {listTab === "results" ? "Completed tournaments and final standings show up here." : "Brackets with real prize pools are on the way. SND, Hardpoint, Kill Race, and BR — solo to full squads."}
+        <EmptyState icon={Trophy} title={listTab === "results" ? "No recent results" : "No upcoming tournaments"}>
+          {listTab === "results" ? "Completed tournaments and final standings show up here." : "No tournaments scheduled right now. Check back soon for SND, Hardpoint, Kill Race, and BR brackets."}
         </EmptyState>
       ) : (
         <>
@@ -124,7 +126,7 @@ export function TournamentsPage({ onLogin, onNavigate }) {
               const started = new Date(t.starts_at).getTime() <= Date.now();
               const done = t.status === "completed";
               return (
-                <div className="tourTile" key={t.id} onClick={() => setDetailId(t.id)} role="button" style={{ cursor: "pointer" }}>
+                <div className="tourTile" key={t.id} onClick={() => setDetailId(t.id)} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setDetailId(t.id); } }} style={{ cursor: "pointer" }}>
                   <img className="tourCover" src={cover(t.game)} alt="" loading="lazy" />
                   <div className="tourMeta">
                     <b>{t.name}</b>
@@ -173,8 +175,8 @@ function JoinModal({ t, onClose, onDone, onLogin }) {
   const [selectedTeamId, setSelectedTeamId] = useState("");
   const [busy, setBusy] = useState(false);
   const [coverUser, setCoverUser] = useState(null);
-  const potNow = pooledPrize(t.entry, t.entries_count);
-  const potAfter = pooledPrize(t.entry, t.entries_count + 1);
+  const potNow = pooledPrize(t.entry, t.entries_count, t.capacity);
+  const potAfter = pooledPrize(t.entry, t.entries_count + 1, t.capacity);
   const needsTeam = eligibleTeams.length === 0;
 
   const selectedTeam = eligibleTeams.find((x) => x.id === selectedTeamId) || eligibleTeams[0];
@@ -206,11 +208,11 @@ function JoinModal({ t, onClose, onDone, onLogin }) {
         <div><span>Your balance</span><b>{money(profile.balance)}</b></div>
         <div><span>Pot now ({t.entries_count} teams)</span><b className="cash">{money(potNow.pot)}</b></div>
         <div><span>Pot after you join</span><b className="cash">{money(potAfter.pot)}</b></div>
-        {potAfter.first > 0 && <div className="total"><span>1st{t.entries_count + 1 <= 2 ? " · winner takes all" : t.entries_count + 1 < 8 ? " · 85%" : " · 80%"}</span><b className="cash">{money(potAfter.first)}</b></div>}
-        {potAfter.second > 0 && <div className="total"><span>2nd · 15%</span><b className="cash">{money(potAfter.second)}</b></div>}
-        {potAfter.third > 0 && <div className="total"><span>3rd · 5%</span><b className="cash">{money(potAfter.third)}</b></div>}
+        {potAfter.first > 0 && <div className="total"><span>1st{potAfter.pct.first === 1 ? " · winner takes all" : ` · ${Math.round(potAfter.pct.first * 100)}%`}</span><b className="cash">{money(potAfter.first)}</b></div>}
+        {potAfter.second > 0 && <div className="total"><span>2nd · {Math.round(potAfter.pct.second * 100)}%</span><b className="cash">{money(potAfter.second)}</b></div>}
+        {potAfter.third > 0 && <div className="total"><span>3rd · {Math.round(potAfter.pct.third * 100)}%</span><b className="cash">{money(potAfter.third)}</b></div>}
       </div>
-      <small className="subtle">Platform takes 2% of the pot. {t.entries_count + 1 < 8 ? "3rd place pays out at 8+ teams." : ""}</small>
+      <small className="subtle">Platform takes 2% of the pot. {Number(t.capacity) < 8 ? "3rd place pays out in 8+ team brackets." : "Top 3 teams paid."}</small>
       <p className="modalNote">Winner also earns a permanent gold trophy with the tournament title on their profile.</p>
       {needsTeam ? (
         <div className="errBanner">You need a {t.game} team to enter. Create one on the Teams page first.</div>
@@ -243,7 +245,7 @@ function JoinModal({ t, onClose, onDone, onLogin }) {
             ))}
           </div>
           {coverUser && (
-            <small className="subtle">You'll pay <b>{money(totalCost)}</b> total — {money(t.entry)} for you + {money(t.entry)} for {coverableTeammates.find(m => m.user_id === coverUser)?.profiles?.username}.</small>
+            <small className="subtle">You'll pay <b>{money(totalCost)}</b> total: {money(t.entry)} for you + {money(t.entry)} for {coverableTeammates.find(m => m.user_id === coverUser)?.profiles?.username}.</small>
           )}
         </div>
       )}
@@ -297,7 +299,7 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
 
   const t = liveT || initialT;
   const entryCount = t.tournament_entries?.length || t.entries_count || 0;
-  const pz = pooledPrize(t.entry, entryCount);
+  const pz = pooledPrize(t.entry, entryCount, t.capacity);
   const started = new Date(t.starts_at).getTime() <= Date.now();
   const done = t.status === "completed";
   const cancelled = t.status === "cancelled" || t.status === "archived";
@@ -309,27 +311,15 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
   const phase = phaseLabel(t, entryCount, started, done, full);
   const myEntry = profile && entries.find((e) => e.user_id === profile.id);
   const isRegistered = !!myEntry;
-  const isCheckedIn = myEntry?.checked_in === true;
   const preStart = !done && !started && !cancelled;
   const isFree = Number(t.entry) === 0;
-  const checkinOpen = preStart && t.starts_at &&
-    Date.now() >= new Date(t.starts_at).getTime() - 15 * 60 * 1000;
-  const [checkingIn, setCheckingIn] = useState(false);
+  const activeTab = (!t.bracket_generated && (tab === "bracket" || tab === "participants")) ? "overview" : tab;
 
   React.useEffect(() => {
     return subscribeToTournament(initialT.id, () => { reloadBracket(); reloadT(); });
   }, [initialT.id]); // eslint-disable-line
 
   useVisibilityRefresh(() => { reloadT(); reloadBracket(); }, [initialT.id]);
-
-  async function doCheckin() {
-    setCheckingIn(true);
-    const res = await checkinTournament(initialT.id);
-    setCheckingIn(false);
-    if (res.error) return toast.error(res.error);
-    toast.success("Checked in. You're locked for the bracket.");
-    reloadT();
-  }
 
   async function generateBracket() {
     setBusy(true);
@@ -340,12 +330,6 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
     reloadBracket(); reloadT(); parentReload?.();
   }
 
-  async function startMatch(tmId) {
-    const res = await startTournamentMatch(tmId);
-    if (res.error) return toast.error(res.error);
-    toast.success("Match room created.");
-    if (res.matchId && onNavigate) onNavigate("match", res.matchId);
-  }
 
   return (
     <main className="page tourDetailPage">
@@ -390,21 +374,10 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
             )}
           </div>
 
-          {/* Registered user status + check-in */}
+          {/* Registered status */}
           {isRegistered && (
             <div className="tourRegisteredBanner">
-              {isCheckedIn ? (
-                <><CheckCircle size={16} /> Checked in — you're locked for the bracket.</>
-              ) : checkinOpen ? (
-                <>
-                  <AlertCircle size={16} /> Check-in is open. Confirm your spot before the tournament starts or your entry will be refunded.
-                  <Button variant="primary" size="sm" loading={checkingIn} onClick={doCheckin} style={{ marginLeft: 12 }}>
-                    <CheckCircle size={14} /> Check in now
-                  </Button>
-                </>
-              ) : (
-                <><Clock size={16} /> Registered. Check-in opens 15 minutes before start.</>
-              )}
+              <CheckCircle size={16} /> You're registered. Your spot is locked in.
             </div>
           )}
 
@@ -427,20 +400,20 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
               <div className="tourPrizeCol first">
                 <small>1ST PLACE</small>
                 <b className="cash">{money(pz.first)}</b>
-                <span>{entryCount <= 2 ? "Winner takes all" : entryCount < 8 ? "85% of pot" : "80% of pot"}</span>
+                <span>{pz.pct.first === 1 ? "Winner takes all" : `${Math.round(pz.pct.first * 100)}% of pot`}</span>
               </div>
-              {pz.second > 0 && (
+              {pz.pct.second > 0 && (
                 <div className="tourPrizeCol second">
                   <small>2ND PLACE</small>
                   <b className="cash">{money(pz.second)}</b>
-                  <span>15% of pot</span>
+                  <span>{Math.round(pz.pct.second * 100)}% of pot</span>
                 </div>
               )}
-              {pz.third > 0 && (
+              {pz.pct.third > 0 && (
                 <div className="tourPrizeCol third">
                   <small>3RD PLACE</small>
                   <b className="cash">{money(pz.third)}</b>
-                  <span>5% of pot</span>
+                  <span>{Math.round(pz.pct.third * 100)}% of pot</span>
                 </div>
               )}
               <div className="tourPrizeCol rake">
@@ -449,14 +422,18 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
                 <span>2% rake</span>
               </div>
             </div>
-            {entryCount < 8 && <small className="subtle">3rd place pays out at 8+ teams.</small>}
+            <small className="subtle">
+              {pz.pct.third > 0
+                ? "Top 3 paid. Prize pool grows as teams register."
+                : "Top 2 paid — 3rd place unlocks in 8+ team brackets. Prize pool grows as teams register."}
+            </small>
           </div>
 
           {/* Join CTA */}
           {!isRegistered && !full && (
             <div className="tourJoinCta">
               <Button variant="primary" size="lg" onClick={() => profile ? setJoinOpen(true) : onLogin()}>
-                {isFree ? "Join Tournament — Free Entry" : `Join Tournament · ${money(t.entry)}`}
+                {isFree ? "Join Tournament · Free Entry" : `Join Tournament · ${money(t.entry)}`}
               </Button>
               {full ? null : spotsLeft <= 4 ? (
                 <small className="subtle">{spotsLeft} spot{spotsLeft !== 1 ? "s" : ""} remaining</small>
@@ -472,7 +449,7 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
           {/* What happens next */}
           <div className="tourNextInfo">
             <Info size={15} />
-            <p>When the countdown hits zero, the bracket auto-generates and your first match appears here and on your team page. Single-elimination — lose and you're out.{isFree ? " This is a free-entry WAGR tournament." : ""}</p>
+            <p>When the countdown hits zero, the bracket auto-generates and your first match starts automatically. Single-elimination. Lose and you're out.{isFree ? " This is a free-entry WAGR tournament." : ""}</p>
           </div>
         </section>
       )}
@@ -500,8 +477,11 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
 
       {/* ── Tabs ── */}
       <div className="tourTabs">
-        {DETAIL_TABS.map(({ id, label, Icon }) => (
-          <button key={id} className={`tourTab ${tab === id ? "on" : ""}`} onClick={() => setTab(id)}>
+        {DETAIL_TABS.filter(({ id }) => {
+          if (id === "bracket" || id === "participants") return !!t.bracket_generated;
+          return true;
+        }).map(({ id, label, Icon }) => (
+          <button key={id} className={`tourTab ${activeTab === id ? "on" : ""}`} onClick={() => setTab(id)}>
             <Icon size={15} /> {label}
             {id === "participants" && <span className="tourTabCount">{entryCount}</span>}
           </button>
@@ -509,19 +489,19 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
       </div>
 
       {/* ── Tab content ── */}
-      {tab === "overview" && (
+      {activeTab === "overview" && (
         <section className="tourTabContent">
           <div className="tourOverviewGrid">
             <div className="roomCard">
               <h3><Crown size={15} /> Prize Breakdown</h3>
               <div className="breakBox">
                 <div><span>Total pot ({entryCount} teams × {isFree ? "Free" : money(t.entry)})</span><b className="cash">{money(pz.pot)}</b></div>
-                <div className="total"><span>1st place{entryCount <= 2 ? " · winner takes all" : entryCount < 8 ? " · 85%" : " · 80%"}</span><b className="cash">{money(pz.first)}</b></div>
-                {pz.second > 0 && <div><span>2nd place · 15%</span><b className="cash">{money(pz.second)}</b></div>}
-                {pz.third > 0 && <div><span>3rd place · 5%</span><b className="cash">{money(pz.third)}</b></div>}
+                <div className="total"><span>1st place{pz.pct.first === 1 ? " · winner takes all" : ` · ${Math.round(pz.pct.first * 100)}%`}</span><b className="cash">{money(pz.first)}</b></div>
+                {pz.pct.second > 0 && <div><span>2nd place · {Math.round(pz.pct.second * 100)}%</span><b className="cash">{money(pz.second)}</b></div>}
+                {pz.pct.third > 0 && <div><span>3rd place · {Math.round(pz.pct.third * 100)}%</span><b className="cash">{money(pz.third)}</b></div>}
                 <div><span>Platform rake</span><b>{money(pz.houseCut)}</b></div>
               </div>
-              <small className="subtle">{entryCount < 8 ? "3rd place pays out at 8+ teams. " : ""}Winner earns a {isFree ? "WAGR" : "gold"} trophy.</small>
+              <small className="subtle">{pz.pct.third === 0 ? "3rd place pays out in 8+ team brackets. " : ""}Winner earns a {isFree ? "WAGR" : "gold"} trophy.</small>
             </div>
             <div className="roomCard">
               <h3>Rules</h3>
@@ -539,7 +519,7 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
         </section>
       )}
 
-      {tab === "bracket" && (
+      {activeTab === "bracket" && (
         <section className="tourTabContent">
           {rounds.length === 0 ? (
             <EmptyState title={preStart ? "Bracket generates at start" : "No bracket yet"}>
@@ -551,15 +531,13 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
             <Bracket
               rounds={rounds}
               matches={matches}
-              isAdmin={isAdmin}
               onClickMatch={(matchId) => onNavigate?.("match", matchId)}
-              onStartMatch={startMatch}
             />
           )}
         </section>
       )}
 
-      {tab === "participants" && (
+      {activeTab === "participants" && (
         <section className="tourTabContent" aria-live="polite">
           <div className="tourParticipantHeader">
             <b>{entryCount} / {t.capacity} registered</b>
@@ -581,7 +559,6 @@ function TournamentDetail({ initialT, onBack, onNavigate, onLogin, reload: paren
                       </span>}
                     </div>
                     <span className={`badge ${e.paid ? "accent" : ""}`}>{e.paid ? "PAID" : "PENDING"}</span>
-                    {preStart && <span className={`badge ${e.checked_in ? "accent" : ""}`}>{e.checked_in ? "CHECKED IN" : "NOT CHECKED IN"}</span>}
                   </div>
                 );
               })}

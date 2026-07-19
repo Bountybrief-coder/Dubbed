@@ -22,7 +22,7 @@ export async function getMyRank(metric = "xp", { region, platform } = {}) {
 export async function getWeeklyTopPlayers(weekStart) {
   const { data, error } = await supabase
     .from("weekly_stats")
-    .select("user_id, xp_gained, earnings_gained, wins, losses, profiles(username, avatar_url, xp, wagr_member)")
+    .select("user_id, xp_gained, earnings_gained, wins, losses, profiles(username, avatar_url, xp, wagr_member, country)")
     .eq("week_start", weekStart)
     .order("xp_gained", { ascending: false })
     .limit(3);
@@ -53,7 +53,7 @@ export async function getMyTimedRank(metric = "xp", since, { region, platform } 
 export async function getWeeklyRewards(weekStart) {
   const { data, error } = await supabase
     .from("weekly_rewards")
-    .select("user_id, credits, profiles(username, avatar_url)")
+    .select("user_id, credits, profiles(username, avatar_url, country, xp)")
     .eq("week_start", weekStart)
     .order("credits", { ascending: false })
     .limit(3);

@@ -8,7 +8,7 @@ import { useAsync } from "../hooks/useAsync";
 import { createMatch } from "../services/matchService";
 import { getMyTeams } from "../services/teamService";
 import {
-  GAME_NAMES, CURRENT_GAMES, REGIONS, PLATFORMS, SKILL_TIERS,
+  GAME_NAMES, CURRENT_GAMES, THROWBACK_GAMES, REGIONS, PLATFORMS, SKILL_TIERS,
   SERIES_OPTIONS, WEAPON_RESTRICTIONS, FORMAT_LABELS,
   formatsForGameMode, modesForGame, modeRule, seriesRule, shortForGame, formatLabel,
   usesMapVeto, isSingleMapMode, isBattleRoyaleGame, isKillRaceMode, isRookieEligible,
@@ -70,7 +70,7 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
       else setKind(null);
       setRoster([]);
     }
-  }, [open, defaultGame, defaultMode]);
+  }, [open, defaultGame, defaultMode, defaultKind]);
 
   const formats = formatsForGameMode(game, mode);
   const modes = modesForGame(game);
@@ -263,6 +263,14 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
       <div className="chipRow wrap">{CURRENT_GAMES.map((g) => (
         <button key={g.name} className={game === g.name ? "on" : ""} onClick={() => pickGame(g.name)}>{g.short}</button>
       ))}</div>
+      {THROWBACK_GAMES.length > 0 && (
+        <>
+          <label className="fieldLbl" style={{ marginTop: 8, fontSize: 12, opacity: 0.6 }}>Throwback</label>
+          <div className="chipRow wrap">{THROWBACK_GAMES.map((g) => (
+            <button key={g.name} className={game === g.name ? "on" : ""} onClick={() => pickGame(g.name)}>{g.short}</button>
+          ))}</div>
+        </>
+      )}
 
       {gateBlocked && (
         <div className="cmGate">
@@ -377,7 +385,7 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
       {/* Section 4: Squad roster toggle */}
       {isSquad && eligibleTeam && (
         <div className="cmRosterSection">
-          <label className="fieldLbl"><Users size={13} /> Lineup — select {teamSize} players</label>
+          <label className="fieldLbl"><Users size={13} /> Lineup: select {teamSize} players</label>
           <p className="modalNote">Playing as <b>{eligibleTeam.name}</b> [{eligibleTeam.tag}]. Toggle who plays this match.</p>
           <div className="cmRosterGrid">
             {squadMembers.map(m => {
@@ -396,7 +404,7 @@ export function CreateMatchModal({ open, onClose, defaultKind = null, defaultGam
             })}
           </div>
           <small className={rosterValid ? "subtle" : "subtle danger"}>
-            {roster.length}/{teamSize} selected{!rosterValid ? ` — need exactly ${teamSize}` : ""}
+            {roster.length}/{teamSize} selected{!rosterValid ? `. Need exactly ${teamSize}` : ""}
           </small>
         </div>
       )}

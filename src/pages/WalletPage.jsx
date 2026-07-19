@@ -4,6 +4,7 @@ import { useAuth } from "../hooks/useAuth.jsx";
 import { useAsync } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { useToast } from "../hooks/useToast.jsx";
+import { useConfirm } from "../hooks/useConfirm.jsx";
 import { useWithdrawals } from "../hooks/useWithdrawals";
 import { getLedger, deposit, saveCryptoWallet } from "../services/walletService";
 import { getPurchaseHistory } from "../services/shopService";
@@ -41,6 +42,7 @@ const CRYPTO_NETWORKS = [
 export function WalletPage() {
   const { profile, refreshProfile } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
 
   const profileId = profile?.id;
   const { data: ledger, loading, error, reload } = useAsync(
@@ -140,7 +142,7 @@ export function WalletPage() {
                 <div className="wdHistMeta">
                   <span>{shortDate(w.created_at)}</span>
                   {w.status === "processing" && w.meta?.auto_approved ? (
-                    <span className="wdEta"><Clock size={12} /> On its way — est. {estimatedArrival(w.processing_at || w.created_at)}</span>
+                    <span className="wdEta"><Clock size={12} /> On its way · est. {estimatedArrival(w.processing_at || w.created_at)}</span>
                   ) : w.status === "pending" || w.status === "processing" ? (
                     <span className="wdEta"><Clock size={12} /> {w.status === "pending" ? "Under review" : WITHDRAWAL_PROCESSING_COPY} · est. {estimatedArrival(w.created_at)}</span>
                   ) : w.status === "paid" ? (
@@ -194,7 +196,7 @@ export function WalletPage() {
               <div className="ledgerRow" key={e.id}>
                 <span className="ledgerReason">{REASON_LABEL[e.reason] || e.reason}</span>
                 <span className={`ledgerDelta ${e.delta >= 0 ? "pos" : "neg"}`}>
-                  {e.delta > 0 ? "+" : ""}{e.delta === 0 ? "" : money(e.delta)}
+                  {e.delta === 0 ? "—" : `${e.delta > 0 ? "+" : ""}${money(e.delta)}`}
                 </span>
                 <small>{timeAgo(e.created_at)}</small>
               </div>
@@ -301,7 +303,7 @@ export function WalletPage() {
               if (res.error) return toast.error(res.error);
               track.withdraw(n);
               toast.success(res.data?.auto_approved
-                ? "Auto-approved — on its way!"
+                ? "Auto-approved. On its way!"
                 : "Withdrawal submitted for review.");
               onDone(); onClose();
             }}>Request {money(Number(amount) || 0)} (receive {money(calculateWithdrawalNet(Number(amount) || 0))})</Button>
@@ -328,6 +330,14 @@ export function WalletPage() {
         <input className="field" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Enter your wallet address" />
         <Button variant="primary" className="wide" loading={busy} onClick={async () => {
           if (!address.trim() || address.trim().length < 10) return toast.error("Enter a valid wallet address.");
+          if (current && address.trim() !== current) {
+            const ok = await confirm({
+              title: "Change payout wallet?",
+              message: "All future withdrawals will be sent to this new address. Crypto payouts are irreversible — double-check it's correct.",
+              confirmLabel: "Change wallet",
+            });
+            if (!ok) return;
+          }
           setBusy(true);
           const res = await saveCryptoWallet(address.trim(), currency);
           setBusy(false);

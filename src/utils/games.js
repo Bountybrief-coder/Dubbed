@@ -1,6 +1,17 @@
 // Supported titles. BR titles (WZ, BOR) cap at 2v2; everything else is 1v1–4v4.
 // Kill Race modes are always capped at 2v2 regardless of game.
 
+export function teamCategoryLabel(size) {
+  if (size === 1) return "Solos";
+  if (size === 2) return "Dubs";
+  if (size === 4) return "Squads";
+  return `${size}v${size}`;
+}
+
+export function formatForSize(size) {
+  return `${size || 1}v${size || 1}`;
+}
+
 export const GAMES = [
   // --- CURRENT TITLES ---
   {
@@ -64,17 +75,17 @@ export const GAMES = [
     description: "The original Black Ops. Competitive Search & Destroy and Hardpoint on PS5 with restricted loadouts.",
     formats: ["1v1", "2v2", "3v3", "4v4"],
     platforms: ["PlayStation Only"],
-    modes: ["Search & Destroy", "Hardpoint"]
+    modes: ["Search & Destroy", "Hardpoint", "Domination", "Capture the Flag"]
   },
   {
     name: "Call of Duty: Black Ops II",
     short: "BO2",
     slug: "bo2",
     category: "throwback",
-    description: "Black Ops 2 throwback. Competitive Search & Destroy and Hardpoint on PS5 — strict loadout and perk restrictions.",
+    description: "Black Ops 2 throwback. Competitive Search & Destroy, Hardpoint, Domination, and CTF on PS5 with strict loadout restrictions.",
     formats: ["1v1", "2v2", "3v3", "4v4"],
     platforms: ["PlayStation Only"],
-    modes: ["Search & Destroy", "Hardpoint"]
+    modes: ["Search & Destroy", "Hardpoint", "Domination", "Capture the Flag"]
   },
 ];
 
@@ -190,11 +201,15 @@ export const GAME_MAP_POOLS = {
   },
   "Call of Duty: Black Ops": {
     "Search & Destroy": ["Hanoi", "Firing Range", "Grid", "Havana", "Villa"],
-    "Hardpoint":        ["Firing Range", "Grid", "Havana", "Villa", "Summit"]
+    "Hardpoint":        ["Firing Range", "Grid", "Havana", "Villa", "Summit"],
+    "Domination":       ["Firing Range", "Grid", "Havana", "Villa", "Summit", "Nuketown"],
+    "Capture the Flag": ["Firing Range", "Grid", "Havana", "Villa", "Summit"]
   },
   "Call of Duty: Black Ops II": {
     "Search & Destroy": ["Cargo", "Express", "Raid", "Slums", "Standoff"],
-    "Hardpoint":        ["Raid", "Slums", "Standoff", "Yemen", "Meltdown"]
+    "Hardpoint":        ["Raid", "Slums", "Standoff", "Yemen", "Meltdown"],
+    "Domination":       ["Raid", "Slums", "Standoff", "Yemen", "Meltdown", "Nuketown 2025"],
+    "Capture the Flag": ["Raid", "Slums", "Standoff", "Yemen", "Meltdown"]
   },
 };
 
@@ -243,6 +258,10 @@ export const MODE_RULES = {
     "Full Battle Royale, one life per circle. Most confirmed kills wins. Assists don't count.",
   "Battle Royale Big Map Survival":
     "Full Battle Royale, one life per circle. Last team alive wins.",
+  "Domination":
+    "Capture and hold flags to earn points. First team to the score limit or highest score when time expires wins.",
+  "Capture the Flag":
+    "Grab the enemy flag and return it to your base to score. Most captures when time runs out wins.",
   "Kill Race":
     "Most actual kills wins the map. Kills only, assists do not count.",
   "Survival":
@@ -252,12 +271,369 @@ export const MODE_RULES = {
 export const modeRule = (mode) => MODE_RULES[mode] || "";
 
 export const SERIES_RULES = {
-  "Best of 1": "1 and Done — one map, whoever wins it wins the match. No rematch.",
+  "Best of 1": "One map, whoever wins it wins the match. No rematch.",
   "Best of 3": "First team to win 2 maps takes the match.",
-  "1 and Done": "1 and Done — one map, whoever wins it wins the match. No rematch."
+  "1 and Done": "One map, whoever wins it wins the match. No rematch."
 };
 
 export const seriesRule = (series) => SERIES_RULES[series] || "";
+
+// ---------------------------------------------------------------------------
+// Match setup settings per game per mode. Shown in match room "Match Setup".
+// ---------------------------------------------------------------------------
+export const MATCH_SETUP = {
+  "Call of Duty: Black Ops 7": {
+    "Search & Destroy": {
+      gameMode: "CDL Search and Destroy",
+      note: "Unlock the rules and apply the changes below. Rehost/reset rules after each map.",
+      settings: [
+        { s: "Killcams", v: "On" },
+        { s: "Team Assignment", v: "On" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+        { s: "Equipment Delay", v: "5 Seconds" },
+        { s: "Automatic Doors", v: "On" },
+      ],
+      weapons: {
+        allowed: ["M15", "Dravec 45", "MPC-25"],
+        secondary: ["Jager 45"],
+        bannedAttachments: "Iron sights on ARs, magnification optics, launcher underbarrels, lasers, silencers, headshot barrels, prestige attachments, Rapid Fire, FMJ, Akimbo",
+      },
+      equipment: {
+        lethals: ["Frag", "Semtex"],
+        tacticals: ["Stun Grenade"],
+        fieldUpgrades: ["Trophy System"],
+        wildcard: "Perk Greed",
+      },
+      perks: [
+        { slot: "Perk 1", allowed: "Lightweight, Ninja, Flak Jacket" },
+        { slot: "Perk 2", allowed: "Tech Mask, Fast Hands" },
+        { slot: "Perk 3", allowed: "Dexterity" },
+      ],
+      extra: "Flak Jacket and Tech Mask cannot be equipped together. Scorestreaks, Specialty Perks (Core), Blackcell Operators, Reaper EWR-3, T.E.D.D all banned.",
+    },
+    "Hardpoint": {
+      gameMode: "CDL Hardpoint",
+      note: "Unlock rules and adjust. Same weapon/perk restrictions as SND.",
+      settings: [
+        { s: "Allow Callout Pings", v: "Off", ban: true },
+        { s: "Killcams", v: "On" },
+        { s: "Respawn Delay", v: "3 Seconds" },
+        { s: "Team Assignment", v: "On" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+        { s: "Automatic Doors", v: "Off", ban: true },
+      ],
+      weapons: "Same as Search & Destroy",
+      equipment: "Same as Search & Destroy",
+      perks: "Same as Search & Destroy",
+    },
+    "Overload": {
+      gameMode: "Default Overload",
+      note: "Use the DEFAULT Overload mode with these changes.",
+      settings: [
+        { s: "Input Swap Allowed", v: "Off", ban: true },
+        { s: "Allow Callout Pings", v: "Off", ban: true },
+        { s: "Carrier Personal Radar", v: "Off", ban: true },
+        { s: "Sudden Death H.A.R.P", v: "Off", ban: true },
+        { s: "Weapon Mounting", v: "Off", ban: true },
+        { s: "Respawn Delay", v: "3.5 Seconds" },
+        { s: "Suicide Respawn Delay", v: "1 Second" },
+        { s: "Team Assignment", v: "On" },
+        { s: "Friendly Fire", v: "On" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+        { s: "Automatic Doors", v: "Off", ban: true },
+        { s: "Scorestreak Delay", v: "10 Seconds" },
+        { s: "Equipment Protection", v: "0 Seconds" },
+        { s: "Battle Chatter", v: "Off", ban: true },
+        { s: "Dynamic Map Elements", v: "Off", ban: true },
+      ],
+      weapons: "Same as Search & Destroy",
+      equipment: "Same as Search & Destroy",
+      perks: "Same as Search & Destroy",
+      extra: "Check that scorestreaks are OFF at the start of round 1. If they're on, leave immediately.",
+    },
+    "Gunfight": {
+      gameMode: "Gunfight",
+      note: "No settings changes needed. No restricted items in Gunfight. Preset loadouts, fast rounds.",
+      settings: [],
+    },
+    "Variant": {
+      gameMode: "Alternating modes per map",
+      note: "Bo3: HP / SND / Overload. Bo5: HP / SND / OVL / HP / SND. Non-hosting team picks the map each mode. SND winner hosts Map 3.",
+      settings: [],
+      extra: "Use the corresponding mode's settings for each map (HP settings for HP maps, SND settings for SND maps, etc.)",
+    },
+  },
+  "Call of Duty: Modern Warfare 4": {
+    "Search & Destroy": {
+      gameMode: "CDL Search and Destroy",
+      note: "Use CDL rules. Apply the same competitive settings structure as BO7 SND.",
+      settings: [
+        { s: "Killcams", v: "On" },
+        { s: "Team Assignment", v: "On" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+      ],
+    },
+    "Hardpoint": {
+      gameMode: "CDL Hardpoint",
+      note: "Standard CDL Hardpoint settings.",
+      settings: [
+        { s: "Killcams", v: "On" },
+        { s: "Respawn Delay", v: "3 Seconds" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+      ],
+    },
+  },
+  "Call of Duty: WWII": {
+    "Search & Destroy": {
+      gameMode: "CWL Search & Destroy (or Custom Game)",
+      note: "Use the CWL Search & Destroy game mode. If unavailable, use Custom Game with these settings.",
+      settings: [
+        { s: "Time Limit", v: "1.5 Minutes" },
+        { s: "Round Limit", v: "11" },
+        { s: "Round Win Limit", v: "6" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+        { s: "Killcam", v: "On" },
+        { s: "Team Assignment", v: "On" },
+      ],
+      weapons: {
+        allowed: ["BAR", "FG 42", "STG44", "M1 Garand", "SVT-40", "PPSh-41", "Type 100", "Grease Gun", "MP-40", "Thompson"],
+        banned: "All LMGs, Shotguns, Snipers (except in SND), Launchers",
+        bannedAttachments: "Rapid Fire, FMJ, Silencers, 4x/magnification optics, Incendiary Shells",
+      },
+      equipment: {
+        lethals: ["Frag", "Semtex"],
+        tacticals: ["Stun Grenade"],
+      },
+      perks: [
+        { slot: "Basic Trainings", allowed: "Lookout, Hustle, Hunker, Flanker, Energetic, Scoped" },
+        { slot: "Divisions", allowed: "Infantry, Airborne, Armored, Expeditionary" },
+      ],
+      extra: "Mountain division is banned (silent movement). All scorestreaks banned.",
+    },
+    "Hardpoint": {
+      gameMode: "Hardpoint",
+      note: "Custom Game Hardpoint with these settings.",
+      settings: [
+        { s: "Score Limit", v: "250" },
+        { s: "Time Limit", v: "10 Minutes" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+        { s: "Respawn Delay", v: "3 Seconds" },
+        { s: "Killcam", v: "On" },
+        { s: "Team Assignment", v: "On" },
+      ],
+      weapons: "Same as Search & Destroy",
+      equipment: "Same as Search & Destroy",
+      perks: "Same as Search & Destroy",
+    },
+  },
+  "Call of Duty: Black Ops": {
+    "Search & Destroy": {
+      gameMode: "Custom Search & Destroy",
+      note: "PS5 only. Anything not listed stays at default.",
+      settings: [
+        { s: "Round Timer", v: "1:30" },
+        { s: "Defuse Time", v: "7.5s" },
+        { s: "Side Switching", v: "Every round" },
+        { s: "Round Win Limit", v: "6" },
+        { s: "Friendly Fire", v: "On" },
+        { s: "Killstreaks", v: "Disabled" },
+        { s: "Game Recording", v: "On" },
+      ],
+      weapons: {
+        banned: "All shotguns, LMGs, snipers, FN FAL, G11, M14",
+        bannedAttachments: "All under-barrel attachments, dual wield, rapid fire",
+      },
+      equipment: {
+        lethals: ["Frag", "Semtex"],
+        tacticals: ["Stun"],
+      },
+      perks: [
+        { slot: "Perk 1", allowed: "Lightweight Pro" },
+        { slot: "Perk 2", allowed: "Sleight of Hand Pro, Steady Aim Pro" },
+        { slot: "Perk 3", allowed: "Marathon Pro, Ninja Pro, Tac Mask Pro" },
+      ],
+      extra: "All equipment banned. Everything not listed above is restricted.",
+    },
+    "Hardpoint": {
+      gameMode: "Custom Hardpoint",
+      note: "PS5 only. Anything not listed stays at default.",
+      settings: [
+        { s: "Score Limit", v: "250" },
+        { s: "Time Limit", v: "10 Minutes" },
+        { s: "Respawn Delay", v: "3 Seconds" },
+        { s: "Friendly Fire", v: "On" },
+        { s: "Killstreaks", v: "Disabled", ban: true },
+        { s: "Game Recording", v: "On" },
+      ],
+      weapons: "Same as Search & Destroy",
+      equipment: "Same as Search & Destroy",
+      perks: "Same as Search & Destroy",
+    },
+    "Domination": {
+      gameMode: "Custom Domination",
+      note: "PS5 only. Preset classes are allowed but both required loadouts must be set. Back out and rebuild if they are missing. Anything not listed stays at default.",
+      settings: [
+        { s: "Time Limit", v: "10 Minutes" },
+        { s: "Score Limit", v: "200 Points" },
+        { s: "Rounds", v: "2" },
+        { s: "Flag Capture Time", v: "7.5 Seconds" },
+        { s: "Respawn Delay", v: "5 Seconds" },
+        { s: "Friendly Fire", v: "On" },
+        { s: "Killstreaks", v: "Disabled", ban: true },
+        { s: "Game Recording", v: "On" },
+      ],
+      weapons: "Same as Search & Destroy",
+      equipment: "Same as Search & Destroy",
+      perks: "Same as Search & Destroy",
+    },
+    "Capture the Flag": {
+      gameMode: "Custom Capture the Flag",
+      note: "PS5 only. Preset classes are allowed but both required loadouts must be set. Back out and rebuild if they are missing. Anything not listed stays at default.",
+      settings: [
+        { s: "Time Limit", v: "10 Minutes" },
+        { s: "Enemy Carrier On Radar", v: "Delayed" },
+        { s: "Round Win Limit", v: "1 Round" },
+        { s: "Capture Limit", v: "10 Flags" },
+        { s: "Respawn Delay", v: "7.5 Seconds" },
+        { s: "Force Respawn", v: "On" },
+        { s: "Wave Respawn Delay", v: "None" },
+        { s: "Friendly Fire", v: "On" },
+        { s: "Killstreaks", v: "Disabled", ban: true },
+        { s: "Game Recording", v: "On" },
+      ],
+      weapons: "Same as Search & Destroy",
+      equipment: "Same as Search & Destroy",
+      perks: "Same as Search & Destroy",
+    },
+  },
+  "Call of Duty: Black Ops II": {
+    "Search & Destroy": {
+      gameMode: "Custom Search & Destroy",
+      note: "PS5 only. Anything not listed stays at default.",
+      settings: [
+        { s: "Round Timer", v: "1:30" },
+        { s: "Round Limit", v: "6" },
+        { s: "Defuse Time", v: "7.5s" },
+        { s: "Side Switching", v: "Every round" },
+        { s: "Silent Plant", v: "On" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+        { s: "In-Game Team Change", v: "Off" },
+        { s: "Dynamic Map Elements", v: "Off" },
+        { s: "3rd-Person Spectating", v: "Off" },
+        { s: "Revenge Voice", v: "Off" },
+        { s: "Battlechatter", v: "Off" },
+        { s: "Explosive Delay", v: "0s" },
+        { s: "Friendly Fire", v: "On" },
+      ],
+      weapons: {
+        allowed: ["M8A1", "MSMC"],
+        secondary: ["B23R"],
+        bannedAttachments: "Rapid Fire, FMJ, Silencers, magnification optics",
+      },
+      equipment: {
+        lethals: ["Semtex", "Grenade"],
+        tacticals: ["Concussion (max 1)"],
+      },
+      perks: [
+        { slot: "Perk 1", allowed: "Lightweight" },
+        { slot: "Perk 2", allowed: "Toughness" },
+        { slot: "Perk 3", allowed: "Dexterity, Extreme Conditioning, Dead Silence" },
+      ],
+      extra: "Allowed wildcards: Perk 1/2/3 Greed, Primary Gunfighter, Secondary Gunfighter.",
+    },
+    "Hardpoint": {
+      gameMode: "Custom Hardpoint",
+      note: "PS5 only. Anything not listed stays at default.",
+      settings: [
+        { s: "Score Limit", v: "250" },
+        { s: "Time Limit", v: "10 Minutes" },
+        { s: "Respawn Delay", v: "3 Seconds" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+        { s: "In-Game Team Change", v: "Off" },
+        { s: "Dynamic Map Elements", v: "Off" },
+        { s: "3rd-Person Spectating", v: "Off" },
+        { s: "Revenge Voice", v: "Off" },
+        { s: "Battlechatter", v: "Off" },
+        { s: "Friendly Fire", v: "On" },
+      ],
+      weapons: "Same as Search & Destroy",
+      equipment: "Same as Search & Destroy",
+      perks: "Same as Search & Destroy",
+    },
+    "Domination": {
+      gameMode: "Custom Domination",
+      note: "PS5 only. Preset classes are allowed but you must have both required loadouts built. Anything not listed stays at default.",
+      settings: [
+        { s: "Time Limit", v: "10 Minutes" },
+        { s: "Score Limit", v: "200 Points" },
+        { s: "Round Limit", v: "2 Rounds" },
+        { s: "Flag Capture Time", v: "7.5 Seconds" },
+        { s: "Respawn Delay", v: "5 Seconds" },
+        { s: "Friendly Fire", v: "On" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+        { s: "In-Game Team Change", v: "Off" },
+        { s: "Dynamic Map Elements", v: "Off" },
+        { s: "3rd-Person Spectating", v: "Off" },
+        { s: "Revenge Voice", v: "Off" },
+        { s: "Battlechatter", v: "Off" },
+      ],
+      weapons: "Same as Search & Destroy",
+      equipment: "Same as Search & Destroy",
+      perks: "Same as Search & Destroy",
+    },
+    "Capture the Flag": {
+      gameMode: "Custom Capture the Flag",
+      note: "PS5 only. Preset classes are allowed but you must have both required loadouts built. Anything not listed stays at default.",
+      settings: [
+        { s: "Time Limit", v: "10 Minutes" },
+        { s: "Enemy Carrier On Radar", v: "Delayed" },
+        { s: "Round Win Limit", v: "1 Round" },
+        { s: "Capture Limit", v: "10 Flags" },
+        { s: "Respawn Delay", v: "7.5 Seconds" },
+        { s: "Force Respawn", v: "On" },
+        { s: "Wave Respawn Delay", v: "None" },
+        { s: "Friendly Fire", v: "On" },
+        { s: "Scorestreaks", v: "Off", ban: true },
+        { s: "In-Game Team Change", v: "Off" },
+        { s: "Dynamic Map Elements", v: "Off" },
+        { s: "3rd-Person Spectating", v: "Off" },
+        { s: "Revenge Voice", v: "Off" },
+        { s: "Battlechatter", v: "Off" },
+      ],
+      weapons: "Same as Search & Destroy",
+      equipment: "Same as Search & Destroy",
+      perks: "Same as Search & Destroy",
+    },
+  },
+};
+
+// Kill Race / BR modes share the same simple setup
+const KILL_RACE_SETUP = {
+  gameMode: "Standard game mode",
+  note: "No custom settings needed. Play on the standard mode. Most confirmed kills wins. Assists do not count.",
+  settings: [],
+};
+
+const SURVIVAL_SETUP = {
+  gameMode: "Standard game mode",
+  note: "No custom settings needed. Last team alive wins.",
+  settings: [],
+};
+
+export function getMatchSetup(game, mode) {
+  if (MATCH_SETUP[game]?.[mode]) return MATCH_SETUP[game][mode];
+  if (/Kill Race/i.test(mode)) return KILL_RACE_SETUP;
+  if (/Survival/i.test(mode)) return SURVIVAL_SETUP;
+  // Modes that inherit from SND (single-map SND variants)
+  if (/Only SND|CDL Maps SND/i.test(mode) && MATCH_SETUP[game]?.["Search & Destroy"]) {
+    return { ...MATCH_SETUP[game]["Search & Destroy"], note: `Same settings as Search & Destroy. ${mode} map only.` };
+  }
+  // Sake 24/7 or similar
+  if (MATCH_SETUP[game]?.["Search & Destroy"]) {
+    return { ...MATCH_SETUP[game]["Search & Destroy"], note: `Use SND or HP settings depending on the mode agreed in lobby.` };
+  }
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Mode categories — used to organize modes on game pages
@@ -281,7 +657,9 @@ export const MODE_CATEGORIES = {
   "Battle Royale Big Map Kill Race": "killrace",
   "Resurgence Survival": "br",
   "Battle Royale Big Map Survival": "br",
-  "Survival": "br"
+  "Survival": "br",
+  "Domination": "respawn",
+  "Capture the Flag": "respawn"
 };
 
 export const CATEGORY_LABELS = {
@@ -333,8 +711,68 @@ export const calculateWithdrawalNet = (amount) => {
 
 export const NO_SHOW_MINUTES = 5;
 
+// Restricted regions — cash wagering not permitted
+export const RESTRICTED_US_STATES = [
+  "AZ", "AR", "CT", "DE", "LA", "MD", "MT", "SC", "SD", "TN"
+];
+export const RESTRICTED_CA_PROVINCES = ["QC"];
+
+export const US_STATES = [
+  { code: "AL", name: "Alabama" }, { code: "AK", name: "Alaska" }, { code: "AZ", name: "Arizona" },
+  { code: "AR", name: "Arkansas" }, { code: "CA", name: "California" }, { code: "CO", name: "Colorado" },
+  { code: "CT", name: "Connecticut" }, { code: "DE", name: "Delaware" }, { code: "FL", name: "Florida" },
+  { code: "GA", name: "Georgia" }, { code: "HI", name: "Hawaii" }, { code: "ID", name: "Idaho" },
+  { code: "IL", name: "Illinois" }, { code: "IN", name: "Indiana" }, { code: "IA", name: "Iowa" },
+  { code: "KS", name: "Kansas" }, { code: "KY", name: "Kentucky" }, { code: "LA", name: "Louisiana" },
+  { code: "ME", name: "Maine" }, { code: "MD", name: "Maryland" }, { code: "MA", name: "Massachusetts" },
+  { code: "MI", name: "Michigan" }, { code: "MN", name: "Minnesota" }, { code: "MS", name: "Mississippi" },
+  { code: "MO", name: "Missouri" }, { code: "MT", name: "Montana" }, { code: "NE", name: "Nebraska" },
+  { code: "NV", name: "Nevada" }, { code: "NH", name: "New Hampshire" }, { code: "NJ", name: "New Jersey" },
+  { code: "NM", name: "New Mexico" }, { code: "NY", name: "New York" }, { code: "NC", name: "North Carolina" },
+  { code: "ND", name: "North Dakota" }, { code: "OH", name: "Ohio" }, { code: "OK", name: "Oklahoma" },
+  { code: "OR", name: "Oregon" }, { code: "PA", name: "Pennsylvania" }, { code: "RI", name: "Rhode Island" },
+  { code: "SC", name: "South Carolina" }, { code: "SD", name: "South Dakota" }, { code: "TN", name: "Tennessee" },
+  { code: "TX", name: "Texas" }, { code: "UT", name: "Utah" }, { code: "VT", name: "Vermont" },
+  { code: "VA", name: "Virginia" }, { code: "WA", name: "Washington" }, { code: "WV", name: "West Virginia" },
+  { code: "WI", name: "Wisconsin" }, { code: "WY", name: "Wyoming" }, { code: "DC", name: "Washington DC" },
+];
+export const CA_PROVINCES = [
+  { code: "AB", name: "Alberta" }, { code: "BC", name: "British Columbia" }, { code: "MB", name: "Manitoba" },
+  { code: "NB", name: "New Brunswick" }, { code: "NL", name: "Newfoundland" }, { code: "NS", name: "Nova Scotia" },
+  { code: "NT", name: "Northwest Territories" }, { code: "NU", name: "Nunavut" }, { code: "ON", name: "Ontario" },
+  { code: "PE", name: "Prince Edward Island" }, { code: "QC", name: "Quebec" }, { code: "SK", name: "Saskatchewan" },
+  { code: "YT", name: "Yukon" },
+];
+
+export function countryFlag(countryCode) {
+  if (!countryCode) return "";
+  return `https://flagcdn.com/w40/${countryCode.toLowerCase()}.png`;
+}
+
+export function isRegionRestricted(country, stateCode) {
+  if (!country || !stateCode) return false;
+  if (country === "US" && RESTRICTED_US_STATES.includes(stateCode)) return true;
+  if (country === "CA" && RESTRICTED_CA_PROVINCES.includes(stateCode)) return true;
+  return false;
+}
+
+const LATAM_CODES = new Set(["BR","MX","CO","AR","CL","PE","EC","VE","UY","PY","BO","CR","PA","GT","HN","SV","NI","DO","PR","JM","CU","TT"]);
+const EU_CODES = new Set(["DE","FR","IT","ES","NL","BE","AT","SE","NO","DK","FI","PL","PT","IE","CZ","RO","HU","GR","CH","BG","HR","SK","SI","LT","LV","EE","LU","MT","CY"]);
+
+export function regionTag(countryCode) {
+  if (!countryCode) return "";
+  if (countryCode === "US") return "US";
+  if (countryCode === "CA") return "CAN";
+  if (countryCode === "GB") return "UK";
+  if (countryCode === "AU") return "AU";
+  if (LATAM_CODES.has(countryCode)) return "LATAM";
+  if (EU_CODES.has(countryCode)) return "EU";
+  return "";
+}
+
 export const calculateRake = (pot, isWagrMember = false) => {
   const rate = isWagrMember ? RAKE_CONFIG.wagr : RAKE_CONFIG.standard;
+  if (rate === 0) return 0;
   const rake = Math.max(RAKE_CONFIG.minimum, Math.round(pot * rate * 100) / 100);
   return rake >= pot ? 0 : rake;
 };

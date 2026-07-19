@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense, lazy } from "react";
-import { supabaseConfigured, authCallback } from "./lib/supabase";
+import { supabaseConfigured, authCallback, codeExchangePromise } from "./lib/supabase";
 import { useAuth } from "./hooks/useAuth.jsx";
 import { useToast } from "./hooks/useToast.jsx";
 import { TopNav } from "./components/TopNav";
@@ -12,7 +12,10 @@ import { Skeleton } from "./components/Skeleton";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { BannedScreen } from "./components/BannedScreen";
+import { OnboardingModal } from "./components/OnboardingModal";
 import { getNotifications, subscribeToNotifications } from "./services/notificationService";
+import { subscribeToMyPayouts } from "./services/walletService";
+import { WinCelebration } from "./components/WinCelebration";
 import { getMyInvites, subscribeToInvites } from "./services/teamService";
 import { checkBanExpiry } from "./services/banService";
 import { useWebVitals } from "./hooks/useWebVitals";
@@ -20,6 +23,7 @@ import { track } from "./utils/analytics";
 
 // Eager: homepage (first paint)
 import { HomePage } from "./pages/HomePage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 
 // Lazy: everything else — split into chunks on demand
 const MatchfinderPage = lazy(() => import("./pages/MatchfinderPage").then(m => ({ default: m.MatchfinderPage })));
@@ -33,7 +37,8 @@ const WalletPage = lazy(() => import("./pages/WalletPage").then(m => ({ default:
 const ShopPage = lazy(() => import("./pages/ShopPage").then(m => ({ default: m.ShopPage })));
 const RulesPage = lazy(() => import("./pages/RulesPage").then(m => ({ default: m.RulesPage })));
 const PrivacyPage = lazy(() => import("./pages/PrivacyPage").then(m => ({ default: m.PrivacyPage })));
-const SupportPage = lazy(() => import("./pages/SupportPage").then(m => ({ default: m.SupportPage })));
+const TermsPage = lazy(() => import("./pages/TermsPage").then(m => ({ default: m.TermsPage })));
+const TicketsPage = lazy(() => import("./pages/TicketsPage").then(m => ({ default: m.TicketsPage })));
 const NotificationsPage = lazy(() => import("./pages/NotificationsPage").then(m => ({ default: m.NotificationsPage })));
 const LivePage = lazy(() => import("./pages/LivePage").then(m => ({ default: m.LivePage })));
 const BettingPage = lazy(() => import("./pages/BettingPage").then(m => ({ default: m.BettingPage })));
@@ -56,9 +61,9 @@ function PageSkeleton() {
 }
 
 const ROUTE_PATHS = {
-  home: "/", matchfinder: "/matches", tournaments: "/tournaments", teams: "/teams",
+  home: "/home", matchfinder: "/matches", tournaments: "/tournaments", teams: "/teams",
   leaderboard: "/leaderboard", betting: "/betting", wallet: "/wallet", shop: "/shop", live: "/live",
-  rules: "/rules", privacy: "/privacy", support: "/support", notifications: "/notifications",
+  rules: "/rules", privacy: "/privacy", terms: "/terms", support: "/support", notifications: "/notifications",
   "admin-withdrawals": "/admin/withdrawals", "admin-shop": "/admin/shop",
   "admin-bans": "/admin/bans", "admin-disputes": "/admin/disputes",
   "admin-tournaments": "/admin/tournaments", "admin-sidebets": "/admin/sidebets",
@@ -101,14 +106,15 @@ function pathToRoute(pathname) {
   if ((m = pathname.match(/^\/match\/(.+)/))) return { name: "match", param: m[1] };
   if ((m = pathname.match(/^\/game\/(.+)/))) return { name: "game", param: m[1] };
   if ((m = pathname.match(/^\/player\/(.+)/))) return { name: "profile", param: decodeURIComponent(m[1]) };
+  if (pathname === "/") return { name: "home" };
   for (const [name, path] of Object.entries(ROUTE_PATHS)) {
     if (pathname === path) return { name };
   }
-  return { name: "home" };
+  return { name: "notFound" };
 }
 
 export function App() {
-  const { user, profile, loading, bootError } = useAuth();
+  const { user, profile, loading, bootError, refreshProfile } = useAuth();
   const toast = useToast();
   const [route, setRoute] = useState(() => pathToRoute(window.location.pathname));
   const [authOpen, setAuthOpen] = useState(false);
@@ -116,6 +122,8 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [inviteCount, setInviteCount] = useState(0);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const [winPayout, setWinPayout] = useState(null);
   const callbackHandled = useRef(false);
 
   const pageKey = useRef(0);
@@ -131,13 +139,24 @@ export function App() {
   useEffect(() => {
     if (!authCallback.isCallback || loading || callbackHandled.current) return;
     callbackHandled.current = true;
+
+    // Clean the URL now that the exchange is done
     if (window.location.search || window.location.hash.length > 1) {
       window.history.replaceState({}, "", "/");
     }
+
     if (authCallback.error) {
-      toast.error(authCallback.errorDesc || "Verification link expired or is invalid. Please try again.");
+      const desc = authCallback.errorDesc || "";
+      if (desc.includes("expired") || desc.includes("invalid")) {
+        toast.error("Verification link expired or is invalid. Please try again.");
+      } else if (authCallback.error === "exchange_failed") {
+        toast.info("Log in with your username and password to continue.");
+        setAuthOpen(true);
+      } else {
+        toast.error(desc || "Something went wrong. Please try again.");
+      }
     } else if (user) {
-      toast.success("Email verified — welcome to Dubbed!");
+      toast.success("Email verified. Welcome to Dubbed!");
     } else {
       toast.success("Email verified! Log in with your username and password to get started.");
       setAuthOpen(true);
@@ -167,6 +186,15 @@ export function App() {
     return unsub;
   }, [user]);
 
+  // Win-celebration: fire when a winning payout hits my ledger, from any page.
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToMyPayouts(user.id, (row) => {
+      setWinPayout({ amount: row.delta, reason: row.reason });
+      refreshProfile?.();
+    });
+  }, [user, refreshProfile]);
+
   useEffect(() => {
     if (!user) return setInviteCount(0);
     getMyInvites(user.id).then(({ data }) => setInviteCount((data || []).length));
@@ -178,12 +206,14 @@ export function App() {
 
   // Prefetch likely-next routes after idle
   useEffect(() => {
-    const id = requestIdleCallback(() => {
+    const ric = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
+    const cic = window.cancelIdleCallback || clearTimeout;
+    const id = ric(() => {
       prefetchRoute("matchfinder");
       prefetchRoute("game");
       prefetchRoute("profile");
     }, { timeout: 3000 });
-    return () => cancelIdleCallback(id);
+    return () => cic(id);
   }, []);
 
   if (loading) {
@@ -244,7 +274,8 @@ export function App() {
           {route.name === "live" && <LivePage onOpenProfile={(u) => navigate("profile", u)} />}
           {route.name === "rules" && <RulesPage />}
           {route.name === "privacy" && <PrivacyPage />}
-          {route.name === "support" && <SupportPage />}
+          {route.name === "terms" && <TermsPage />}
+          {route.name === "support" && requireAuth(<TicketsPage onNavigate={navigate} />)}
           {route.name === "admin-withdrawals" && requireAuth(<AdminWithdrawalsPage />)}
           {route.name === "admin-shop" && requireAuth(<AdminShopPage />)}
           {route.name === "admin-bans" && requireAuth(<AdminBansPage />)}
@@ -256,7 +287,8 @@ export function App() {
           {route.name === "admin-seasons" && requireAuth(<AdminSeasonsPage />)}
           {route.name === "admin-escalations" && requireAuth(<AdminEscalationsPage onNavigate={navigate} />)}
           {route.name === "notifications" && requireAuth(<NotificationsPage onNavigate={navigate} />)}
-          {route.name === "profile" && <ProfilePage username={route.param || profile?.username} />}
+          {route.name === "profile" && <ProfilePage username={route.param || profile?.username} onNavigate={navigate} />}
+          {route.name === "notFound" && <NotFoundPage onNavigate={navigate} />}
           </Suspense>
           </ErrorBoundary>
           </div>
@@ -287,7 +319,7 @@ export function App() {
             </div>
             <div className="footerCol">
               <b>Dubbed</b>
-              <button onClick={() => navigate("rules")}>Terms of Service</button>
+              <button onClick={() => navigate("terms")}>Terms of Service</button>
               <button onClick={() => navigate("privacy")}>Privacy Policy</button>
               <button onClick={() => navigate("support")}>Support</button>
             </div>
@@ -302,6 +334,12 @@ export function App() {
       <MobileNav view={route.name} onNavigate={navigate} />
       <ChatDock open={chatOpen} onToggle={() => setChatOpen((o) => !o)} onLogin={() => setAuthOpen(true)} />
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} />
+      {user && profile && !profile.activision_id && !onboardingDismissed && !authOpen && (
+        <OnboardingModal onComplete={() => setOnboardingDismissed(true)} />
+      )}
+      {winPayout && (
+        <WinCelebration amount={winPayout.amount} reason={winPayout.reason} onClose={() => setWinPayout(null)} />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import React from "react";
-import { Zap, Trophy, ShieldCheck, DollarSign, ChevronRight, Swords, Gamepad2, Wallet, TrendingUp, Target } from "lucide-react";
+import { usePageMeta } from "../hooks/usePageMeta";
+import { Zap, Trophy, ShieldCheck, DollarSign, ChevronRight, Swords, Gamepad2, Wallet, TrendingUp, Target, Users, Crown } from "lucide-react";
 import { Button } from "../components/Button";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
@@ -9,6 +10,8 @@ import { listOpenMatches, joinMatch } from "../services/matchService";
 import { supabase } from "../lib/supabase";
 import { CURRENT_GAMES, shortForGame, formatLabel, calculatePayout, RAKE_CONFIG } from "../utils/games";
 import { money } from "../utils/format";
+import { clickable } from "../utils/a11y";
+import { LiveActivity } from "../components/LiveActivity";
 import { RankStar } from "../components/RankStar";
 import { WagrBadge } from "../components/WagrBadge";
 import { rankForXp, rankProgress, nextRank } from "../utils/ranks";
@@ -19,10 +22,13 @@ import mw4Cover from "../assets/mw4.png";
 import wwiiCover from "../assets/wwii.png";
 import bo1Cover from "../assets/bo1.png";
 import bo2Cover from "../assets/bo2.png";
+import cashMatchLogo from "../assets/cash-match.png";
+import tournamentLogo from "../assets/tournament.png";
 
-const COVERS = { bo7: bo7Cover, warzone: wzCover, bor: wzCover, mw4: mw4Cover, wwii: wwiiCover, bo1: bo1Cover, bo2: bo2Cover };
+const COVERS = { bo7: bo7Cover, warzone: wzCover, bor: bo7Cover, mw4: mw4Cover, wwii: wwiiCover, bo1: bo1Cover, bo2: bo2Cover };
 
 export function HomePage({ onNavigate, onLogin }) {
+  usePageMeta("Home", "Cash matches, XP ladders, and tournaments for Call of Duty. 1v1 to 4v4 across every COD title. Play for free or wager real money.");
   const { profile, refreshProfile } = useAuth();
   const toast = useToast();
   const { data: matches, reload } = useAsync(() => listOpenMatches({}), []);
@@ -49,22 +55,35 @@ export function HomePage({ onNavigate, onLogin }) {
       <section className="heroPanel">
         <div className="heroGlow" />
         <div className="heroInner">
-          <div className="heroTag">COMPETITIVE WAGER PLATFORM</div>
-          <h1>Wager. Win. Get&nbsp;Paid.</h1>
-          <p>Real money wagers on Call of Duty. Solo, duos, trios, and full squads. Post a lobby, set your entry, play the match, and get paid. It's that simple.</p>
+          {profile ? (
+            <>
+              <div className="heroTag">WELCOME BACK</div>
+              <h1>What's good, {profile.username}.</h1>
+              <p>Your arena is live. Jump into a match, climb the ranks, or catch a tournament. You already know the vibes.</p>
+            </>
+          ) : (
+            <>
+              <div className="heroTag">THE ARENA IS OPEN</div>
+              <h1>Where the real ones&nbsp;play.</h1>
+              <p>Cash matches. XP ladders. Tournaments with real brackets. This is your home court. Show up, compete, and prove you're that guy. No gatekeeping, no fees to enter XP matches. Just run it.</p>
+            </>
+          )}
           <div className="heroActions">
-            <Button variant="primary" onClick={() => onNavigate("matchfinder")}><Zap size={16} /> Find a match</Button>
-            <Button variant="ghost" onClick={() => onNavigate("tournaments")}>Browse tournaments</Button>
+            <Button variant="primary" onClick={() => onNavigate("matchfinder")}><Swords size={16} /> Find a match</Button>
+            <Button variant="ghost" onClick={() => onNavigate("tournaments")}><Trophy size={15} /> Tournaments</Button>
           </div>
         </div>
         {(platformStats.total_matches > 0 || platformStats.open_lobbies > 0) && (
           <div className="heroStats">
-            <div className="heroStat"><b>{money(platformStats.total_winnings)}</b><small>WINNINGS PAID</small></div>
             <div className="heroStat"><b>{platformStats.total_matches.toLocaleString()}</b><small>MATCHES PLAYED</small></div>
-            <div className="heroStat"><b>{platformStats.open_lobbies}</b><small>OPEN LOBBIES</small></div>
+            <div className="heroStat"><b>{money(platformStats.total_winnings)}</b><small>PAID OUT</small></div>
+            <div className="heroStat"><b>{platformStats.open_lobbies}</b><small>OPEN NOW</small></div>
           </div>
         )}
       </section>
+
+      {/* ── LIVE ACTIVITY PULSE ── */}
+      <LiveActivity onNavigate={onNavigate} />
 
       {/* ── LOGGED-IN USER CARD ── */}
       {profile && <UserQuickCard profile={profile} onNavigate={onNavigate} />}
@@ -128,46 +147,73 @@ export function HomePage({ onNavigate, onLogin }) {
 
       {/* ── HOW IT WORKS ── */}
       <section className="howSection">
-        <div className="sectionHead center">
-          <div><div className="eyebrow">HOW IT WORKS</div><h2>Three steps to getting paid</h2></div>
+        <div className="sectionHead">
+          <div><div className="eyebrow">HOW IT WORKS</div><h2>From lobby to payout</h2></div>
         </div>
         <div className="howGrid">
           <div className="howStep">
             <div className="howNum">1</div>
             <b>Post or Accept</b>
-            <p>Pick your game, mode, team size, and entry fee. Or jump into an open lobby. Your entry is held in escrow until the match settles.</p>
+            <p>Pick your game, mode, and team size. Want to play for cash? Set your entry. Want free comp? Run XP matches. Either way, lobbies fill fast.</p>
           </div>
           <div className="howStep">
             <div className="howNum">2</div>
             <b>Play & Report</b>
-            <p>Play your match. When it's over, both sides report scores and upload proof. If results don't match, an admin reviews it.</p>
+            <p>Play your match on CDL rules. When it's over, both sides report scores with proof. Clean, fair, no drama.</p>
           </div>
           <div className="howStep">
             <div className="howNum">3</div>
-            <b>Win & Cash Out</b>
-            <p>Winnings land in your Dubbed wallet instantly. Cash out anytime to your crypto wallet — no minimum wait, no hoops.</p>
+            <b>Collect</b>
+            <p>Cash hits your wallet instantly. XP climbs your rank. Earn trophies in tournaments. Cash out to crypto whenever you want.</p>
           </div>
         </div>
       </section>
 
       {/* ── MONETIZATION / RAKE INFO ── */}
       <section className="rakeSection">
-        <div className="sectionHead center">
-          <div><div className="eyebrow">TRANSPARENT FEES</div><h2>Know exactly what you pay</h2></div>
+        <div className="sectionHead">
+          <div><h2>Know exactly what you pay</h2></div>
         </div>
         <div className="rakeGrid">
           <div className="rakeCard">
             <div className="rakeIcon"><DollarSign size={22} /></div>
             <b>Standard</b>
             <span className="rakeRate">{RAKE_CONFIG.standard * 100}% rake</span>
-            <p>Free accounts pay {RAKE_CONFIG.standard * 100}% of the pot. On a $20 pot, that's $1. Winner takes ${calculatePayout(20, false)}.</p>
+            <p>Free accounts pay {RAKE_CONFIG.standard * 100}% of the pot. On a $20 pot, that's $1. Winner takes {money(calculatePayout(20, false))}.</p>
           </div>
           <div className="rakeCard wagr">
             <div className="rakeIcon gold"><Trophy size={22} /></div>
             <b>WAGR Member</b>
             <span className="rakeRate gold">{RAKE_CONFIG.wagr * 100}% rake</span>
-            <p>WAGR members pay zero rake. Same $20 pot, you keep it all. Winner takes ${calculatePayout(20, true)}.</p>
+            <p>WAGR members pay zero rake. Same $20 pot, you keep it all. Winner takes {money(calculatePayout(20, true))}.</p>
             <Button variant="primary" className="btn-sm" onClick={() => onNavigate("shop")}>Get WAGR</Button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── TEAM TYPES ── */}
+      <section className="teamTypesSection">
+        <div className="sectionHead center">
+          <div><div className="eyebrow">BUILD YOUR SQUAD</div><h2>Three ways to compete</h2></div>
+        </div>
+        <div className="teamTypesGrid">
+          <div className="teamTypeCard xp" {...clickable(() => onNavigate("teams"))}>
+            <div className="teamTypeIcon"><Zap size={24} /></div>
+            <h3>XP Teams</h3>
+            <p>Grind ranks for free. No entry fee, no risk. Build your record, climb the leaderboard, and prove yourself before going cash.</p>
+            <span className="teamTypeAction">Create XP team <ChevronRight size={14} /></span>
+          </div>
+          <div className="teamTypeCard cash" {...clickable(() => onNavigate("teams"))}>
+            <img className="teamTypeLogo" src={cashMatchLogo} alt="Cash Match" />
+            <h3>Cash Teams</h3>
+            <p>Play for real money. Set your entry, winner takes the pot. WAGR members play rake-free. Cash out to crypto anytime.</p>
+            <span className="teamTypeAction">Create cash team <ChevronRight size={14} /></span>
+          </div>
+          <div className="teamTypeCard tournament" {...clickable(() => onNavigate("teams"))}>
+            <img className="teamTypeLogo" src={tournamentLogo} alt="Tournaments" />
+            <h3>Tournament Teams</h3>
+            <p>Enter brackets with your squad. Compete in organized events with prize pools, trophies, and bragging rights.</p>
+            <span className="teamTypeAction">Create tourney team <ChevronRight size={14} /></span>
           </div>
         </div>
       </section>
@@ -175,10 +221,10 @@ export function HomePage({ onNavigate, onLogin }) {
       {/* ── FEATURES ── */}
       <section className="featureGrid">
         {[
-          { Icon: Zap, t: "Instant Wagers", d: "Pick your game, mode, and team size. Post a lobby or jump into one. Matches fill fast." },
-          { Icon: Trophy, t: "Tournaments & Brackets", d: "SND, Hardpoint, Kill Race, and BR brackets with real prize pools. Win a trophy that lives on your profile." },
-          { Icon: Swords, t: "Side Betting", d: "Put money on CDL series and streamer matchups. Dubbed holds the pot and pays the winner. No bookmakers, just players." },
-          { Icon: ShieldCheck, t: "Fair Play Guaranteed", d: "CDL rulesets, map veto, host-region logic, and admin-reviewed results. Every match is played on a level field." }
+          { Icon: Swords, t: "Cash & XP Matches", d: "Play for money or grind XP for free. 1v1 to 4v4, any mode, any rules. You set the terms." },
+          { Icon: Trophy, t: "Tournaments", d: "Real brackets, real trophies. SnD, Hardpoint, Kill Race. Compete in organized events with prize pools." },
+          { Icon: Zap, t: "Rank System", d: "Every match moves your rank. Climb the ladder from Bronze to Legendary and show up on the leaderboard." },
+          { Icon: ShieldCheck, t: "Fair Play", d: "CDL rulesets, map veto, host-region logic, and admin review for cash matches. Level playing field, always." }
         ].map(({ Icon, t, d }) => (
           <div className="featureCard" key={t}>
             <div className="featureIcon"><Icon size={20} /></div>
@@ -191,10 +237,10 @@ export function HomePage({ onNavigate, onLogin }) {
       {!profile && (
         <section className="ctaStrip">
           <div>
-            <h2>Ready to run it?</h2>
-            <p>Create your account, deposit, and post your first match in under a minute.</p>
+            <h2>Pull up.</h2>
+            <p>Create your account and post your first match in under a minute. Free XP matches, no deposit needed.</p>
           </div>
-          <Button variant="primary" onClick={onLogin}>Get started <ChevronRight size={16} /></Button>
+          <Button variant="primary" onClick={onLogin}>Create account <ChevronRight size={16} /></Button>
         </section>
       )}
     </main>

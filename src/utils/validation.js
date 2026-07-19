@@ -1,5 +1,5 @@
 // Username rules (per product spec):
-//  - 1 to 8 characters
+//  - 1 to 12 characters
 //  - special characters allowed
 //  - no profanity
 // Passwords and email are handled by Supabase Auth; we only validate email shape
@@ -32,8 +32,9 @@ export function containsProfanity(name) {
 export function validateUsername(name) {
   const value = String(name ?? "");
   if (value.length < 1) return "Username is required.";
-  if (value.length > 8) return "Username must be 8 characters or less.";
+  if (value.length > 12) return "Username must be 12 characters or less.";
   if (/\s/.test(value)) return "Username can't contain spaces.";
+  if (/[<>]/.test(value)) return "Username can't contain < or >.";
   if (containsProfanity(value)) return "That username isn't allowed.";
   return "";
 }
@@ -47,7 +48,7 @@ export function validateEmail(email) {
 }
 
 export function validatePassword(pw) {
-  if (String(pw ?? "").length < 6) return "Password must be at least 6 characters.";
+  if (String(pw ?? "").length < 8) return "Password must be at least 8 characters.";
   return "";
 }
 

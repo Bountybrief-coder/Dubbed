@@ -927,7 +927,7 @@ returns numeric language sql immutable as $$
   select case p_item
     when 'username_change' then 2.99
     when 'stat_reset'      then 4.99
-    when 'wagr_membership' then 4.99
+    when 'wagr_membership' then 7.99
     when 'double_xp_token' then 0.99
     else null
   end

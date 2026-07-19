@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
+import { clickable } from "../utils/a11y";
 import { ShieldCheck, Search, Award, XCircle, Dice5, Plus, Lock, Trophy, Clock } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
@@ -18,7 +19,7 @@ const CDL_TEAMS = [
   "Boston Breach", "Carolina Royal Ravens", "Cloud9 New York",
   "FaZe Vegas", "G2 Minnesota", "Los Angeles Thieves",
   "Miami Heretics", "OpTic Texas", "Paris Gentle Mates",
-  "Riyadh Falcons", "Toronto KOI", "Vancouver Surge"
+  "Riyadh Falcons", "Toronto KOI", "Vancouver Surge",
 ];
 
 export function AdminSideBetsPage() {
@@ -160,10 +161,10 @@ function P2POfferRow({ offer, onSettle, onVoid }) {
         <span className={`statusChip ${offer.status === "open" ? "s-active" : offer.status === "matched" ? "s-pending" : offer.status === "settled" ? "s-paid" : "s-rejected"}`}>
           {offer.status}
         </span>
-        <span style={{ color: "var(--muted)", fontSize: 12 }}>${Number(offer.stake).toFixed(2)} each</span>
+        <span style={{ color: "var(--muted)", fontSize: 12 }}>{money(offer.stake)} each</span>
       </div>
       <div className="adminWdMeta">
-        <span>Creator: {offer.creator?.username || "?"} — "{offer.creator_pick}"</span>
+        <span>Creator: {offer.creator?.username || "?"} · "{offer.creator_pick}"</span>
         {offer.acceptor?.username && <span>Acceptor: {offer.acceptor.username}</span>}
         <span>{offer.section} · {offer.market}</span>
         {offer.winner_pick && <span><Trophy size={11} /> Winner: {offer.winner_pick}</span>}
@@ -198,7 +199,7 @@ function P2PSettleModal({ offer, onClose, onDone, toast }) {
       <div style={{ marginBottom: 12 }}>
         <p style={{ color: "var(--muted)", fontSize: 13 }}>
           <strong>{offer.creator?.username}</strong> picked "{offer.creator_pick}" · <strong>{offer.acceptor?.username}</strong> took the other side.
-          <br />Pot: ${(Number(offer.stake) * 2).toFixed(2)} (each put up ${Number(offer.stake).toFixed(2)}).
+          <br />Pot: {money(offer.stake * 2)} (each put up {money(offer.stake)}).
         </p>
       </div>
       <label className="fieldLbl">Who won?</label>
@@ -217,7 +218,7 @@ function P2PSettleModal({ offer, onClose, onDone, toast }) {
         if (error) return toast.error(error);
         toast.success(`Settled! ${winner === "creator" ? offer.creator?.username : offer.acceptor?.username} wins.`);
         onDone(); onClose();
-      }}>Settle — {winner ? (winner === "creator" ? offer.creator?.username : offer.acceptor?.username) : "..."} wins</Button>
+      }}>Settle · {winner ? (winner === "creator" ? offer.creator?.username : offer.acceptor?.username) : "..."} wins</Button>
     </Modal>
   );
 }
@@ -332,7 +333,7 @@ function CreateEventModal({ onClose, onDone, toast }) {
           {options.length > 0 && (
             <div className="chipRow wrap" style={{ marginTop: 6 }}>
               {options.map((o) => (
-                <span key={o} className="badge" style={{ cursor: "pointer" }} onClick={() => setOptions((ops) => ops.filter((x) => x !== o))}>{o} ×</span>
+                <span key={o} className="badge" {...clickable(() => setOptions((ops) => ops.filter((x) => x !== o)))}>{o} ×</span>
               ))}
             </div>
           )}
@@ -374,7 +375,7 @@ function SettleModal({ ev, onClose, onDone, toast }) {
         if (error) return toast.error(error);
         toast.success(`Settled! ${winner} wins.`);
         onDone(); onClose();
-      }}>Settle — {winner || "..."} wins</Button>
+      }}>Settle · {winner || "..."} wins</Button>
     </Modal>
   );
 }

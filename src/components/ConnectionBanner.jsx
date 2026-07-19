@@ -20,7 +20,7 @@ export function ConnectionBanner() {
   return (
     <div className="connectionBanner">
       <WifiOff size={14} />
-      <span>You're offline — reconnecting…</span>
+      <span>You're offline. Reconnecting…</span>
     </div>
   );
 }

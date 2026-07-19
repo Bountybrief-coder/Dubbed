@@ -37,3 +37,18 @@ export async function deleteLfgPost(postId) {
     .eq("id", postId);
   return { error: error?.message };
 }
+
+export async function respondToLfg(postId) {
+  const { data, error } = await supabase.rpc("respond_to_lfg", { p_post_id: postId });
+  return { id: data, error: error?.message };
+}
+
+export async function withdrawLfgResponse(postId) {
+  const { error } = await supabase.rpc("withdraw_lfg_response", { p_post_id: postId });
+  return { error: error?.message };
+}
+
+export async function getLfgResponses(postId) {
+  const { data, error } = await supabase.rpc("get_lfg_responses", { p_post_id: postId });
+  return { data: data || [], error: error?.message };
+}

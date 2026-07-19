@@ -6,9 +6,9 @@ import starMaster from "../assets/ranks/star-master.png";
 // XP tiers use the custom star art: Blue -> Purple -> Red -> Gold.
 export const XP_RANKS = [
   { name: "Rookie", xp: 0,      img: starRookie, glow: "#3aa0ff" },
-  { name: "Elite",  xp: 25000,  img: starElite,  glow: "#a15cff" },
-  { name: "Legend", xp: 75000,  img: starLegend, glow: "#ff3b5c" },
-  { name: "Master", xp: 150000, img: starMaster, glow: "#ffc23c" }
+  { name: "Elite",  xp: 16500,  img: starElite,  glow: "#a15cff" },
+  { name: "Legend", xp: 50000,  img: starLegend, glow: "#ff3b5c" },
+  { name: "Master", xp: 100000, img: starMaster, glow: "#ffc23c" }
 ];
 
 export const rankForXp = (xp = 0) =>

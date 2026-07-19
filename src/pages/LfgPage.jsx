@@ -1,10 +1,13 @@
 import React, { useState, useCallback } from "react";
-import { Users, Plus, Mic, MicOff, Clock, Gamepad2, Monitor, Globe, X, Trash2 } from "lucide-react";
+import { clickable } from "../utils/a11y";
+import { usePageMeta } from "../hooks/usePageMeta";
+import { Users, Plus, Mic, MicOff, Clock, Gamepad2, Monitor, Globe, X, Trash2, UserPlus, UserMinus, ChevronDown, ChevronUp, Copy } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
+import { useConfirm } from "../hooks/useConfirm.jsx";
 import { useAsync } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
-import { listLfgPosts, createLfgPost, fillLfgPost, deleteLfgPost } from "../services/lfgService";
+import { listLfgPosts, createLfgPost, fillLfgPost, deleteLfgPost, respondToLfg, withdrawLfgResponse, getLfgResponses } from "../services/lfgService";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { SkeletonRows } from "../components/Skeleton";
@@ -13,19 +16,10 @@ import { WagrBadge } from "../components/WagrBadge";
 import { RankStar } from "../components/RankStar";
 import { rankForXp } from "../utils/ranks";
 import { CURRENT_GAMES } from "../utils/games";
+import { timeAgo } from "../utils/format";
 
 const REGIONS   = ["NA", "EU"];
 const PLATFORMS = ["PC", "Console"];
-
-function timeAgo(iso) {
-  const ms = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(ms / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
-}
 
 function expiresIn(iso) {
   const ms = new Date(iso).getTime() - Date.now();
@@ -36,12 +30,16 @@ function expiresIn(iso) {
 }
 
 export function LfgPage({ onLogin, onNavigate }) {
+  usePageMeta("Find Teammates", "Looking for teammates? Post an LFG listing or browse players looking for a squad in Call of Duty.");
   const { user, profile } = useAuth();
   const toast = useToast();
+  const confirm = useConfirm();
   const [gameFilter, setGameFilter] = useState(null);
   const [platFilter, setPlatFilter] = useState(null);
   const [regionFilter, setRegionFilter] = useState(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [expandedPost, setExpandedPost] = useState(null);
+  const [responding, setResponding] = useState(null);
 
   const filters = { game: gameFilter, platform: platFilter, region: regionFilter };
   const fetchPosts = useCallback(() => listLfgPosts(filters), [gameFilter, platFilter, regionFilter]);
@@ -49,7 +47,6 @@ export function LfgPage({ onLogin, onNavigate }) {
   useVisibilityRefresh(reload, [gameFilter, platFilter, regionFilter]);
 
   const posts = data || [];
-  const myPosts = posts.filter(p => p.user_id === user?.id);
 
   async function handleFill(postId) {
     const res = await fillLfgPost(postId);
@@ -58,10 +55,48 @@ export function LfgPage({ onLogin, onNavigate }) {
     reload();
   }
 
-  async function handleDelete(postId) {
+  async function handleDelete(post) {
+    const postId = typeof post === "object" ? post.id : post;
+    const responses = typeof post === "object" ? (post.response_count || 0) : 0;
+    if (responses > 0) {
+      const ok = await confirm({
+        title: "Delete this post?",
+        message: `${responses} player${responses === 1 ? " has" : "s have"} shown interest. Deleting removes it for everyone.`,
+        confirmLabel: "Delete post",
+      });
+      if (!ok) return;
+    }
     const res = await deleteLfgPost(postId);
     if (res.error) return toast.error(res.error);
+    toast.success("Post deleted.");
     reload();
+  }
+
+  async function handleJoin(postId) {
+    if (!user) return onLogin?.();
+    setResponding(postId);
+    const res = await respondToLfg(postId);
+    setResponding(null);
+    if (res.error) return toast.error(res.error);
+    toast.success("You're in! The poster has been notified.");
+    reload();
+  }
+
+  async function handleWithdraw(postId) {
+    setResponding(postId);
+    const res = await withdrawLfgResponse(postId);
+    setResponding(null);
+    if (res.error) return toast.error(res.error);
+    reload();
+  }
+
+  function copyGamertag(tag) {
+    if (!tag) return;
+    if (!navigator.clipboard) return toast.info(`Copy it manually: ${tag}`);
+    navigator.clipboard.writeText(tag).then(
+      () => toast.success("Gamertag copied!"),
+      () => toast.info(`Couldn't copy — copy it manually: ${tag}`)
+    );
   }
 
   return (
@@ -72,13 +107,12 @@ export function LfgPage({ onLogin, onNavigate }) {
         <p className="sub">Post or browse to find players for your next match.</p>
       </div>
 
-      {/* ── Filters + Create ── */}
       <div className="lfgControls">
         <div className="lfgFilters">
           <div className="lfgFilterGroup">
             <select className="lfgSelect" value={gameFilter || ""} onChange={e => setGameFilter(e.target.value || null)}>
               <option value="">All Games</option>
-              {CURRENT_GAMES.map(g => <option key={g.slug} value={g.slug}>{g.label}</option>)}
+              {CURRENT_GAMES.map(g => <option key={g.slug} value={g.slug}>{g.name}</option>)}
             </select>
           </div>
           <div className="lfgFilterGroup">
@@ -102,14 +136,13 @@ export function LfgPage({ onLogin, onNavigate }) {
         </Button>
       </div>
 
-      {/* ── Posts ── */}
       {loading ? <SkeletonRows rows={5} /> : error ? (
         <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
       ) : posts.length === 0 ? (
         <EmptyState icon={Users} title="No active LFG posts">
           {gameFilter || platFilter || regionFilter
             ? "Try removing a filter or post your own."
-            : "Be the first — post an LFG and find your squad."}
+            : "Be the first. Post an LFG and find your squad."}
         </EmptyState>
       ) : (
         <div className="lfgGrid">
@@ -117,10 +150,11 @@ export function LfgPage({ onLogin, onNavigate }) {
             const rank = rankForXp(post.xp || 0);
             const isMine = user && post.user_id === user.id;
             const gameObj = CURRENT_GAMES.find(g => g.slug === post.game);
+            const isExpanded = expandedPost === post.id;
             return (
               <div key={post.id} className={`lfgCard ${isMine ? "mine" : ""}`}>
                 <div className="lfgCardTop">
-                  <div className="lfgCardUser" onClick={() => onNavigate?.("profile", post.username)}>
+                  <div className="lfgCardUser" {...clickable(() => onNavigate?.("profile", post.username))}>
                     <div className="lfgAvatar" style={{ borderColor: rank.glow }}>
                       {post.avatar_url ? <img src={post.avatar_url} alt="" /> : <span>{(post.username || "?").slice(0, 2)}</span>}
                     </div>
@@ -137,8 +171,14 @@ export function LfgPage({ onLogin, onNavigate }) {
                   </div>
                 </div>
 
+                {post.activision_id && (
+                  <div className="lfgGamertag" {...clickable(() => copyGamertag(post.activision_id))}>
+                    <Gamepad2 size={12} /> {post.activision_id} <Copy size={10} />
+                  </div>
+                )}
+
                 <div className="lfgCardTags">
-                  {gameObj && <span className="lfgTag game"><Gamepad2 size={12} /> {gameObj.label}</span>}
+                  {gameObj && <span className="lfgTag game"><Gamepad2 size={12} /> {gameObj.short}</span>}
                   {post.mode && <span className="lfgTag">{post.mode}</span>}
                   {post.platform && <span className="lfgTag"><Monitor size={12} /> {post.platform}</span>}
                   {post.region && <span className="lfgTag"><Globe size={12} /> {post.region}</span>}
@@ -146,15 +186,54 @@ export function LfgPage({ onLogin, onNavigate }) {
                   <span className={`lfgTag ${post.mic_required ? "mic-on" : "mic-off"}`}>
                     {post.mic_required ? <><Mic size={12} /> Mic</>: <><MicOff size={12} /> No mic</>}
                   </span>
+                  {post.response_count > 0 && (
+                    <span className="lfgTag interested"><UserPlus size={12} /> {post.response_count} interested</span>
+                  )}
                 </div>
 
                 {post.message && <p className="lfgMessage">{post.message}</p>}
 
-                {isMine && (
-                  <div className="lfgCardActions">
-                    <Button size="sm" variant="primary" onClick={() => handleFill(post.id)}>Mark Filled</Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleDelete(post.id)}><Trash2 size={13} /></Button>
-                  </div>
+                <div className="lfgCardActions">
+                  {isMine ? (
+                    <>
+                      <Button size="sm" variant="primary" onClick={() => handleFill(post.id)}>Mark Filled</Button>
+                      {post.response_count > 0 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setExpandedPost(isExpanded ? null : post.id)}
+                        >
+                          {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                          {post.response_count} {post.response_count === 1 ? "Player" : "Players"}
+                        </Button>
+                      )}
+                      <Button size="sm" variant="ghost" aria-label="Delete LFG post" onClick={() => handleDelete(post)}><Trash2 size={13} /></Button>
+                    </>
+                  ) : user ? (
+                    post.my_response ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={UserMinus}
+                        loading={responding === post.id}
+                        onClick={() => handleWithdraw(post.id)}
+                      >Withdraw</Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        icon={UserPlus}
+                        loading={responding === post.id}
+                        onClick={() => handleJoin(post.id)}
+                      >I'm Interested</Button>
+                    )
+                  ) : (
+                    <Button size="sm" variant="primary" icon={UserPlus} onClick={() => onLogin?.()}>I'm Interested</Button>
+                  )}
+                </div>
+
+                {isMine && isExpanded && (
+                  <InterestedList postId={post.id} onNavigate={onNavigate} onCopy={copyGamertag} />
                 )}
               </div>
             );
@@ -170,6 +249,39 @@ export function LfgPage({ onLogin, onNavigate }) {
         />
       )}
     </main>
+  );
+}
+
+function InterestedList({ postId, onNavigate, onCopy }) {
+  const fetchResponses = useCallback(() => getLfgResponses(postId), [postId]);
+  const { data, loading } = useAsync(fetchResponses, [postId]);
+  const players = data || [];
+
+  if (loading) return <div className="lfgInterestedList"><span className="spinner" style={{ width: 16, height: 16 }} /></div>;
+  if (!players.length) return <div className="lfgInterestedList"><span className="lfgInterestedEmpty">No responses yet</span></div>;
+
+  return (
+    <div className="lfgInterestedList">
+      {players.map(p => {
+        const rank = rankForXp(p.xp || 0);
+        return (
+          <div key={p.id} className="lfgInterestedRow">
+            <div className="lfgInterestedUser" {...clickable(() => onNavigate?.("profile", p.username))}>
+              <div className="lfgAvatar" style={{ borderColor: rank.glow, width: 28, height: 28, fontSize: 10 }}>
+                {p.avatar_url ? <img src={p.avatar_url} alt="" /> : <span>{(p.username || "?").slice(0, 2)}</span>}
+              </div>
+              <span>{p.username}</span>
+              {p.wagr_member && <WagrBadge size={10} />}
+            </div>
+            {p.activision_id && (
+              <button className="lfgGamertagCopy" onClick={() => onCopy(p.activision_id)} title="Copy gamertag">
+                <Gamepad2 size={11} /> {p.activision_id} <Copy size={9} />
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -208,12 +320,12 @@ function CreateLfgModal({ onClose, onCreated, profile }) {
   }
 
   return (
-    <Modal title="Post LFG" onClose={onClose}>
+    <Modal open title="Post LFG" onClose={onClose}>
       <form onSubmit={handleSubmit} className="lfgForm">
         <label>
           <span>Game</span>
           <select value={form.game} onChange={e => set("game", e.target.value)}>
-            {CURRENT_GAMES.map(g => <option key={g.slug} value={g.slug}>{g.label}</option>)}
+            {CURRENT_GAMES.map(g => <option key={g.slug} value={g.slug}>{g.name}</option>)}
           </select>
         </label>
         <div className="lfgFormRow">

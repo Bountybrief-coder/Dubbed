@@ -29,8 +29,7 @@ export function YouTubeIcon({ size = 16 }) {
 export function PSNIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M9.5 3v18l-4.2-1.5v-2.3l4.2 1.5V12H6.2c-1.8 0-3.2-.8-3.2-2.7 0-2 1.5-3.3 3.5-3.8L9.5 3zm0 5.2l-2 .7c-.8.3-1.3.9-1.3 1.6 0 .7.5 1 1.3.7l2-.7V8.2z" fill="#0070D1"/>
-      <path d="M14 9.5V17l-2 .7V10l5.5-2c1.6-.5 3.5.1 3.5 2 0 1.6-1.2 2.7-3 3.2l-4 1.4v-2.3l3.2-1.1c.7-.2 1-.7 1-1.2 0-.5-.4-.8-1-.6L14 9.5z" fill="#0070D1"/>
+      <text x="12" y="17" textAnchor="middle" fontFamily="Arial,Helvetica,sans-serif" fontSize="15" fontWeight="900" fill="#006FCD">PS</text>
     </svg>
   );
 }
@@ -38,8 +37,26 @@ export function PSNIcon({ size = 16 }) {
 export function XboxIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="11" stroke="#107C10" strokeWidth="2" fill="none"/>
-      <path d="M8 8l4 4 4-4M8 16l4-4 4 4" stroke="#107C10" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx="12" cy="12" r="10" stroke="#107C10" strokeWidth="2.5" fill="none"/>
+      <text x="12" y="17" textAnchor="middle" fontFamily="Arial,Helvetica,sans-serif" fontSize="14" fontWeight="900" fill="#107C10">X</text>
+    </svg>
+  );
+}
+
+export function BattlenetIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="#00AEFF" strokeWidth="1.5" fill="none" opacity=".5"/>
+      <text x="12" y="17" textAnchor="middle" fontFamily="Arial,Helvetica,sans-serif" fontSize="12" fontWeight="900" fill="#00AEFF">B</text>
+    </svg>
+  );
+}
+
+export function SteamIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="#1B2838" strokeWidth="1.5" fill="none" opacity=".5"/>
+      <text x="12" y="17" textAnchor="middle" fontFamily="Arial,Helvetica,sans-serif" fontSize="14" fontWeight="900" fill="#c6d4df">S</text>
     </svg>
   );
 }
@@ -47,8 +64,8 @@ export function XboxIcon({ size = 16 }) {
 export function ActivisionIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="11" stroke="#fff" strokeWidth="1.5" fill="none" opacity=".5"/>
-      <path d="M8 16l4-10 4 10M9.5 13h5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+      <circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="1.5" fill="none" opacity=".5"/>
+      <text x="12" y="17" textAnchor="middle" fontFamily="Arial,Helvetica,sans-serif" fontSize="14" fontWeight="900" fill="#fff">A</text>
     </svg>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from "react";
+import { usePageMeta } from "../hooks/usePageMeta";
 import { Trophy, Crown, Flame, TrendingUp, DollarSign, Percent, Filter, ChevronRight, Calendar } from "lucide-react";
 import { useAsync, useCountdown } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
@@ -11,6 +12,7 @@ import { RankStar } from "../components/RankStar";
 import { WagrBadge } from "../components/WagrBadge";
 import { rankForXp } from "../utils/ranks";
 import { ordinal, money } from "../utils/format";
+import { countryFlag } from "../utils/games";
 
 const BOARDS = [
   { key: "xp",       label: "XP",         Icon: TrendingUp },
@@ -34,7 +36,7 @@ function metricValue(p, metric) {
   switch (metric) {
     case "earnings": return money(p.earnings);
     case "streak":   return `${p.streak || 0}🔥`;
-    case "winpct":   return total ? `${Math.round((p.wins / total) * 100)}%` : "—";
+    case "winpct":   return total ? `${Math.round((p.wins / total) * 100)}%` : "-";
     default:         return `${(p.xp || 0).toLocaleString()} XP`;
   }
 }
@@ -74,6 +76,7 @@ function sinceDate(scope) {
 }
 
 export function LeaderboardPage({ onOpenProfile }) {
+  usePageMeta("Leaderboard", "See who's on top. Global COD leaderboard ranked by XP, wins, earnings, and win rate across all titles.");
   const { profile: me } = useAuth();
   const [metric, setMetric] = useState("xp");
   const [scope, setScope]   = useState("alltime");
@@ -140,18 +143,23 @@ export function LeaderboardPage({ onOpenProfile }) {
       {/* ── Board Tabs ── */}
       <div className="lbControls">
         <div className="lbTabs" role="tablist" aria-label="Leaderboard metric">
-          {BOARDS.map((b) => (
-            <button
-              key={b.key}
-              role="tab"
-              aria-selected={metric === b.key}
-              className={`lbTab ${metric === b.key ? "active" : ""}`}
-              onClick={() => setMetric(b.key)}
-            >
-              <b.Icon size={14} />
-              {b.label}
-            </button>
-          ))}
+          {BOARDS.map((b) => {
+            const unavailable = b.key === "streak" && (isTimed || isSeason);
+            return (
+              <button
+                key={b.key}
+                role="tab"
+                aria-selected={metric === b.key}
+                disabled={unavailable}
+                title={unavailable ? "Win streak is only ranked all-time" : undefined}
+                className={`lbTab ${metric === b.key ? "active" : ""}`}
+                onClick={() => setMetric(b.key)}
+              >
+                <b.Icon size={14} />
+                {b.label}
+              </button>
+            );
+          })}
         </div>
 
         <div className="lbRight">
@@ -263,7 +271,7 @@ export function LeaderboardPage({ onOpenProfile }) {
       ) : (
         <>
           {/* ── Podium ── */}
-          {rows.length >= 3 && <Podium players={rows} metric={metric} onOpenProfile={onOpenProfile} />}
+          {rows.length >= 3 && <Podium players={rows} metric={boardMetric} onOpenProfile={onOpenProfile} />}
 
           {/* ── Table ── */}
           <div className="lbTableLabel">
@@ -278,16 +286,16 @@ export function LeaderboardPage({ onOpenProfile }) {
               <span className="lbHideMobile">Tier</span>
               <span>Record</span>
               <span className="lbHideMobile">Win %</span>
-              <span>{metric === "xp" ? "Earnings" : "XP"}</span>
-              <span>{metricLabel(metric)}</span>
+              <span>{boardMetric === "xp" ? "Earnings" : "XP"}</span>
+              <span>{metricLabel(boardMetric)}</span>
             </div>
             {rows.map((p, i) => {
               const rank = rankForXp(p.xp);
               const total = (p.wins || 0) + (p.losses || 0);
               const winPct = total ? Math.round((p.wins / total) * 100) : 0;
               const isMe = me && p.id === me.id;
-              const topMetric = topVal ? metricRaw(topVal, metric) : 1;
-              const pctBar = topMetric > 0 ? Math.max(5, (metricRaw(p, metric) / topMetric) * 100) : 0;
+              const topMetric = topVal ? metricRaw(topVal, boardMetric) : 1;
+              const pctBar = topMetric > 0 ? Math.max(5, (metricRaw(p, boardMetric) / topMetric) * 100) : 0;
               return (
                 <button
                   ref={isMe ? youRowRef : undefined}
@@ -301,7 +309,7 @@ export function LeaderboardPage({ onOpenProfile }) {
                     <div className="lbRowAvatar" style={{ borderColor: rank.glow }}>
                       {p.avatar_url ? <img src={p.avatar_url} alt="" /> : <span>{(p.username || "?").slice(0, 2)}</span>}
                     </div>
-                    <b>{p.username}{p.wagr_member && <WagrBadge size={14} />}</b>
+                    <b>{p.username}{p.country && <img className="countryFlag" src={countryFlag(p.country)} alt={p.country} />}{p.wagr_member && <WagrBadge size={14} />}</b>
                   </span>
                   <span className="lbTier" style={{ color: rank.glow, "--rank-glow": rank.glow }}>
                     <RankStar rank={rank} size={24} />
@@ -309,10 +317,10 @@ export function LeaderboardPage({ onOpenProfile }) {
                   </span>
                   <span className="lbRec">{p.wins}-{p.losses}</span>
                   <span className="lbWin">{winPct}%</span>
-                  <span className="lbEarn">{metric === "xp" ? ((p.earnings || 0) > 0 ? money(p.earnings) : "—") : `${(p.xp || 0).toLocaleString()}`}</span>
+                  <span className="lbEarn">{boardMetric === "xp" ? ((p.earnings || 0) > 0 ? money(p.earnings) : "-") : `${(p.xp || 0).toLocaleString()}`}</span>
                   <span className="lbXp">
                     <span className="lbXpBar" style={{ width: `${pctBar}%`, background: rank.glow }} />
-                    {metricValue(p, metric)}
+                    {metricValue(p, boardMetric)}
                   </span>
                 </button>
               );
@@ -325,7 +333,7 @@ export function LeaderboardPage({ onOpenProfile }) {
       {me && !loading && (
         <YouAnchor
           me={me}
-          metric={metric}
+          metric={boardMetric}
           myRankPos={myRankPos}
           myIdx={myIdx}
           rows={rows}
@@ -370,7 +378,7 @@ function Podium({ players, metric, onOpenProfile }) {
             <div className="lbPodiumAvatar" style={{ borderColor: rank.glow, boxShadow: `0 0 16px ${rank.glow}30` }}>
               {p.avatar_url ? <img src={p.avatar_url} alt="" /> : <span>{(p.username || "?").slice(0, 2)}</span>}
             </div>
-            <b className="lbPodiumName">{p.username}{p.wagr_member && <WagrBadge size={14} />}</b>
+            <b className="lbPodiumName">{p.username}{p.country && <img className="countryFlag" src={countryFlag(p.country)} alt={p.country} />}{p.wagr_member && <WagrBadge size={14} />}</b>
             <div className="lbPodiumRank" style={{ "--rank-glow": rank.glow }}><RankStar rank={rank} size={28} /> <span style={{ color: rank.glow }}>{rank.name}</span></div>
             <span className="lbPodiumMetric">{metricValue(p, metric)}</span>
             <span className="lbPodiumRec">{p.wins}W-{p.losses}L · {winPct}%</span>
@@ -427,7 +435,7 @@ function SeasonBanner({ season, allSeasons, selectedId, onSelectSeason }) {
           {viewedSeason && (
             <span className="seasonDates">
               {new Date(viewedSeason.start_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-              {" — "}
+              {" - "}
               {new Date(viewedSeason.end_date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
             </span>
           )}
@@ -499,7 +507,7 @@ function PlayersOfTheWeek() {
               <div className="lbPotwAvatar" style={{ borderColor: rank.glow }}>
                 {p?.avatar_url ? <img src={p.avatar_url} alt="" /> : <span>{(p?.username || "?").slice(0, 2)}</span>}
               </div>
-              <b>{p?.username || "Player"}</b>
+              <b>{p?.username || "Player"}{p?.country && <img className="countryFlag" src={countryFlag(p.country)} alt={p.country} />}</b>
               <span className="lbPotwCredits">+{money(r.credits)}</span>
             </div>
           );

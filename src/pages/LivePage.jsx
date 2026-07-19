@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { clickable } from "../utils/a11y";
+import { usePageMeta } from "../hooks/usePageMeta";
 import { Tv, ExternalLink } from "lucide-react";
 import { useAsync } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
@@ -11,6 +13,7 @@ import { rankForXp } from "../utils/ranks";
 import { money } from "../utils/format";
 
 export function LivePage({ onOpenProfile }) {
+  usePageMeta("Live", "Watch COD streamers live on Dubbed. See who's playing, follow the action, and find your next opponent.");
   const { data: streamers, loading, error, reload } = useAsync(() => getStreamers(), []);
   const [active, setActive] = useState(null);
 
@@ -28,7 +31,7 @@ export function LivePage({ onOpenProfile }) {
         <SkeletonRows rows={4} height={80} />
       ) : error ? (
         <div className="errorState"><p>{error}</p><button className="btn btn-ghost sm" onClick={reload}>Retry</button></div>
-      ) : !streamers.length ? (
+      ) : !streamers?.length ? (
         <EmptyState icon={Tv} title="No streamers yet">Be the first. Add your Twitch username in your profile settings.</EmptyState>
       ) : (
         <>
@@ -61,7 +64,7 @@ export function LivePage({ onOpenProfile }) {
                       {s.avatar_url ? <img src={s.avatar_url} alt="" /> : <span>{s.username.slice(0, 2)}</span>}
                     </div>
                     <div className="streamerInfo">
-                      <b onClick={() => onOpenProfile?.(s.username)} className="streamerName">
+                      <b className="streamerName" {...clickable(() => onOpenProfile?.(s.username))}>
                         {s.username}{s.wagr_member && <WagrBadge size={14} />}
                       </b>
                       <small><RankStar rank={rank} size={16} inline /> {rank.name} · {s.wins}W-{s.losses}L · {money(s.earnings)} earned</small>

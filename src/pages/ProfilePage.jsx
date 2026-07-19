@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { ImagePlus, Trophy, Check, Crosshair, Gamepad2, Monitor, ExternalLink, Award, Swords, Flame, Shield, Target, Crown, Star, DollarSign, Wallet, Users, Zap, Settings, Mail, Lock, AtSign } from "lucide-react";
-import { TwitchIcon, TwitterIcon, YouTubeIcon, PSNIcon, XboxIcon, ActivisionIcon } from "../components/PlatformIcons";
+import { usePageMeta } from "../hooks/usePageMeta";
+import { ImagePlus, Trophy, Check, Crosshair, Gamepad2, Monitor, ExternalLink, Award, Swords, Flame, Shield, Target, Crown, Star, DollarSign, Wallet, Users, Zap, Settings, Mail, Lock, AtSign, ChevronRight, MapPin } from "lucide-react";
+import { TwitchIcon, TwitterIcon, YouTubeIcon, PSNIcon, XboxIcon, ActivisionIcon, BattlenetIcon, SteamIcon } from "../components/PlatformIcons";
 import { WagerIcon } from "../components/WagerIcon";
 import { WagrBadge } from "../components/WagrBadge";
 import { TrophyIcon } from "../components/TrophyIcon";
@@ -11,13 +12,19 @@ import { useToast } from "../hooks/useToast.jsx";
 import { getProfileByUsername, getRecords, getTrophies, getTrophyCounts, getRecentMatches, subscribeToTrophies, updateProfile, changeUsername, isUsernameTaken, hasActiveMatches } from "../services/profileService";
 import { supabase } from "../lib/supabase";
 import { getAchievements } from "../services/achievementService";
+import { getUserTeams, getMyTeams, sendChallenge, getTeamActiveMatches, getTeamMatchHistory } from "../services/teamService";
+import { getMyRank } from "../services/leaderboardService";
+import { challengeError } from "../utils/errors";
+import { Modal } from "../components/Modal";
+import { Button } from "../components/Button";
 import { uploadAvatar } from "../utils/storage";
 import { RankStar } from "../components/RankStar";
 import { PlayerCard } from "../components/PlayerCard";
+import { TeamCrest } from "../components/TeamCrest";
 import { Skeleton } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
 import { rankForXp, nextRank, rankProgress } from "../utils/ranks";
-import { GAMES } from "../utils/games";
+import { GAMES, shortForGame, modesForGame, formatsForGame, US_STATES, CA_PROVINCES, isRegionRestricted, countryFlag, regionTag, teamCategoryLabel, formatForSize } from "../utils/games";
 import bo7Cover from "../assets/black-ops-7.png";
 import wzCover from "../assets/warzone.png";
 import mw4Cover from "../assets/mw4.png";
@@ -26,16 +33,19 @@ import bo1Cover from "../assets/bo1.png";
 import bo2Cover from "../assets/bo2.png";
 
 const GAME_COVERS = {
-  "Call of Duty: Black Ops 7": bo7Cover, "Warzone": wzCover, "Black Ops Royale": wzCover,
+  "Call of Duty: Black Ops 7": bo7Cover, "Warzone": wzCover, "Black Ops Royale": bo7Cover,
   "Call of Duty: Modern Warfare 4": mw4Cover, "Call of Duty: WWII": wwiiCover2,
   "Call of Duty: Black Ops": bo1Cover, "Call of Duty: Black Ops II": bo2Cover,
 };
 import { money } from "../utils/format";
+import { clickable } from "../utils/a11y";
 
-export function ProfilePage({ username }) {
+export function ProfilePage({ username, onNavigate }) {
+  usePageMeta(username ? `${username}'s Profile` : "Profile", username ? `View ${username}'s stats, rank, match history, and teams on Dubbed.` : "Player profile on Dubbed.");
   const { user, profile: me, refreshProfile } = useAuth();
   const toast = useToast();
   const { data: profile, loading, error, reload } = useAsync(() => getProfileByUsername(username), [username]);
+  const { data: myRank } = useAsync(() => user ? getMyRank("xp") : Promise.resolve({ data: null }), [user?.id]);
 
   useVisibilityRefresh(reload, [username]);
 
@@ -58,7 +68,9 @@ export function ProfilePage({ username }) {
       toast.error("Upload failed. Try a smaller image.");
       return;
     }
-    await updateProfile(profile.id, { avatar_url: url });
+    const { error: saveErr } = await updateProfile(profile.id, { avatar_url: url });
+    if (saveErr) return toast.error("Couldn't save your new avatar. Try again.");
+    toast.success("Avatar updated.");
     refreshProfile();
     reload();
   }
@@ -74,8 +86,9 @@ export function ProfilePage({ username }) {
           {isMe && <label className="avatarUp"><ImagePlus size={13} /> Change<input type="file" accept="image/*" onChange={onAvatar} /></label>}
         </div>
         <div className="phInfo">
-          <h1>{profile.username}{profile.wagr_member && <WagrBadge size={24} />}</h1>
+          <h1>{profile.username}{profile.country && <img className="countryFlag" src={countryFlag(profile.country)} alt={profile.country} title={profile.country} />}{regionTag(profile.country) && <span className="regionTag">{regionTag(profile.country)}</span>}{profile.wagr_member && <WagrBadge size={24} />}</h1>
           <p className="sub">{profile.region || "NA"} · Joined {new Date(profile.member_since).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}</p>
+          {isMe && myRank?.rank_pos && <span className="badge accent" style={{ marginBottom: 8 }}>#{myRank.rank_pos.toLocaleString()} Global</span>}
           <div className="xpBar"><div className="xpFill" style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${rank.glow}, ${rank.glow}cc)` }} /></div>
           <small className="subtle">{nxt.xp === rank.xp ? "Max tier reached" : `${(nxt.xp - profile.xp).toLocaleString()} XP to ${nxt.name}`}</small>
         </div>
@@ -94,7 +107,7 @@ export function ProfilePage({ username }) {
       {/* ── RANK PROGRESSION ── */}
       <PlayerCard profile={profile} variant="full" />
 
-      {/* ── CMG-STYLE STAT CARD ── */}
+      {/* ── STAT CARD ── */}
       <PlayerStatCard profile={profile} rank={rank} total={total} />
 
       {/* ── Gamertags + Socials ── */}
@@ -103,6 +116,7 @@ export function ProfilePage({ username }) {
       {/* ── Account Settings (own profile only) ── */}
       {isMe && <AccountSettingsPanel profile={profile} onUpdate={() => { refreshProfile(); reload(); }} />}
 
+      <ProfileTeamsPanel userId={profile.id} isMe={isMe} onNavigate={onNavigate} />
       <AchievementsPanel userId={profile.id} />
       <RecordsPanel userId={profile.id} />
       <TrophiesPanel userId={profile.id} />
@@ -119,7 +133,7 @@ function PlayerStatCard({ profile, rank, total }) {
   }, [profile.id, reloadCounts]);
 
   const winRate = total ? Math.round((profile.wins / total) * 100) : 0;
-  const tc = counts || { gold: 0, silver: 0, bronze: 0 };
+  const tc = counts || { wagr: 0, gold: 0, silver: 0, bronze: 0 };
   const rows = recent || [];
 
   return (
@@ -154,7 +168,7 @@ function PlayerStatCard({ profile, rank, total }) {
       <div className="pscTrophies">
         <div className={`pscTrophy${tc.wagr === 0 ? " empty" : ""}`} title={`${tc.wagr} WAGR`}>
           <TrophyIcon tone="wagr" size={56} />
-          <span className="pscTrophyN" style={tc.wagr > 0 ? { color: "#7c5cff" } : undefined}>{tc.wagr}</span>
+          <span className="pscTrophyN" style={tc.wagr > 0 ? { color: "var(--violet)" } : undefined}>{tc.wagr}</span>
         </div>
         <div className={`pscTrophy ${tc.gold === 0 ? "empty" : ""}`} title={`${tc.gold} Gold`}>
           <TrophyIcon tone="gold" size={56} />
@@ -179,8 +193,10 @@ function Stat({ label, value }) {
 
 const GAMERTAG_FIELDS = [
   { key: "activision_id", label: "Activision ID", Icon: ActivisionIcon, placeholder: "Player#1234567" },
+  { key: "battlenet", label: "Battle.net", Icon: BattlenetIcon, placeholder: "Player#1234" },
   { key: "psn", label: "PSN", Icon: PSNIcon, placeholder: "PSN gamertag" },
-  { key: "xbox", label: "Xbox", Icon: XboxIcon, placeholder: "Xbox gamertag" },
+  { key: "xbox", label: "Xbox Live", Icon: XboxIcon, placeholder: "Xbox gamertag" },
+  { key: "steam", label: "Steam", Icon: SteamIcon, placeholder: "Steam username" },
 ];
 
 const SOCIAL_FIELDS = [
@@ -206,8 +222,10 @@ function GamertagsPanel({ profile, isMe, onUpdate }) {
   function startEdit() {
     setVals({
       activision_id: profile.activision_id || "",
+      battlenet: profile.battlenet || "",
       psn: profile.psn || "",
       xbox: profile.xbox || "",
+      steam: profile.steam || "",
       twitch_username: profile.twitch_username || "",
       twitter: profile.twitter || "",
       youtube: profile.youtube || "",
@@ -235,7 +253,7 @@ function GamertagsPanel({ profile, isMe, onUpdate }) {
     onUpdate?.();
   }
 
-  const hasAny = profile.activision_id || profile.psn || profile.xbox || profile.twitch_username || profile.twitter || profile.youtube;
+  const hasAny = profile.activision_id || profile.battlenet || profile.psn || profile.xbox || profile.steam || profile.twitch_username || profile.twitter || profile.youtube;
 
   return (
     <section className="panel2 gamertagsPanel">
@@ -246,18 +264,24 @@ function GamertagsPanel({ profile, isMe, onUpdate }) {
 
       {editing ? (
         <div className="gtEditGrid">
-          {gamertagLocked && <p className="gtLockNotice"><Lock size={13} /> Gamertag changes locked — you have an active match.</p>}
+          {gamertagLocked && <p className="gtLockNotice"><Lock size={13} /> Gamertag changes locked. You have an active match.</p>}
           {GAMERTAG_FIELDS.map(({ key, label, Icon, placeholder }) => (
             <div className="gtEditRow" key={key}>
-              <label><Icon size={14} /> {label}{gamertagLocked && <Lock size={11} />}</label>
-              <input className="field sm" value={vals[key]} onChange={(e) => { if (!gamertagLocked) setVals({ ...vals, [key]: e.target.value }); }} placeholder={placeholder} disabled={gamertagLocked} />
+              <label>{label}{gamertagLocked && <Lock size={11} />}</label>
+              <div className="gtFieldWrap">
+                <span className="gtFieldIcon"><Icon size={14} /></span>
+                <input className="field sm" value={vals[key]} onChange={(e) => { if (!gamertagLocked) setVals({ ...vals, [key]: e.target.value }); }} placeholder={placeholder} disabled={gamertagLocked} />
+              </div>
             </div>
           ))}
           <div className="gtEditDivider" />
           {SOCIAL_FIELDS.map(({ key, label, Icon, placeholder }) => (
             <div className="gtEditRow" key={key}>
-              <label><Icon size={14} /> {label}</label>
-              <input className="field sm" value={vals[key]} onChange={(e) => setVals({ ...vals, [key]: e.target.value })} placeholder={placeholder} />
+              <label>{label}</label>
+              <div className="gtFieldWrap">
+                <span className="gtFieldIcon"><Icon size={14} /></span>
+                <input className="field sm" value={vals[key]} onChange={(e) => setVals({ ...vals, [key]: e.target.value })} placeholder={placeholder} />
+              </div>
             </div>
           ))}
           <div className="gtEditActions">
@@ -300,6 +324,87 @@ function GamertagsPanel({ profile, isMe, onUpdate }) {
   );
 }
 
+function LocationPicker({ profile, onUpdate }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [country, setCountry] = useState(profile.country || "");
+  const [stateCode, setStateCode] = useState(profile.state_code || "");
+  const [busy, setBusy] = useState(false);
+  const states = statesForCountry(country);
+
+  async function handleSave() {
+    if (!country) return toast.error("Select your country.");
+    if (states && !stateCode) return toast.error("Select your state/province.");
+    setBusy(true);
+    const { error } = await updateProfile(profile.id, { country, state_code: states ? stateCode : null });
+    setBusy(false);
+    if (error) return toast.error(error || "Failed to save.");
+    const restricted = isRegionRestricted(country, stateCode);
+    toast.success(restricted ? "Location saved. Cash wagering is not available in your region." : "Location saved.");
+    setOpen(false);
+    onUpdate?.();
+  }
+
+  const currentLabel = profile.country
+    ? `${COUNTRIES.find(c => c.code === profile.country)?.label || profile.country}${profile.state_code ? `, ${profile.state_code}` : ""}`
+    : "Not set — required for cash play";
+
+  return (
+    <>
+      <div className="gtRow" {...clickable(() => setOpen(!open))}>
+        <MapPin size={14} />
+        <span className="gtLabel">Location</span>
+        <span className="gtVal subtle">{currentLabel}</span>
+      </div>
+      {open && (
+        <div className="gtEditGrid" style={{ padding: "8px 0 12px" }}>
+          <div className="gtEditRow">
+            <label>Country</label>
+            <select className="field sm" value={country} onChange={e => { setCountry(e.target.value); setStateCode(""); }}>
+              <option value="">Select country</option>
+              {COUNTRIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+            </select>
+          </div>
+          {states && (
+            <div className="gtEditRow">
+              <label>{country === "CA" ? "Province" : "State"}</label>
+              <select className="field sm" value={stateCode} onChange={e => setStateCode(e.target.value)}>
+                <option value="">Select {country === "CA" ? "province" : "state"}</option>
+                {states.map(s => <option key={s.code} value={s.code}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
+          {country && stateCode && isRegionRestricted(country, stateCode) && (
+            <p style={{ color: "var(--danger)", fontSize: 13, margin: "4px 0 0" }}>Cash wagering is not available in your state/province.</p>
+          )}
+          <div className="gtEditActions">
+            <button className="btn btn-primary sm" onClick={handleSave} disabled={busy}><Check size={13} /> {busy ? "Saving..." : "Save location"}</button>
+            <button className="btn btn-ghost sm" onClick={() => { setOpen(false); setCountry(profile.country || ""); setStateCode(profile.state_code || ""); }}>Cancel</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+const COUNTRIES = [
+  { code: "US", label: "United States" },
+  { code: "CA", label: "Canada" },
+  { code: "GB", label: "United Kingdom" },
+  { code: "AU", label: "Australia" },
+  { code: "DE", label: "Germany" },
+  { code: "FR", label: "France" },
+  { code: "BR", label: "Brazil" },
+  { code: "MX", label: "Mexico" },
+  { code: "OTHER", label: "Other" },
+];
+
+function statesForCountry(code) {
+  if (code === "US") return US_STATES;
+  if (code === "CA") return CA_PROVINCES;
+  return null;
+}
+
 function AccountSettingsPanel({ profile, onUpdate }) {
   const toast = useToast();
 
@@ -334,7 +439,7 @@ function AccountSettingsPanel({ profile, onUpdate }) {
 
   async function handleChangePassword() {
     if (!currentPw) return toast.error("Enter your current password.");
-    if (newPw.length < 6) return toast.error("Password must be at least 6 characters.");
+    if (newPw.length < 8) return toast.error("Password must be at least 8 characters.");
     if (newPw !== confirmPw) return toast.error("Passwords don't match.");
     setPwBusy(true);
     const { data: session } = await supabase.auth.getSession();
@@ -375,7 +480,7 @@ function AccountSettingsPanel({ profile, onUpdate }) {
     <section className="panel2">
       <h2><Settings size={16} /> Account Settings</h2>
       <div className="gtDisplay">
-        <div className="gtRow" style={{ cursor: "pointer" }} onClick={() => setEmailOpen(!emailOpen)}>
+        <div className="gtRow" {...clickable(() => setEmailOpen(!emailOpen))}>
           <Mail size={14} />
           <span className="gtLabel">Change Email</span>
           <span className="gtVal subtle">Update your login email</span>
@@ -397,7 +502,7 @@ function AccountSettingsPanel({ profile, onUpdate }) {
           </div>
         )}
 
-        <div className="gtRow" style={{ cursor: "pointer" }} onClick={() => setPwOpen(!pwOpen)}>
+        <div className="gtRow" {...clickable(() => setPwOpen(!pwOpen))}>
           <Lock size={14} />
           <span className="gtLabel">Change Password</span>
           <span className="gtVal subtle">Set a new password</span>
@@ -410,7 +515,7 @@ function AccountSettingsPanel({ profile, onUpdate }) {
             </div>
             <div className="gtEditRow">
               <label>New password</label>
-              <input className="field sm" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="Min 6 characters" />
+              <input className="field sm" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="Min 8 characters" />
             </div>
             <div className="gtEditRow">
               <label>Confirm password</label>
@@ -423,7 +528,7 @@ function AccountSettingsPanel({ profile, onUpdate }) {
           </div>
         )}
 
-        <div className="gtRow" style={{ cursor: "pointer" }} onClick={() => setUnOpen(!unOpen)}>
+        <div className="gtRow" {...clickable(() => setUnOpen(!unOpen))}>
           <AtSign size={14} />
           <span className="gtLabel">Change Username</span>
           <span className="gtVal subtle">{profile.username_change_tokens > 0 ? `${profile.username_change_tokens} change${profile.username_change_tokens > 1 ? "s" : ""} available` : "Requires a token from the Shop"}</span>
@@ -432,7 +537,7 @@ function AccountSettingsPanel({ profile, onUpdate }) {
           <div className="gtEditGrid" style={{ padding: "8px 0 12px" }}>
             <div className="gtEditRow">
               <label>New username</label>
-              <input className="field sm" value={newUn} onChange={(e) => setNewUn(e.target.value)} placeholder="new_username" maxLength={20} />
+              <input className="field sm" value={newUn} onChange={(e) => setNewUn(e.target.value)} placeholder="new_username" maxLength={12} />
             </div>
             <div className="gtEditActions">
               <button className="btn btn-primary sm" onClick={handleChangeUsername} disabled={unBusy || !profile.username_change_tokens}><Check size={13} /> {unBusy ? "Changing..." : "Change username"}</button>
@@ -440,8 +545,200 @@ function AccountSettingsPanel({ profile, onUpdate }) {
             </div>
           </div>
         )}
+
+        <LocationPicker profile={profile} onUpdate={onUpdate} />
       </div>
     </section>
+  );
+}
+
+function ProfileTeamsPanel({ userId, isMe, onNavigate }) {
+  const { user } = useAuth();
+  const toast = useToast();
+  const { data: teams, loading } = useAsync(() => getUserTeams(userId), [userId]);
+  const { data: myTeams } = useAsync(() => user && !isMe ? getMyTeams(user.id) : Promise.resolve({ data: [] }), [user?.id, isMe]);
+  const [expanded, setExpanded] = useState(null);
+  const [challModal, setChallModal] = useState(null);
+  const [challMsg, setChallMsg] = useState("");
+  const [challFrom, setChallFrom] = useState("");
+  const [challKind, setChallKind] = useState("xp");
+  const [challEntry, setChallEntry] = useState("");
+  const [challMode, setChallMode] = useState("Search and Destroy");
+  const [sending, setSending] = useState(false);
+
+  if (loading) return <section className="panel2"><h2><Users size={16} /> Teams</h2><Skeleton h={90} /></section>;
+  if (!teams || teams.length === 0) return (
+    <section className="panel2"><h2><Users size={16} /> Teams</h2>
+      <EmptyState>{isMe ? "You're not on any teams yet. Head to the Teams page to create or join one." : "Not on any teams yet."}</EmptyState>
+    </section>
+  );
+
+  const myAvailableTeams = (myTeams || []).filter(t => t.owner_id === user?.id);
+  const canChallenge = !isMe && !!user;
+
+  async function handleSendChallenge() {
+    if (!challFrom) return toast.error("Select your team.");
+    if (challFrom === challModal.id) return toast.error("You can't challenge your own team.");
+    if (challKind === "cash" && (!challEntry || Number(challEntry) <= 0)) return toast.error("Set an entry amount.");
+    setSending(true);
+    const fromTeam = myAvailableTeams.find(t => t.id === challFrom);
+    const challGame = challModal.game || fromTeam?.game || "Call of Duty: Black Ops 7";
+    const { error } = await sendChallenge(challFrom, challModal.id, challMsg.trim(), {
+      game: challGame,
+      mode: challMode,
+      format: formatForSize(fromTeam?.size),
+      kind: challKind,
+      entry: challKind === "cash" ? Number(challEntry) : 0,
+    });
+    setSending(false);
+    if (error) return toast.error(challengeError(error));
+    toast.success(`Challenge sent to ${challModal.name}!`);
+    setChallModal(null);
+    setChallMsg("");
+    setChallFrom("");
+    setChallKind("xp");
+    setChallEntry("");
+  }
+
+  return (
+    <section className="panel2">
+      <h2><Users size={16} /> Teams</h2>
+      <div className="profileTeamGrid">
+        {teams.map(t => {
+          const isOpen = expanded === t.id;
+          return (
+            <div className={`profileTeamCard${isOpen ? " expanded" : ""}`} key={t.id}>
+              <div className="profileTeamTop" {...clickable(() => setExpanded(isOpen ? null : t.id))}>
+                <TeamCrest team={t} size={44} />
+                <div style={{ flex: 1 }}>
+                  <b>{t.name}</b>
+                  <small>{shortForGame(t.game) || t.game} · {teamCategoryLabel(t.size)} · {t.type}</small>
+                </div>
+                <ChevronRight size={16} className={`profileTeamChev${isOpen ? " open" : ""}`} />
+              </div>
+              {isOpen && (
+                <ProfileTeamDetail
+                  team={t}
+                  canChallenge={canChallenge}
+                  hasOwnTeam={myAvailableTeams.length > 0}
+                  onChallenge={() => { setChallModal(t); setChallFrom(myAvailableTeams[0]?.id || ""); }}
+                  onNavigate={onNavigate}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {challModal && (() => {
+        const fromTeam = myAvailableTeams.find(t => t.id === challFrom);
+        const challGame = challModal.game || fromTeam?.game || "Call of Duty: Black Ops 7";
+        const modes = modesForGame(challGame) || ["Search and Destroy"];
+        return (
+          <Modal open onClose={() => setChallModal(null)} eyebrow="TEAM CHALLENGE" title={`Challenge ${challModal.name}`} size="sm">
+            <label className="fieldLbl">Your team</label>
+            <select className="field" value={challFrom} onChange={e => setChallFrom(e.target.value)}>
+              {myAvailableTeams.map(t => <option key={t.id} value={t.id}>[{t.tag}] {t.name} · {teamCategoryLabel(t.size)}</option>)}
+            </select>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+              <div>
+                <label className="fieldLbl">Mode</label>
+                <select className="field" value={challMode} onChange={e => setChallMode(e.target.value)}>
+                  {modes.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="fieldLbl">Format</label>
+                <div className="field" style={{ background: "var(--panel3)", cursor: "default" }}>{formatForSize(fromTeam?.size)}</div>
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+              <div>
+                <label className="fieldLbl">Type</label>
+                <select className="field" value={challKind} onChange={e => setChallKind(e.target.value)}>
+                  <option value="xp">XP</option>
+                  <option value="cash">Cash</option>
+                </select>
+              </div>
+              {challKind === "cash" && (
+                <div>
+                  <label className="fieldLbl">Entry ($)</label>
+                  <input className="field" type="number" min="1" step="1" value={challEntry} onChange={e => setChallEntry(e.target.value)} placeholder="10" />
+                </div>
+              )}
+            </div>
+            <label className="fieldLbl" style={{ marginTop: 8 }}>Message (optional)</label>
+            <input className="field" value={challMsg} onChange={e => setChallMsg(e.target.value)} placeholder="Let's run it" maxLength={100} />
+            <Button variant="primary" className="wide" loading={sending} onClick={handleSendChallenge} style={{ marginTop: 12 }}>
+              <Swords size={14} /> Send Challenge
+            </Button>
+          </Modal>
+        );
+      })()}
+    </section>
+  );
+}
+
+function ProfileTeamDetail({ team, canChallenge, hasOwnTeam, onChallenge, onNavigate }) {
+  const { data: activeMatches, loading: loadingMatches } = useAsync(() => getTeamActiveMatches(team.id), [team.id]);
+  const { data: history, loading: loadingHistory } = useAsync(() => getTeamMatchHistory(team.id, 5), [team.id]);
+  const members = team.team_members || [];
+  const totalW = team.wins || 0;
+  const totalL = team.losses || 0;
+  const winPct = totalW + totalL > 0 ? Math.round((totalW / (totalW + totalL)) * 100) : 0;
+
+  return (
+    <div className="profileTeamBody">
+      <div className="ptDetailGrid">
+        <div className="ptStat"><small>Record</small><b>{totalW}W - {totalL}L</b></div>
+        <div className="ptStat"><small>Win Rate</small><b>{winPct}%</b></div>
+        <div className="ptStat"><small>XP</small><b>{team.xp || 0}</b></div>
+        {(team.earnings || 0) > 0 && <div className="ptStat"><small>Earnings</small><b className="cash">{money(team.earnings)}</b></div>}
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <small className="eyebrow">ROSTER</small>
+        <div className="memberChips" style={{ marginTop: 4 }}>
+          {members.map(m => <span key={m.user_id} className="memberChip">{m.profiles?.username}{m.role === "owner" && <em>owner</em>}</span>)}
+        </div>
+      </div>
+
+      {loadingMatches ? <Skeleton h={40} /> : activeMatches && activeMatches.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <small className="eyebrow">ACTIVE MATCHES</small>
+          {activeMatches.map(m => (
+            <div className="ptMatchRow" key={m.id}>
+              <span className={`matchStatusBadge ${m.status === "live" ? "live" : ""}`}>{m.status === "live" ? "LIVE" : m.status === "open" ? "Waiting" : m.status}</span>
+              <span>{shortForGame(m.game)} · {m.mode} · {m.format}</span>
+              {m.kind === "cash" && <span className="cash">{money(m.entry)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {loadingHistory ? <Skeleton h={40} /> : history && history.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <small className="eyebrow">RECENT RESULTS</small>
+          <div className="ptHistoryStrip">
+            {history.map((h, i) => (
+              <span key={i} className={`ptFormBadge ${h.result}`}>{h.result === "win" ? "W" : "L"}{h.xp_earned > 0 ? ` +${h.xp_earned}XP` : ""}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {canChallenge && (
+        hasOwnTeam ? (
+          <button className="btn btn-primary sm wide" style={{ marginTop: 12 }} onClick={onChallenge}>
+            <Swords size={13} /> Challenge this team
+          </button>
+        ) : (
+          <button className="btn btn-ghost sm wide" style={{ marginTop: 12 }} onClick={() => onNavigate?.("teams")}>
+            <Users size={13} /> Create a team to challenge
+          </button>
+        )
+      )}
+    </div>
   );
 }
 
@@ -527,7 +824,7 @@ function RecordsPanel({ userId }) {
               </div>
               <div className="gbBody">
                 <div className="gbStatRow">
-                  <span className="gbLabel">Skill Level</span>
+                  <span className="gbLabel">Est. Skill Level</span>
                   <div className="gbRankCell">
                     <RankStar rank={rank} size={20} />
                     <span className="gbRankName" style={{ color: rank.glow }}>{rank.name}</span>
@@ -542,8 +839,8 @@ function RecordsPanel({ userId }) {
                   <span className="gbVal">{total ? `${pct}%` : "N/A"}</span>
                 </div>
                 <div className="gbStatRow">
-                  <span className="gbLabel">Best Streak</span>
-                  <span className="gbVal">{w > 0 ? Math.min(w, 5) : "N/A"}</span>
+                  <span className="gbLabel">Total Matches</span>
+                  <span className="gbVal">{total || "N/A"}</span>
                 </div>
               </div>
             </div>
@@ -570,7 +867,7 @@ function TrophiesPanel({ userId }) {
               <TrophyIcon tone={tone} size={42} />
               <div className="trophyInfo">
                 <b>{t.title}</b>
-                <small>{t.game}{t.bracket_size ? ` · ${t.bracket_size} teams` : ""}{t.prize ? ` · ${money(t.prize)}` : ""}</small>
+                <small>{t.game}{t.bracket_size ? ` · ${t.bracket_size} teams` : ""}{t.prize ? ` · ${money(t.prize)}` : ""}{t.earned_at ? ` · ${new Date(t.earned_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}</small>
               </div>
               <span className={`trophyPlace p${t.place}`}>{placeLabel[t.place] || `${t.place}th`}</span>
             </div>

@@ -1,13 +1,15 @@
 import React from "react";
+import { usePageMeta } from "../hooks/usePageMeta";
 import { Shield } from "lucide-react";
 
 export function PrivacyPage() {
+  usePageMeta("Privacy Policy", "How Dubbed collects, uses, and protects your personal information.");
   return (
     <main className="page">
       <div className="pageHead">
         <div className="eyebrow"><Shield size={14} style={{ marginRight: 6, verticalAlign: -2 }} />PRIVACY POLICY</div>
         <h1>Privacy Policy</h1>
-        <p className="sub">Effective July 2026 &mdash; Dubbed (dubbed.pro)</p>
+        <p className="sub">Effective July 2026 · Dubbed (dubbed.pro)</p>
       </div>
 
       <section className="panel2 rulesSection">
@@ -15,7 +17,7 @@ export function PrivacyPage() {
         <p>When you create an account and use Dubbed, we collect the following types of information:</p>
         <ul>
           <li><b>Account information:</b> email address, username, and avatar image.</li>
-          <li><b>Payment information:</b> crypto deposits and payouts are processed through NOWPayments. We store only your wallet address for payouts — no private keys or seed phrases are ever collected.</li>
+          <li><b>Payment information:</b> crypto deposits and payouts are processed through NOWPayments. We store only your wallet address for payouts. No private keys or seed phrases are ever collected.</li>
           <li><b>Game identifiers:</b> PlayStation Network (PSN) ID, Xbox Gamertag, and Activision ID, as provided by you for matchmaking purposes.</li>
           <li><b>Match data:</b> match history, results, win/loss records, and performance statistics generated through your use of the platform.</li>
           <li><b>Social media handles:</b> any social profiles you choose to link to your Dubbed account (e.g., X/Twitter, Discord).</li>

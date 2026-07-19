@@ -13,16 +13,20 @@ export class ErrorBoundary extends React.Component {
 
   componentDidCatch(error, info) {
     console.error("[ErrorBoundary]", error, info?.componentStack);
+    if (error?.message?.includes("dynamically imported module") || error?.message?.includes("Failed to fetch")) {
+      window.location.reload();
+    }
   }
 
   render() {
     if (this.state.hasError) {
+      const msg = this.state.error?.message || "An unexpected error occurred.";
       return (
         <div className="errorBoundary">
           <AlertTriangle size={36} />
           <h2>Something went wrong</h2>
-          <p>An unexpected error occurred. Try reloading the page.</p>
-          <button className="btn btn-primary" onClick={() => window.location.reload()}>
+          <p>{msg}</p>
+          <button className="btn btn-primary" onClick={() => window.location.replace("/")}>
             <RefreshCw size={15} /> Reload
           </button>
         </div>

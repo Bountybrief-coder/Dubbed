@@ -77,7 +77,7 @@ export function AdminWithdrawalsPage() {
           setToggling(false);
           if (res.error) return toast.error(res.error);
           setAutoOn(next);
-          toast.success(next ? "Auto-payouts enabled." : "Auto-payouts paused — all withdrawals need manual approval.");
+          toast.success(next ? "Auto-payouts enabled." : "Auto-payouts paused. All withdrawals need manual approval.");
         }}>
           {autoOn ? <><ToggleRight size={15} /> Enabled</> : <><ToggleLeft size={15} /> Paused</>}
         </Button>

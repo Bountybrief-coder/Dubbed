@@ -1,19 +1,21 @@
 import React from "react";
+import { usePageMeta } from "../hooks/usePageMeta";
 import { THROWBACK_RULESETS, THROWBACK_SHARED_RULES } from "../utils/games";
 
 export function RulesPage() {
+  usePageMeta("Rules", "Official Dubbed match rules, CDL rulesets, map pools, and dispute resolution policies for all Call of Duty titles.");
   return (
     <main className="page">
       <style>{`
         .rulesAccordion{margin-top:24px}
         .rulesAccordion details{background:var(--panel2);border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
-        .rulesAccordion summary{padding:16px 20px;cursor:pointer;font-weight:700;font-size:16px;color:white;list-style:none;display:flex;align-items:center;gap:10px;user-select:none}
+        .rulesAccordion summary{padding:16px 20px;cursor:pointer;font-weight:700;font-size:16px;color:var(--text);list-style:none;display:flex;align-items:center;gap:10px;user-select:none}
         .rulesAccordion summary::-webkit-details-marker{display:none}
         .rulesAccordion summary::before{content:"▸";font-size:14px;color:var(--muted);transition:transform .15s}
         .rulesAccordion details[open] summary::before{transform:rotate(90deg)}
         .rulesAccordion summary .badge{font-size:11px;padding:2px 8px;border-radius:6px;background:var(--panel3);color:var(--muted);font-weight:600;margin-left:auto}
         .rulesAccordion .ruleBody{padding:0 20px 20px;color:var(--muted);line-height:1.7;font-size:14px}
-        .rulesAccordion .ruleBody h3{color:white;font-size:14px;margin:18px 0 6px;text-transform:uppercase;letter-spacing:.5px}
+        .rulesAccordion .ruleBody h3{color:var(--text);font-size:14px;margin:18px 0 6px;text-transform:uppercase;letter-spacing:.5px}
         .rulesAccordion .ruleBody h3:first-child{margin-top:0}
         .rulesAccordion .ruleBody p{margin:4px 0}
         .rulesAccordion .ruleBody ul{margin:4px 0 12px 18px;padding:0}
@@ -21,12 +23,12 @@ export function RulesPage() {
         .rulesAccordion .ruleBody .restrictedGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
         @media(max-width:700px){.rulesAccordion .ruleBody .restrictedGrid{grid-template-columns:1fr}}
         .rulesAccordion .ruleBody .restrictedBox{background:var(--panel3);border-radius:8px;padding:12px 14px}
-        .rulesAccordion .ruleBody .restrictedBox b{color:white;display:block;margin-bottom:4px}
-        .rulesAccordion .ruleBody .tag-allowed{color:#00c853;font-weight:600}
+        .rulesAccordion .ruleBody .restrictedBox b{color:var(--text);display:block;margin-bottom:4px}
+        .rulesAccordion .ruleBody .tag-allowed{color:var(--green);font-weight:600}
         .rulesAccordion .ruleBody .tag-banned{color:#ff4d5e;font-weight:600}
         .rulesAccordion .ruleBody .warn{color:#ff9e3d;font-weight:600}
         .rulesAccordion .ruleBody .settingTable{width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:13px}
-        .rulesAccordion .ruleBody .settingTable th{text-align:left;color:white;padding:6px 10px;border-bottom:1px solid var(--line)}
+        .rulesAccordion .ruleBody .settingTable th{text-align:left;color:var(--text);padding:6px 10px;border-bottom:1px solid var(--line)}
         .rulesAccordion .ruleBody .settingTable td{padding:6px 10px;border-bottom:1px solid var(--line)}
       `}</style>
 

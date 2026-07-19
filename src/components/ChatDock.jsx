@@ -72,7 +72,7 @@ export function ChatDock({ open, onToggle, onLogin }) {
       if (p.eventType === "INSERT") setEvents((e) => [p.new, ...e]);
       else if (p.eventType === "UPDATE") {
         setEvents((e) => e.map((x) => x.id === p.new.id ? p.new : x));
-        if (p.new.status === "settled") toast.success(`"${p.new.title}" settled — ${p.new.winner_option} wins!`);
+        if (p.new.status === "settled") toast.success(`"${p.new.title}" settled. ${p.new.winner_option} wins!`);
       }
       else if (p.eventType === "DELETE") setEvents((e) => e.filter((x) => x.id !== p.old.id));
     });
@@ -99,7 +99,7 @@ export function ChatDock({ open, onToggle, onLogin }) {
       }
     });
     return () => { active = false; unsub1(); unsub2(); unsub3(); };
-  }, [open, channel, profile?.id]);
+  }, [open, channel, profile?.id, user]);
 
   useVisibilityRefresh(() => {
     if (open && profile) {
@@ -150,8 +150,8 @@ export function ChatDock({ open, onToggle, onLogin }) {
         <button onClick={onToggle} aria-label="Close chat"><X size={16} /></button>
       </div>
       <div className="chatTabs">
-        {CHANNELS.map(({ id, Icon }) => (
-          <button key={id} className={channel === id ? "on" : ""} onClick={() => setChannel(id)}><Icon size={15} /></button>
+        {CHANNELS.map(({ id, label, Icon }) => (
+          <button key={id} className={channel === id ? "on" : ""} onClick={() => setChannel(id)} aria-label={label} title={label}><Icon size={15} /></button>
         ))}
       </div>
       <div className="chatDockBody" ref={bodyRef} onScroll={onScroll}>
@@ -479,7 +479,7 @@ function PostBetForm({ profile, toast, onDone, onClose }) {
     <div className="postBetForm">
       <div className="postBetHead">
         <b><Swords size={13} /> Post a Bet</b>
-        <button className="postBetClose" onClick={onClose}><X size={14} /></button>
+        <button className="postBetClose" onClick={onClose} aria-label="Close"><X size={14} /></button>
       </div>
       <div className="postBetFields">
         <input className="field sm" placeholder="Streamer / event…" value={eventRef} onChange={(e) => setEventRef(e.target.value)} maxLength={80} />
@@ -501,7 +501,7 @@ function PostBetForm({ profile, toast, onDone, onClose }) {
         </div>
       </div>
       <button className="btn btn-primary sm postBetSubmit" onClick={submit} disabled={busy}>
-        {busy ? "Posting…" : `Post — ${money(parseFloat(stake) || 0)} from balance`}
+        {busy ? "Posting…" : `Post · ${money(parseFloat(stake) || 0)} from balance`}
       </button>
     </div>
   );

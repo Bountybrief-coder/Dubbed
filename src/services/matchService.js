@@ -19,7 +19,7 @@ export async function listOpenMatches({ kind, game } = {}) {
 export async function getMatch(matchId) {
   const { data, error } = await supabase
     .from("matches")
-    .select(`${MATCH_SELECT}, match_players(user_id, region, team_id, team_name, profiles(username, avatar_url, wagr_member, xp, wins, losses, earnings, psn, xbox, activision_id, twitter, youtube, twitch_username))`)
+    .select(`${MATCH_SELECT}, match_players(user_id, region, team_id, team_name, profiles(username, avatar_url, wagr_member, xp, wins, losses, earnings, psn, xbox, activision_id, twitter, youtube, twitch_username, country))`)
     .eq("id", matchId)
     .maybeSingle();
   return { data, error: error?.message };
@@ -121,6 +121,16 @@ export async function reportMatch(matchId, { winnerId, score, evidenceUrl }) {
     p_evidence_url: evidenceUrl || null
   });
   return { error: error?.message };
+}
+
+// Each side's submitted result for a match (winner claim, score, evidence).
+export async function getMatchReports(matchId) {
+  const { data, error } = await supabase
+    .from("match_reports")
+    .select("id, reported_by, winner_id, score, evidence_url, created_at")
+    .eq("match_id", matchId)
+    .order("created_at", { ascending: true });
+  return { data: data || [], error: error?.message };
 }
 
 export async function openDispute(matchId, { reason, evidenceUrl }) {

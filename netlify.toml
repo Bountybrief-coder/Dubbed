@@ -8,6 +8,12 @@
 [build.environment]
   NODE_VERSION = "20"
 
+# Prerender SPA pages for search engine bots (Google, Bing, etc.)
+# Netlify serves a rendered snapshot so crawlers index real content.
+[build.processing]
+  [build.processing.html]
+    pretty_urls = true
+
 # SPA fallback: the app uses in-app routing, so every path must serve index.html
 # and let the client render the right view. Without this, refreshing or deep
 # linking to anything other than "/" would 404 on Netlify.
@@ -15,6 +21,12 @@
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Never cache index.html — ensures browsers always load the latest chunk manifest.
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
 
 # Long-cache the fingerprinted build assets (Vite hashes filenames).
 [[headers]]
@@ -30,5 +42,5 @@
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(self), usb=(), magnetometer=(), gyroscope=(), accelerometer=()"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://www.googletagmanager.com; font-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.google-analytics.com https://*.analytics.google.com; frame-src https://player.twitch.tv https://www.twitch.tv https://nowpayments.io; frame-ancestors 'none'; form-action 'self' https://nowpayments.io; base-uri 'self'; object-src 'none'"
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'sha256-y2m5By0crQWPrTGO0vcOoNp2CqyAk8ER9+NeK/pPQko=' https://www.googletagmanager.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co https://www.googletagmanager.com https://www.google-analytics.com https://flagcdn.com; font-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://challenges.cloudflare.com; frame-src https://player.twitch.tv https://www.twitch.tv https://nowpayments.io https://challenges.cloudflare.com https://www.googletagmanager.com; frame-ancestors 'none'; form-action 'self' https://nowpayments.io; base-uri 'self'; object-src 'none'; worker-src 'self'; upgrade-insecure-requests"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(self), usb=(), magnetometer=(), gyroscope=(), accelerometer=(), browsing-topics=()"

@@ -6,7 +6,7 @@ import { useAsync } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
 import { listTournaments, adminCreateTournament, adminGenerateBracket } from "../services/tournamentService";
 import { TOURNAMENT_ROTATION } from "../utils/tournamentPresets";
-import { GAMES, REGIONS, PLATFORMS, SKILL_TIERS, SERIES_OPTIONS, modesForGame, formatsForGame } from "../utils/games";
+import { GAMES, REGIONS, PLATFORMS, SKILL_TIERS, SERIES_OPTIONS, modesForGame, formatsForGameMode } from "../utils/games";
 import { Button } from "../components/Button";
 import { Modal } from "../components/Modal";
 import { SkeletonRows } from "../components/Skeleton";
@@ -91,7 +91,10 @@ export function AdminTournamentsPage() {
     const [name, setName] = useState("");
     const [game, setGame] = useState(GAMES[0].name);
     const [mode, setMode] = useState(GAMES[0].modes[0]);
-    const [format, setFormat] = useState("4v4");
+    const [format, setFormat] = useState(() => {
+      const f = formatsForGameMode(GAMES[0].name, GAMES[0].modes[0]);
+      return f.includes("4v4") ? "4v4" : f[0];
+    });
     const [series, setSeries] = useState("Best of 1");
     const [region, setRegion] = useState("NA");
     const [entry, setEntry] = useState(10);
@@ -99,10 +102,25 @@ export function AdminTournamentsPage() {
     const [platform, setPlatform] = useState("PC + Console Mixed");
     const [skillTier, setSkillTier] = useState("Open");
     const [startsAt, setStartsAt] = useState("");
+    const [wagrOnly, setWagrOnly] = useState(false);
     const [busy, setBusy] = useState(false);
 
     const modes = modesForGame(game);
-    const formats = formatsForGame(game);
+    const formats = formatsForGameMode(game, mode);
+
+    function pickGame(g) {
+      const m = modesForGame(g)[0];
+      setGame(g);
+      setMode(m);
+      const f = formatsForGameMode(g, m);
+      if (!f.includes(format)) setFormat(f[0]);
+    }
+
+    function pickMode(m) {
+      setMode(m);
+      const f = formatsForGameMode(game, m);
+      if (!f.includes(format)) setFormat(f[0]);
+    }
 
     return (
       <Modal open onClose={onClose} eyebrow="CREATE TOURNAMENT" title="New tournament" size="sm">
@@ -110,12 +128,12 @@ export function AdminTournamentsPage() {
         <input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Daily 4v4 SND BO1 / NA Only" />
 
         <label className="fieldLbl">Game</label>
-        <select className="field" value={game} onChange={(e) => { setGame(e.target.value); setMode(modesForGame(e.target.value)[0]); }}>
+        <select className="field" value={game} onChange={(e) => pickGame(e.target.value)}>
           {GAMES.map((g) => <option key={g.name} value={g.name}>{g.short} · {g.name}</option>)}
         </select>
 
         <label className="fieldLbl">Mode</label>
-        <select className="field" value={mode} onChange={(e) => setMode(e.target.value)}>
+        <select className="field" value={mode} onChange={(e) => pickMode(e.target.value)}>
           {modes.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
 
@@ -152,11 +170,19 @@ export function AdminTournamentsPage() {
         <label className="fieldLbl">Start time</label>
         <input className="field" type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
 
+        <label className="fieldLbl" style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, cursor: "pointer" }}>
+          <input type="checkbox" checked={wagrOnly} onChange={(e) => setWagrOnly(e.target.checked)} />
+          WAGR Exclusive — only winner gets WAGR trophy, no 2nd/3rd trophies
+        </label>
+
         <Button variant="primary" className="wide" loading={busy} disabled={!name.trim() || !startsAt} onClick={async () => {
           setBusy(true);
+          const validFormats = formatsForGameMode(game, mode);
+          const safeFormat = validFormats.includes(format) ? format : validFormats[0];
           const res = await adminCreateTournament({
-            name: name.trim(), game, mode, format, series, region,
-            entry: Number(entry), capacity: Number(capacity), platform, skillTier, startsAt: new Date(startsAt).toISOString()
+            name: name.trim(), game, mode, format: safeFormat, series, region,
+            entry: Number(entry), capacity: Number(capacity), platform, skillTier, startsAt: new Date(startsAt).toISOString(),
+            wagrOnly
           });
           setBusy(false);
           if (res.error) return toast.error(res.error);
