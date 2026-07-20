@@ -3105,3 +3105,8 @@ select.field{cursor:pointer}
 
 /* Segmented control — subtle hover on inactive options */
 .segRow button:not(.on):hover{color:#cbd3de}
+
+/* Retire last violet accents + square the count chip on the leaderboard */
+.lbTable::before{background:var(--neon)}
+.lbHero::after{background:linear-gradient(90deg,var(--neon),transparent 80%)}
+.lbTableCount{border-radius:0;background:#0a0d12;border-color:var(--line);color:var(--muted)}
