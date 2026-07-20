@@ -2961,3 +2961,21 @@ body{letter-spacing:.1px}
 .tourHeroStat b,.tourFact b,.wdStat b,.heroStat b,.uqcStatVal,.tourStat b{font-weight:800;font-variant-numeric:tabular-nums;color:#fff}
 .walletBalCard b{color:var(--green)}
 .shopPriceTag{color:var(--neon)}
+
+/* ═════════════════════════════════════════════════════════════════
+   GB pass — betting / live / lfg / tickets / match room / notifications
+   ═════════════════════════════════════════════════════════════════ */
+.betOfferCard,.streamerCard,.liveEmbed,.lfgCard,.roomCard,.notifCard,.betCreateForm{
+  background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)
+}
+/* No hover-lift; cyan border feedback */
+.roomCard:hover,.notifCard:hover,.betOfferCard:hover,.lfgCard:hover,.streamerCard:hover{
+  transform:none;box-shadow:none
+}
+.roomCard:hover,.notifCard:hover{border-color:rgba(34,197,251,.35)}
+.notifCard:hover{background:var(--panel2)}
+/* GB tags on Find Teammates */
+.lfgTag{background:#0a0d12;color:#cbd3de}
+.lfgTag.game{color:var(--neon);border-color:rgba(34,197,251,.3)}
+/* Betting tabs — GB active accent */
+.betTabs .betTab.active,.betTabs button.active{color:var(--neon)}
