@@ -185,7 +185,7 @@ function TrophyShelf({ userId }) {
   const { data: trophies, loading } = useAsync(() => getTrophies(userId), [userId]);
   if (loading) return <section className="panel2"><h2><Trophy size={16} /> Trophies</h2><Skeleton h={70} /></section>;
   const list = trophies || [];
-  const placeLbl = (p) => (p === 1 ? "1ST" : p === 2 ? "2ND" : p === 3 ? "3RD" : `${p}TH`);
+  const placeLbl = (p) => { const n = Number(p); return n === 1 ? "1ST" : n === 2 ? "2ND" : n === 3 ? "3RD" : n ? `${n}TH` : "—"; };
   return (
     <section className="panel2 gbShelfPanel">
       <h2><Trophy size={16} /> Trophies <span className="gbCount">{list.length}</span></h2>

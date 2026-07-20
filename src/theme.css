@@ -2827,3 +2827,54 @@ body{letter-spacing:.1px}
 .rosterCapt{font-size:10px;font-weight:900;letter-spacing:.06em;color:#ffc23c;background:rgba(255,194,60,.1);border:1px solid rgba(255,194,60,.3);padding:2px 7px}
 .rosterRank{display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
 .rosterJoin{color:var(--muted);font-weight:600;font-size:12px}
+
+/* ═════════════════════════════════════════════════════════════════
+   Polish pass — profile card tidy, GB leaderboard, global spruce
+   ═════════════════════════════════════════════════════════════════ */
+
+/* Profile left "player card" — calmer rhythm, balanced medallion */
+.gbRankPanel{padding:26px 18px 22px}
+.gbMedallion{height:150px;margin-bottom:10px}
+.gbMedallion .rankStar{max-width:140px;height:auto}
+.gbRankTier{font-size:14px;letter-spacing:.12em}
+.gbRankNum{font-size:38px;margin-top:4px}
+.gbRankProg{margin-top:18px;padding-top:16px;border-top:1px solid var(--line)}
+.gbRankProg .xpBar{height:6px;background:#0a0d12;border:1px solid var(--line);overflow:hidden}
+.gbRankProg .subtle{display:block;margin-top:8px;font-size:11px;letter-spacing:.02em}
+
+/* Trophy shelf — a lone trophy shouldn't look lost */
+.gbShelf{gap:16px;min-height:64px;align-content:flex-start}
+.gbShelfItem{width:62px;padding:8px 4px;background:#0a0d12;border:1px solid var(--line)}
+.gbShelfLbl{font-size:10px;color:#cbd3de}
+
+/* ── GameBattles-style leaderboard ── */
+.lbTable{border:1px solid var(--line);background:var(--panel);overflow:hidden}
+.lbHeader{background:#0a0d12;border-bottom:1px solid var(--line);padding:11px 16px;font-size:10px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.lbRow{border-bottom:1px solid rgba(255,255,255,.05);padding:12px 16px;transition:background .12s}
+.lbRow:last-child{border-bottom:0}
+.lbRow:hover{background:var(--panel2)}
+.lbRow.lbYouRow{background:rgba(34,197,251,.07);box-shadow:inset 3px 0 0 var(--neon)}
+.lbRank{font-weight:900;font-variant-numeric:tabular-nums;color:var(--muted)}
+.lbRank.r1{color:#ffc23c}
+.lbRank.r2{color:#ccd3dd}
+.lbRank.r3{color:#cd7f32}
+.lbRec,.lbWin,.lbEarn,.lbXp{font-variant-numeric:tabular-nums}
+.lbXpBar{opacity:.16}
+.lbTableLabel{display:flex;align-items:center;gap:8px;margin:22px 0 10px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lbTableLabel svg{color:var(--neon)}
+.lbTableCount{margin-left:auto;color:var(--muted);font-weight:700}
+/* Flat GB podium */
+.lbPodiumCard{background:linear-gradient(180deg,#20262f,var(--panel));border:1px solid var(--line)}
+.lbPodiumCard.p1{border-color:rgba(255,194,60,.5)}
+.lbPodiumCard.p2{border-color:rgba(204,211,221,.4)}
+.lbPodiumCard.p3{border-color:rgba(205,127,50,.4)}
+/* GB tabs — square, flat */
+.lbTab,.lbScopeTab{border-radius:0}
+.lbTab.active{background:var(--neon);color:#04121a;border-color:var(--neon)}
+.lbScopeTab.active{color:var(--neon)}
+
+/* ── Global spruce ── */
+:where(button,a,input,select,textarea):focus-visible{outline:2px solid var(--neon);outline-offset:2px}
+.btn{transition:transform .06s ease,filter .15s ease,background .15s ease,border-color .15s ease}
+.btn:active{transform:translateY(1px)}
+.panel2{transition:border-color .15s ease}
