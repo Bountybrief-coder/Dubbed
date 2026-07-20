@@ -4,14 +4,18 @@ import { Modal } from "./Modal";
 import { Button } from "./Button";
 import { TeamCrest } from "./TeamCrest";
 import { useToast } from "../hooks/useToast.jsx";
+import { useAuth } from "../hooks/useAuth.jsx";
 import { sendChallenge } from "../services/teamService";
 import { challengeError } from "../utils/errors";
+import { money } from "../utils/format";
 import { modesForGame, formatForSize, teamCategoryLabel } from "../utils/games";
 
 // Shared team-challenge modal. `target` is the team being challenged
 // ({ id, name, game }); `myTeams` are the challenger's eligible teams.
 export function ChallengeModal({ target, myTeams, onClose, onDone }) {
   const toast = useToast();
+  const { profile } = useAuth();
+  const balance = profile?.balance ?? 0;
   const eligible = (myTeams || []).filter((t) => t.id !== target.id);
   const [fromId, setFromId] = useState(eligible[0]?.id || "");
   const [mode, setMode] = useState("Search and Destroy");
@@ -28,6 +32,7 @@ export function ChallengeModal({ target, myTeams, onClose, onDone }) {
     if (!fromId) return toast.error("Select your team.");
     if (fromId === target.id) return toast.error("You can't challenge your own team.");
     if (kind === "cash" && (!entry || Number(entry) <= 0)) return toast.error("Set an entry amount.");
+    if (kind === "cash" && Number(entry) > balance) return toast.error(`Entry exceeds your balance (${money(balance)}). Deposit to wager that much.`);
     setSending(true);
     const { error } = await sendChallenge(fromId, target.id, msg.trim(), {
       game,
@@ -93,10 +98,11 @@ export function ChallengeModal({ target, myTeams, onClose, onDone }) {
         {kind === "cash" && (
           <div>
             <label className="fieldLbl">Entry ($)</label>
-            <input className="field" type="number" min="1" step="1" value={entry} onChange={(e) => setEntry(e.target.value)} placeholder="10" />
+            <input className="field" type="number" min="1" step="1" max={balance || undefined} value={entry} onChange={(e) => setEntry(e.target.value)} placeholder="10" />
           </div>
         )}
       </div>
+      {kind === "cash" && <p className="modalNote" style={{ marginTop: 6 }}>Your balance: <b className="cash">{money(balance)}</b> · held per team when the match settles.</p>}
       <label className="fieldLbl" style={{ marginTop: 8 }}>Message (optional)</label>
       <input className="field" value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="Let's run it" maxLength={100} />
       <Button variant="primary" className="wide" loading={sending} onClick={submit} style={{ marginTop: 12 }}>

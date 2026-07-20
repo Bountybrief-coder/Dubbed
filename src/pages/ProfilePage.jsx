@@ -708,7 +708,7 @@ function AccountSettingsPanel({ profile, onUpdate }) {
 }
 
 function ProfileTeamsPanel({ userId, isMe, onNavigate }) {
-  const { user } = useAuth();
+  const { user, profile: myProfile } = useAuth();
   const toast = useToast();
   const { data: teams, loading } = useAsync(() => getUserTeams(userId), [userId]);
   const { data: myTeams } = useAsync(() => user && !isMe ? getMyTeams(user.id) : Promise.resolve({ data: [] }), [user?.id, isMe]);
@@ -735,6 +735,7 @@ function ProfileTeamsPanel({ userId, isMe, onNavigate }) {
     if (!challFrom) return toast.error("Select your team.");
     if (challFrom === challModal.id) return toast.error("You can't challenge your own team.");
     if (challKind === "cash" && (!challEntry || Number(challEntry) <= 0)) return toast.error("Set an entry amount.");
+    if (challKind === "cash" && Number(challEntry) > (myProfile?.balance ?? 0)) return toast.error(`Entry exceeds your balance (${money(myProfile?.balance ?? 0)}). Deposit to wager that much.`);
     setSending(true);
     const fromTeam = myAvailableTeams.find(t => t.id === challFrom);
     const challGame = challModal.game || fromTeam?.game || "Call of Duty: Black Ops 7";
