@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { usePageMeta } from "../hooks/usePageMeta";
-import { UserPlus, Users, LogOut, Trash2, ChevronLeft, Swords, Trophy, ArrowRight, Zap, DollarSign, Target, TrendingUp, ImagePlus } from "lucide-react";
+import { UserPlus, Users, LogOut, Trash2, ChevronLeft, Swords, Trophy, ArrowRight, Zap, DollarSign, Target, TrendingUp, ImagePlus, Shield } from "lucide-react";
 import { useAuth } from "../hooks/useAuth.jsx";
 import { useToast } from "../hooks/useToast.jsx";
 import { useConfirm } from "../hooks/useConfirm.jsx";
