@@ -2979,3 +2979,39 @@ body{letter-spacing:.1px}
 .lfgTag.game{color:var(--neon);border-color:rgba(34,197,251,.3)}
 /* Betting tabs — GB active accent */
 .betTabs .betTab.active,.betTabs button.active{color:var(--neon)}
+
+/* ═════════════════════════════════════════════════════════════════
+   Final once-over — flatten remaining hover-lift, retire stray violet
+   (WAGR purple is intentional brand and left untouched)
+   ═════════════════════════════════════════════════════════════════ */
+
+/* Flatten remaining card hover-lift — GB has no bounce */
+.gameCard:hover,.featuredMatch:hover,.featureCard:hover,.modeCard:hover,
+.teamCard2:hover,.statBox2:hover,.gbCard:hover,.playerCard2:hover,
+.cmKindCard:hover,.achCard:hover,.mrPlayerCard:hover,.bkMatch.clickable:hover,
+.lbPodiumCard:hover,.pscTrophy:hover,.mapCard:hover,.dbMapCard:hover{transform:none}
+
+/* Teams-list card — retire violet → GB charcoal + cyan */
+.teamCard2{border-color:var(--line)}
+.teamCard2:hover{border-color:rgba(34,197,251,.45)}
+.teamTag{background:linear-gradient(135deg,rgba(34,197,251,.14),rgba(34,197,251,.06));border-color:rgba(34,197,251,.25);box-shadow:none;color:var(--neon)}
+.teamCard2:hover .teamTag{box-shadow:none;border-color:rgba(34,197,251,.4)}
+.memberChip{background:#0a0d12;border-color:var(--line)}
+.memberChip:hover{border-color:rgba(34,197,251,.25);background:rgba(34,197,251,.06)}
+
+/* Notifications team icon → cyan */
+.notifIconWrap.notifTeam{background:rgba(34,197,251,.1);color:var(--neon)}
+
+/* Season accents → cyan for consistency */
+.seasonBanner{border-color:var(--line)}
+.seasonBannerTop,.seasonDaysLeft{color:var(--neon)}
+.seasonDaysLeft{background:rgba(34,197,251,.08)}
+.seasonProgressFill{background:linear-gradient(90deg,var(--neon),rgba(34,197,251,.55))}
+.seasonPicker:focus{border-color:var(--neon)}
+
+/* Floating chat widget → cyan brand (retire violet) */
+.chatFab{background:linear-gradient(135deg,var(--neon),#0f8fbf);box-shadow:0 4px 18px rgba(34,197,251,.32)}
+.chatFab:hover{box-shadow:0 6px 28px rgba(34,197,251,.5)}
+.chatLineTop b{color:var(--neon)}
+.chatDockInput button{background:linear-gradient(135deg,var(--neon),#0f8fbf)}
+.chatTabs button.on{color:var(--neon);border-color:rgba(34,197,251,.3)}
