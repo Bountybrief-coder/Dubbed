@@ -2626,3 +2626,56 @@ body{letter-spacing:.1px}
 .cdMapsLbl{display:block;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700;font-size:10px;margin-bottom:6px}
 .cdMapList{display:flex;flex-wrap:wrap;gap:6px}
 .cdMap{font-size:11px;font-weight:700;color:#fff;background:#0a0d12;border:1px solid var(--line);padding:3px 8px}
+
+/* ═════════════════════════════════════════════════════════════════
+   Profile & Teams polish pass — depth, hierarchy, spacing, density
+   ═════════════════════════════════════════════════════════════════ */
+
+/* Defined, subtly-lit cards (fixes flat/lifeless + faint borders) */
+.profileHero2,.pscCard,.panel2,.gbCard,.teamCard2,.trophyRow,.achCard,.pscTrophy{
+  border-color:var(--line);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 2px 6px rgba(0,0,0,.28);
+}
+.profileHero2,.pscCard,.panel2,.gbCard{
+  background:linear-gradient(180deg,#20262f 0%,var(--panel) 55%);
+}
+
+/* Section panels — clear header rule + consistent rhythm (hierarchy + spacing) */
+.panel2{padding:24px;margin-top:20px}
+.panel2 h2{font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#fff;padding-bottom:12px;margin:0 0 16px;border-bottom:1px solid var(--line)}
+.panel2 h2 svg{color:var(--neon)}
+
+/* Profile hero — bigger name, rank-lit avatar */
+.profileHero2{padding:32px 36px;gap:32px}
+.phInfo h1{font-size:clamp(24px,4vw,32px);font-weight:900;letter-spacing:-.02em}
+.phInfo .sub{color:var(--muted);font-size:13px}
+.phAvatar{border:2px solid var(--rank-glow,var(--neon));box-shadow:0 0 0 4px rgba(0,0,0,.35),0 10px 26px rgba(0,0,0,.55)}
+
+/* Stat card — bold numbers, clean labels, even columns (strong hierarchy) */
+.pscCard{padding:26px 30px;gap:28px}
+.pscCol small{font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--muted)}
+.pscBig{font-size:clamp(26px,3.4vw,34px);font-weight:900;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums;color:#fff}
+.pscBig.cash{color:var(--green)}
+.pscBig .wl{font-size:.5em;color:var(--muted);font-weight:800;margin:0 1px}
+.pscSub{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.pscDivider{width:1px;align-self:stretch;min-height:54px;background:var(--line)}
+
+/* Recent-match form as crisp chips (fills the sparse area) */
+.pscForm{border:1px solid var(--line);background:#0a0d12;padding:6px 9px;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:46px}
+.pscForm.w{border-color:rgba(62,207,110,.4)}
+.pscForm.l{border-color:rgba(255,77,94,.35)}
+.pscFormLetter{font-weight:900;font-size:13px}
+.pscForm.w .pscFormLetter{color:var(--green)}
+.pscForm.l .pscFormLetter{color:var(--danger)}
+.pscFormXp{font-size:10px;color:var(--muted);font-weight:700}
+
+/* Team grid cards — lit, tighter, denser stat chips (fixes sparse + flat) */
+.teamCard2{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line);padding:18px 20px}
+.teamCard2:hover{border-color:rgba(34,197,251,.45);box-shadow:0 8px 26px rgba(0,0,0,.4)}
+.teamCardTop b{font-size:15px;font-weight:800}
+.teamStatRow{gap:8px;padding-top:12px;margin-top:12px;border-top:1px solid var(--line);flex-wrap:wrap;align-items:center}
+.teamStatRow>span{background:#0a0d12;border:1px solid var(--line);padding:4px 10px;font-size:12px;font-weight:800;color:#fff}
+.teamStatRow>span.cash{color:var(--green)}
+
+/* Roster chips a touch more defined */
+.playerCardCompact{background:#0a0d12;border-color:var(--line);padding:7px 12px 7px 7px}
