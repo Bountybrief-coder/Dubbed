@@ -3065,3 +3065,23 @@ body{letter-spacing:.1px}
 .dbTeamPlayer:hover{background:rgba(34,197,251,.05);transform:none}
 .dbTeamHead{background:#0a0d12}
 .dbTeamPlayerInfo small{font-weight:700}
+
+/* ═════════════════════════════════════════════════════════════════
+   Match room → GameBattles (header / pills / info strip / tools)
+   ═════════════════════════════════════════════════════════════════ */
+/* Header banner — top-lit charcoal, keep the gold/cyan stripe */
+.dbHead{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)}
+.dbHeadTitle{font-size:26px}
+/* Pills → GB dark chips (retire violet) */
+.dbPill{background:#0a0d12;border-color:var(--line);color:#cbd3de}
+.dbPill.hi{color:var(--neon);border-color:rgba(34,197,251,.3)}
+/* Info strip → charcoal surface */
+.dbInfoStrip{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)}
+.dbInfoItem svg{opacity:.6}
+/* Section header label a touch brighter */
+.dbSectionHead h3{color:#cbd3de}
+/* Tool buttons → GB dark, cyan active */
+.dbToolBtn{background:#0a0d12}
+.dbToolBtn.active{background:rgba(34,197,251,.08);color:var(--neon);border-color:rgba(34,197,251,.35)}
+/* Rules / setup bodies share the surface */
+.dbRulesBody{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)}
