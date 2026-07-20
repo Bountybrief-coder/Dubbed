@@ -3110,3 +3110,18 @@ select.field{cursor:pointer}
 .lbTable::before{background:var(--neon)}
 .lbHero::after{background:linear-gradient(90deg,var(--neon),transparent 80%)}
 .lbTableCount{border-radius:0;background:#0a0d12;border-color:var(--line);color:var(--muted)}
+
+/* ═════════════════════════════════════════════════════════════════
+   Tournament bracket → GameBattles (retire violet, charcoal cards)
+   ═════════════════════════════════════════════════════════════════ */
+.bkMatch{background:linear-gradient(180deg,#20262f,var(--panel) 60%)}
+.bkSeries{color:var(--muted);opacity:1}
+.bkSeed{background:#0a0d12;border:1px solid var(--line);color:var(--muted)}
+.bkTeam.w .bkSeed{background:rgba(34,197,251,.15);border-color:rgba(34,197,251,.3);color:var(--neon)}
+/* Neutral GB connector lines with square elbows */
+.bkSlot.bkOut::after{border-color:var(--line)}
+.bkSlot.bkOut.bkTop::after{border-radius:0}
+.bkSlot.bkOut.bkBot::after{border-radius:0}
+.bkSlot.bkIn::before{background:var(--line)}
+/* Tournament detail hero → charcoal surface */
+.tourHero{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)}
