@@ -2794,3 +2794,36 @@ body{letter-spacing:.1px}
 /* Header-rule fix: full-width divider when a panel header has an action button */
 .panelHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid var(--line)}
 .panelHead h2{border-bottom:0;padding-bottom:0;margin:0}
+
+/* ── MLG-style team tables (stats / matches / roster) ── */
+.statTableWrap{overflow-x:auto}
+.gbStatTable,.gbMatchTable,.gbRosterTable{width:100%;border-collapse:collapse;font-size:13px}
+.gbStatTable th,.gbMatchTable th,.gbRosterTable th{text-align:center;font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;padding:0 10px 11px;border-bottom:1px solid var(--line);white-space:nowrap}
+.gbStatTable th.tl,.gbMatchTable th.tl,.gbRosterTable th.tl{text-align:left}
+.gbStatTable td,.gbMatchTable td,.gbRosterTable td{text-align:center;padding:12px 10px;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap;font-weight:700;color:#fff;font-variant-numeric:tabular-nums}
+.gbStatTable td.tl,.gbMatchTable td.tl,.gbRosterTable td.tl{text-align:left}
+.gbStatTable td.pos,.gbMatchTable td.pos{color:var(--green)}
+.gbStatTable td.neg,.gbMatchTable td.neg{color:var(--danger)}
+.gbStatTable td.cash,.gbStatTable .cash{color:var(--green)}
+.gbStatTable tbody tr:last-child td,.gbMatchTable tbody tr:last-child td,.gbRosterTable tbody tr:last-child td{border-bottom:0}
+
+/* Match table */
+.gbMatchTable tr[role="button"],.gbRosterTable tr[role="button"]{cursor:pointer;transition:background .15s}
+.gbMatchTable tr[role="button"]:hover,.gbRosterTable tr[role="button"]:hover{background:var(--panel2)}
+.mtBadge{font-size:10px;font-weight:900;letter-spacing:.05em;padding:3px 8px;border:1px solid var(--line);color:var(--muted);display:inline-block}
+.mtBadge.live{color:var(--danger);border-color:rgba(255,77,94,.4);background:rgba(255,77,94,.08)}
+.mtBadge.wait{color:#ffc23c;border-color:rgba(255,194,60,.35)}
+.mtBadge.done{color:var(--muted)}
+.mtResult{font-weight:900;font-size:12px;letter-spacing:.04em}
+.mtResult.win{color:var(--green)}
+.mtResult.loss{color:var(--danger)}
+
+/* Roster table */
+.rosterMember{display:flex;align-items:center;gap:11px}
+.rosterAvatar{width:34px;height:34px;border:2px solid var(--neon);background:#20262f;display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+.rosterAvatar img{width:100%;height:100%;object-fit:cover}
+.rosterAvatar span{font-size:12px;font-weight:800;color:#fff}
+.rosterName{display:flex;align-items:center;gap:5px;font-weight:800;color:#fff;font-size:13px}
+.rosterCapt{font-size:10px;font-weight:900;letter-spacing:.06em;color:#ffc23c;background:rgba(255,194,60,.1);border:1px solid rgba(255,194,60,.3);padding:2px 7px}
+.rosterRank{display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+.rosterJoin{color:var(--muted);font-weight:600;font-size:12px}

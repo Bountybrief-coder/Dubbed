@@ -9,7 +9,7 @@ const isMissingCrestCols = (err) =>
 const stripCrestCols = (sel) => sel.replace("logo_url, color, ", "");
 
 export async function getMyTeams(userId) {
-  const sel = "team_id, role, teams(id, name, tag, type, game, platform, size, owner_id, created_at, logo_url, color, wins, losses, earnings, xp, tourney_wins, tourney_losses, team_members(user_id, role, profiles(username, avatar_url, xp, wagr_member, country, wins, losses)))";
+  const sel = "team_id, role, teams(id, name, tag, type, game, platform, size, owner_id, created_at, logo_url, color, wins, losses, earnings, xp, tourney_wins, tourney_losses, team_members(user_id, role, joined_at, profiles(username, avatar_url, xp, wagr_member, country, wins, losses)))";
   let { data, error } = await supabase.from("team_members").select(sel).eq("user_id", userId);
   if (error && isMissingCrestCols(error.message)) {
     ({ data, error } = await supabase.from("team_members").select(stripCrestCols(sel)).eq("user_id", userId));
@@ -21,7 +21,7 @@ export async function getMyTeams(userId) {
 // Browse other teams to challenge (ladder). Teams are publicly readable.
 // Excludes teams the current user is already a member of.
 export async function browseTeams({ game, size, type, excludeUserId, limit = 60 } = {}) {
-  const sel = "id, name, tag, type, game, platform, size, owner_id, logo_url, color, wins, losses, earnings, xp, tourney_wins, tourney_losses, team_members(user_id, role, profiles(username, avatar_url, xp, wagr_member, country, wins, losses))";
+  const sel = "id, name, tag, type, game, platform, size, owner_id, logo_url, color, wins, losses, earnings, xp, tourney_wins, tourney_losses, team_members(user_id, role, joined_at, profiles(username, avatar_url, xp, wagr_member, country, wins, losses))";
   const run = (s) => {
     let q = supabase.from("teams").select(s)
       .order("wins", { ascending: false }).order("xp", { ascending: false }).limit(limit);
@@ -51,7 +51,7 @@ export async function updateTeamCrest(teamId, { logo_url, color }) {
 export async function getTeam(teamId) {
   const { data, error } = await supabase
     .from("teams")
-    .select("*, team_members(user_id, role, profiles(username, avatar_url, xp, wagr_member, country, wins, losses)), team_invites(user_id, profiles(username))")
+    .select("*, team_members(user_id, role, joined_at, profiles(username, avatar_url, xp, wagr_member, country, wins, losses)), team_invites(user_id, profiles(username))")
     .eq("id", teamId)
     .maybeSingle();
   return { data, error: error?.message };
@@ -173,11 +173,11 @@ export function subscribeToTeamMatches(teamId, onChange) {
 export async function getUserTeams(userId) {
   let { data, error } = await supabase
     .from("team_members")
-    .select("team_id, role, teams(id, name, tag, type, game, platform, size, owner_id, logo_url, color, wins, losses, xp, team_members(user_id, role, profiles(username, avatar_url)))")
+    .select("team_id, role, teams(id, name, tag, type, game, platform, size, owner_id, logo_url, color, wins, losses, xp, team_members(user_id, role, joined_at, profiles(username, avatar_url)))")
     .eq("user_id", userId);
   if (error && isMissingCrestCols(error.message)) {
     ({ data, error } = await supabase.from("team_members")
-      .select("team_id, role, teams(id, name, tag, type, game, platform, size, owner_id, wins, losses, xp, team_members(user_id, role, profiles(username, avatar_url)))")
+      .select("team_id, role, teams(id, name, tag, type, game, platform, size, owner_id, wins, losses, xp, team_members(user_id, role, joined_at, profiles(username, avatar_url)))")
       .eq("user_id", userId));
   }
   const teams = (data || []).map(d => ({ ...d.teams, myRole: d.role }));

@@ -425,9 +425,21 @@ function TeamDetailPage({ team, onBack, onNavigate, onReload }) {
   const winPct = totalW + totalL > 0 ? Math.round((totalW / (totalW + totalL)) * 100) : 0;
 
   const recentForm = (history || []).slice(0, 5).map((h) => h.result === "win" ? "W" : "L");
+  const mp = totalW + totalL;
+
+  // Current win/loss streak from most-recent-first history
+  let streakN = 0, streakType = null;
+  for (const h of history || []) {
+    const r = h.result === "win" ? "W" : "L";
+    if (streakType === null) { streakType = r; streakN = 1; }
+    else if (r === streakType) streakN += 1;
+    else break;
+  }
+  const streakLabel = streakType ? `${streakN}${streakType}` : "—";
+  const hasMatches = (activeMatches && activeMatches.length > 0) || (history && history.length > 0);
 
   return (
-    <main className="page gbProfile">
+    <main className="page gbProfile gbTeamPage">
       <button className="backLink" onClick={onBack}><ChevronLeft size={16} /> Back to teams</button>
 
       {/* ── Team hero banner ── */}
@@ -459,87 +471,92 @@ function TeamDetailPage({ team, onBack, onNavigate, onReload }) {
 
       {isOwner && <CrestEditor team={team} onSaved={onReload} />}
 
-      {/* ── Three-column body ── */}
-      <div className="gbBody">
-        <div className="gbCol gbColLeft">
-          <div className="gbRankPanel gbTeamStats">
-            <div className="gbTeamWinBig" style={{ color: team.color || "var(--neon)" }}>{winPct}%</div>
-            <div className="gbRankLabel">WIN RATE</div>
-            <div className="gbTeamStatRows">
-              <div><span>Overall</span><b>{totalW}-{totalL}</b></div>
-              <div><span>Ladder</span><b>{ladderW}-{ladderL}</b></div>
-              <div><span>Tournament</span><b>{tourneyW}-{tourneyL}</b></div>
-              <div><span>Earnings</span><b className="cash">{money(team.earnings || 0)}</b></div>
-              <div><span>Team XP</span><b>{(team.xp || 0).toLocaleString()}</b></div>
-            </div>
-          </div>
+      {/* ── Team Stats (MLG-style horizontal table) ── */}
+      <section className="panel2">
+        <h2><TrendingUp size={16} /> Team Stats</h2>
+        <div className="statTableWrap">
+          <table className="gbStatTable">
+            <thead>
+              <tr>
+                <th className="tl">Season</th><th>MP</th><th>W</th><th>L</th><th>Pct</th><th>Streak</th>
+                <th>Ladder</th><th>Tourney</th><th>Earnings</th><th>Level</th><th>XP</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="tl">All-Time</td>
+                <td>{mp}</td>
+                <td className="pos">{totalW}</td>
+                <td className="neg">{totalL}</td>
+                <td>{winPct}%</td>
+                <td className={streakType === "W" ? "pos" : streakType === "L" ? "neg" : ""}>{streakLabel}</td>
+                <td>{ladderW}-{ladderL}</td>
+                <td>{tourneyW}-{tourneyL}</td>
+                <td className="cash">{money(team.earnings || 0)}</td>
+                <td>{Math.max(1, Math.floor((team.xp || 0) / 500) + 1)}</td>
+                <td>{(team.xp || 0).toLocaleString()}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
+      </section>
 
-        <div className="gbCol gbColCenter">
-          {/* Roster */}
-          <section className="panel2">
-            <div className="panelHead">
-              <h2><Users size={16} /> Roster <span className="gbCount">{members.length}</span></h2>
-              {isOwner && <Button variant="ghost" className="sm" onClick={() => setInviteOpen(true)}><UserPlus size={14} /> Invite</Button>}
-            </div>
-            <div className="teamRosterDetail">
-              {members.map((m) => <PlayerCard key={m.user_id} member={m} onClick={() => onNavigate?.("profile", m.profiles?.username)} />)}
-            </div>
-          </section>
-
-          {/* Active Matches */}
-          <section className="panel2">
-            <h2><Swords size={16} /> Active Matches</h2>
-            {!activeMatches || activeMatches.length === 0 ? (
-              <p className="sub" style={{ padding: "10px 0 2px" }}>No active matches right now.</p>
-            ) : (
-              <div className="activeMatchList">
-                {activeMatches.map((m) => (
-                  <ActiveMatchCard key={m.id} match={m} onGo={() => onNavigate?.("match", m.id)} />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Recent Results */}
-          {history && history.length > 0 && (
-            <section className="panel2">
-              <h2><Target size={16} /> Recent Results</h2>
-              <div className="teamHistoryList">
-                {history.map((h) => (
-                  <div key={h.id} className={`historyRow ${h.result}`}>
-                    <span className={`historyResult ${h.result}`}>{h.result === "win" ? "W" : "L"}</span>
-                    <span className="historyOpp">vs {h.opponent?.name || h.opponent?.tag || "-"}</span>
-                    {h.earnings > 0 && <span className="cash">+{money(h.earnings)}</span>}
-                    <span className="historyXp">+{h.xp_earned} XP</span>
-                    {h.tournament_id && <span className="badge sm">Tourney</span>}
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-        </div>
-
-        <div className="gbCol gbColRight">
-          {/* Team info */}
-          <section className="panel2">
-            <h2><Shield size={16} /> Team Info</h2>
-            <table className="gbRecords gbInfoTable">
+      {/* ── Upcoming & Recent Matches ── */}
+      <section className="panel2">
+        <h2><Swords size={16} /> Upcoming &amp; Recent Matches</h2>
+        {!hasMatches ? (
+          <p className="sub" style={{ padding: "10px 0 2px" }}>No matches have been played or scheduled.</p>
+        ) : (
+          <div className="statTableWrap">
+            <table className="gbMatchTable">
+              <thead>
+                <tr><th className="tl">Status</th><th className="tl">Opponent</th><th className="tl">Match</th><th>Stake</th><th>Result</th></tr>
+              </thead>
               <tbody>
-                <tr><td>Game</td><td>{shortForGame(team.game) || team.game}</td></tr>
-                <tr><td>Size</td><td>{teamCategoryLabel(team.size)}</td></tr>
-                <tr><td>Type</td><td style={{ textTransform: "capitalize" }}>{team.type}</td></tr>
-                {team.platform && <tr><td>Platform</td><td>{team.platform}</td></tr>}
-                <tr><td>Tag</td><td>[{team.tag}]</td></tr>
-                <tr><td>Members</td><td>{members.length}</td></tr>
+                {(activeMatches || []).map((m) => (
+                  <tr key={`a-${m.id}`} className="mtActive" {...clickable(() => onNavigate?.("match", m.id))}>
+                    <td className="tl"><span className={`mtBadge ${m.status === "live" ? "live" : "wait"}`}>{m.status === "live" ? "LIVE" : m.status === "open" ? "WAITING" : m.status.toUpperCase()}</span></td>
+                    <td className="tl">{m.opponent_name || "—"}</td>
+                    <td className="tl">{shortForGame(m.game)} · {m.mode} · {m.format}</td>
+                    <td>{m.kind === "cash" ? <span className="cash">{money(m.entry)}</span> : "XP"}</td>
+                    <td>—</td>
+                  </tr>
+                ))}
+                {(history || []).map((h) => (
+                  <tr key={`h-${h.id}`}>
+                    <td className="tl"><span className="mtBadge done">FINAL</span></td>
+                    <td className="tl">{h.opponent?.name || h.opponent?.tag || "—"}</td>
+                    <td className="tl">{h.tournament_id ? "Tournament" : "Ladder"}{h.xp_earned ? ` · +${h.xp_earned} XP` : ""}</td>
+                    <td>{h.earnings > 0 ? <span className="cash">+{money(h.earnings)}</span> : "—"}</td>
+                    <td><span className={`mtResult ${h.result}`}>{h.result === "win" ? "WIN" : "LOSS"}</span></td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-          </section>
+          </div>
+        )}
+      </section>
 
-          {/* Challenges */}
-          <ChallengesPanel challenges={challenges || []} teamId={team.id} isOwner={isOwner} onReload={reloadChallenges} onNavigate={onNavigate} />
+      {/* ── Challenges ── */}
+      <ChallengesPanel challenges={challenges || []} teamId={team.id} isOwner={isOwner} onReload={reloadChallenges} onNavigate={onNavigate} />
+
+      {/* ── Roster (MLG-style table) ── */}
+      <section className="panel2">
+        <div className="panelHead">
+          <h2><Users size={16} /> Roster <span className="gbCount">{members.length}</span></h2>
+          {isOwner && <Button variant="ghost" className="sm" onClick={() => setInviteOpen(true)}><UserPlus size={14} /> Invite</Button>}
         </div>
-      </div>
+        <div className="statTableWrap">
+          <table className="gbRosterTable">
+            <thead>
+              <tr><th className="tl">Member</th><th className="tl">Role</th><th className="tl">Rank</th><th>Record</th><th className="tl">Join Date</th></tr>
+            </thead>
+            <tbody>
+              {members.map((m) => <TeamRosterRow key={m.user_id} member={m} onClick={() => onNavigate?.("profile", m.profiles?.username)} />)}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {/* ── Team actions ── */}
       <section className="panel2 gbTeamActions">
@@ -766,6 +783,34 @@ function PlayerCard({ member: m, compact, onClick }) {
         <div className="playerCardRecord">{w}W – {l}L</div>
       </div>
     </div>
+  );
+}
+
+function TeamRosterRow({ member: m, onClick }) {
+  const p = m.profiles || {};
+  const rank = rankForXp(p.xp || 0);
+  const w = p.wins || 0, l = p.losses || 0;
+  const initials = (p.username || "?").slice(0, 2).toUpperCase();
+  const joined = m.joined_at ? new Date(m.joined_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+  return (
+    <tr className="rosterRow" {...(onClick ? clickable(onClick) : {})}>
+      <td className="tl">
+        <div className="rosterMember">
+          <div className="rosterAvatar" style={{ borderColor: rank.glow }}>
+            {p.avatar_url ? <img src={p.avatar_url} alt="" /> : <span>{initials}</span>}
+          </div>
+          <span className="rosterName">
+            {p.username}
+            {p.wagr_member && <WagrBadge size={11} />}
+            {p.country && <img className="countryFlag" src={countryFlag(p.country)} alt={p.country} />}
+          </span>
+        </div>
+      </td>
+      <td className="tl">{m.role === "owner" ? <span className="rosterCapt">CAPTAIN</span> : "Player"}</td>
+      <td className="tl"><span className="rosterRank" style={{ color: rank.glow }}><RankStar rank={rank} size={14} /> {rank.name}</span></td>
+      <td className="rosterRec">{w}-{l}</td>
+      <td className="tl rosterJoin">{joined}</td>
+    </tr>
   );
 }
 
