@@ -3137,3 +3137,41 @@ select.field{cursor:pointer}
 .obOption{background:#0a0d12}
 .obOption:hover{border-color:#3d4757;color:#cbd3de}
 .obOption.selected{border-color:var(--neon);color:var(--neon);background:rgba(34,197,251,.08)}
+
+/* ═════════════════════════════════════════════════════════════════
+   Final violet retirement — all remaining user-facing accents → cyan
+   ═════════════════════════════════════════════════════════════════ */
+/* Links + inline accents */
+.gtVal.link{color:var(--neon)}
+.twitchLink{color:var(--neon)}
+.mrDisputeLink{color:var(--neon)}
+.betOfferMine{color:var(--neon)}
+.badge.accent{color:var(--neon);border-color:rgba(34,197,251,.3);background:rgba(34,197,251,.08)}
+/* Active match card → charcoal + cyan, no lift */
+.activeMatchCard{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)}
+.activeMatchCard:hover{border-color:rgba(34,197,251,.35);box-shadow:none;transform:none}
+/* Challenge rows + team history */
+.challengeRow:hover{background:rgba(34,197,251,.04);border-color:rgba(34,197,251,.15)}
+.challengeRow.outgoing{border-left-color:var(--neon);background:linear-gradient(135deg,rgba(34,197,251,.04),transparent)}
+.historyRow:hover{background:rgba(34,197,251,.04)}
+/* Match-room chat */
+.matchChatCard{border-color:var(--line)}
+.matchChatInput{border-color:rgba(34,197,251,.2)}
+.mrChatHeader{border-bottom-color:var(--line)}
+.mrChatAction:hover{border-color:rgba(34,197,251,.4);background:rgba(34,197,251,.08)}
+/* Find Teammates */
+.lfgCard.mine{border-color:rgba(34,197,251,.3);background:linear-gradient(135deg,rgba(34,197,251,.04),var(--panel))}
+.lfgTag.interested{color:var(--neon);border-color:rgba(34,197,251,.2);background:rgba(34,197,251,.06)}
+/* Floating chat FAB pulse → cyan */
+@keyframes fabPulse{0%,100%{box-shadow:0 4px 20px rgba(34,197,251,.5),0 0 40px rgba(34,197,251,.15)}50%{box-shadow:0 4px 24px rgba(34,197,251,.7),0 0 50px rgba(34,197,251,.3)}}
+
+/* Floating chat dock internals → cyan (finish violet retirement) */
+.chatDock2{border-color:var(--line)}
+.chatDockHead{border-bottom-color:var(--line);background:linear-gradient(135deg,rgba(34,197,251,.08),rgba(34,197,251,.03))}
+.chatTabs{border-bottom-color:var(--line)}
+.chatTabs button:hover{background:rgba(34,197,251,.08)}
+.chatLine:hover{background:rgba(34,197,251,.05)}
+.chatLine.system{background:rgba(34,197,251,.04);border-left-color:rgba(34,197,251,.4)}
+.chatDockInput{border-top-color:var(--line)}
+.chatDockInput input{background:#0a0d12;border-color:var(--line)}
+.chatDockInput input:focus{border-color:var(--neon);box-shadow:0 0 0 3px rgba(34,197,251,.12)}
