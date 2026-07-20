@@ -2937,3 +2937,27 @@ body{letter-spacing:.1px}
 .myMatchRow:hover{transform:none;box-shadow:none;border-color:rgba(34,197,251,.35)}
 .myMatchInfo b{font-weight:800}
 .myMatchCode{color:var(--muted);opacity:.85}
+
+/* ═════════════════════════════════════════════════════════════════
+   GB consistency pass — tournaments / shop / wallet / home
+   ═════════════════════════════════════════════════════════════════ */
+
+/* Unified top-lit charcoal card surfaces */
+.tourTile,.tourFact,.tourTeamCard,.shopServiceCard,.wdStat,.rakeCard,
+.howStep,.teamTypeCard{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)}
+
+/* Kill hover-lift; cyan border feedback only */
+.tourTile:hover,.tourTeamCard:hover,.shopServiceCard:hover,.wdStat:hover,
+.rakeCard:hover,.howStep:hover,.teamTypeCard:hover{transform:none;box-shadow:none;border-color:rgba(34,197,251,.4)}
+
+/* Tournament tiles — cyan always-on left accent (GB), no violet */
+.tourTile{transition:border-color .15s ease,background .15s ease}
+.tourTile::before{background:var(--line);opacity:1;width:3px;transition:background .15s ease,width .15s ease}
+.tourTile:hover::before{background:var(--neon);width:4px;opacity:1}
+.tourTile:hover{background:linear-gradient(180deg,#232a34,var(--panel) 60%)}
+
+/* Section headers + stat number consistency */
+.sectionHead h2,.shopSectionH{letter-spacing:-.3px}
+.tourHeroStat b,.tourFact b,.wdStat b,.heroStat b,.uqcStatVal,.tourStat b{font-weight:800;font-variant-numeric:tabular-nums;color:#fff}
+.walletBalCard b{color:var(--green)}
+.shopPriceTag{color:var(--neon)}
