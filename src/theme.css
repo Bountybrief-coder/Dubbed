@@ -3125,3 +3125,15 @@ select.field{cursor:pointer}
 .bkSlot.bkIn::before{background:var(--line)}
 /* Tournament detail hero → charcoal surface */
 .tourHero{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)}
+
+/* ═════════════════════════════════════════════════════════════════
+   Onboarding modal → GameBattles cyan (retire violet)
+   ═════════════════════════════════════════════════════════════════ */
+.obDot.active{border-color:var(--neon);color:var(--neon);background:rgba(34,197,251,.1)}
+.obIcon{background:linear-gradient(135deg,rgba(34,197,251,.15),rgba(34,197,251,.06));color:var(--neon)}
+.obInput{background:#0a0d12;transition:border-color .15s ease,box-shadow .15s ease}
+.obInput:focus{border-color:var(--neon);box-shadow:0 0 0 3px rgba(34,197,251,.12)}
+.obInput::placeholder{color:rgba(255,255,255,.3)}
+.obOption{background:#0a0d12}
+.obOption:hover{border-color:#3d4757;color:#cbd3de}
+.obOption.selected{border-color:var(--neon);color:var(--neon);background:rgba(34,197,251,.08)}
