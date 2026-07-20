@@ -131,7 +131,7 @@ export function subscribeToTrophies(userId, onChange) {
 export async function getRecentMatches(userId, limit = 5) {
   const { data, error } = await supabase
     .from("match_players")
-    .select("match_id, matches!inner(id, status, winner_id, created_at)")
+    .select("match_id, matches!inner(id, status, winner_id, created_at, game, mode, match_number)")
     .eq("user_id", userId)
     .eq("matches.status", "settled")
     .order("matches(created_at)", { ascending: false })
@@ -139,7 +139,11 @@ export async function getRecentMatches(userId, limit = 5) {
   const rows = (data || []).map((r) => ({
     matchId: r.match_id,
     won: r.matches?.winner_id === userId,
-    xp: r.matches?.winner_id === userId ? 25 : -15
+    xp: r.matches?.winner_id === userId ? 25 : -15,
+    game: r.matches?.game,
+    mode: r.matches?.mode,
+    number: r.matches?.match_number,
+    at: r.matches?.created_at,
   }));
   return { data: rows, error: error?.message };
 }

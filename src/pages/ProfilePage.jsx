@@ -59,6 +59,9 @@ export function ProfilePage({ username, onNavigate }) {
   const progress = rankProgress(profile.xp);
   const isMaxed = nxt.xp === rank.xp;
   const total = profile.wins + profile.losses;
+  const winRate = total ? Math.round((profile.wins / total) * 100) : 0;
+  const memberSince = new Date(profile.member_since).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const gamertag = profile.activision_id || profile.psn || profile.xbox || profile.battlenet || profile.steam;
 
   async function onAvatar(e) {
     const file = e.target.files?.[0];
@@ -76,51 +79,199 @@ export function ProfilePage({ username, onNavigate }) {
   }
 
   return (
-    <main className="page">
-      {/* ── HERO HEADER ── */}
-      <section className="profileHero2" style={{ "--rank-glow": rank.glow }}>
-        <div className="phAvatarCol">
-          <div className="phAvatar" style={{ borderColor: rank.glow, boxShadow: `0 0 28px ${rank.glow}30, 0 4px 16px rgba(0,0,0,.4)` }}>
-            {profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : <span>{profile.username.slice(0, 2)}</span>}
+    <main className="page gbProfile">
+      {/* ── HERO BANNER ── */}
+      <section className="gbHero" style={{ "--rank-glow": rank.glow }}>
+        <div className="gbHeroLeft">
+          <div className="gbHeroAvatarCol">
+            <div className="gbHeroAvatar" style={{ borderColor: rank.glow }}>
+              {profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : <span>{profile.username.slice(0, 2)}</span>}
+            </div>
+            {isMe && <label className="avatarUp sm"><ImagePlus size={11} /> Change<input type="file" accept="image/*" onChange={onAvatar} /></label>}
           </div>
-          {isMe && <label className="avatarUp"><ImagePlus size={13} /> Change<input type="file" accept="image/*" onChange={onAvatar} /></label>}
+          <div className="gbHeroId">
+            <h1>{profile.username}{profile.country && <img className="countryFlag" src={countryFlag(profile.country)} alt={profile.country} title={profile.country} />}{regionTag(profile.country) && <span className="regionTag">{regionTag(profile.country)}</span>}{profile.wagr_member && <WagrBadge size={22} />}</h1>
+            <div className="gbHeroStatline">
+              <div><small>MEMBER SINCE</small><b>{memberSince}</b></div>
+              <div><small>GLOBAL RANK</small><b>{myRank?.rank_pos ? `#${myRank.rank_pos.toLocaleString()}` : "Unranked"}</b></div>
+              <div><small>RECORD</small><b>{profile.wins}-{profile.losses} <em>{winRate}%</em></b></div>
+              <div><small>EARNINGS</small><b className="cash">{money(profile.earnings)}</b></div>
+            </div>
+            <ProfileSocials profile={profile} />
+          </div>
         </div>
-        <div className="phInfo">
-          <h1>{profile.username}{profile.country && <img className="countryFlag" src={countryFlag(profile.country)} alt={profile.country} title={profile.country} />}{regionTag(profile.country) && <span className="regionTag">{regionTag(profile.country)}</span>}{profile.wagr_member && <WagrBadge size={24} />}</h1>
-          <p className="sub">{profile.region || "NA"} · Joined {new Date(profile.member_since).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" })}</p>
-          {isMe && myRank?.rank_pos && <span className="badge accent" style={{ marginBottom: 8 }}>#{myRank.rank_pos.toLocaleString()} Global</span>}
-          <div className="xpBar"><div className="xpFill" style={{ width: `${progress}%`, background: `linear-gradient(90deg, ${rank.glow}, ${rank.glow}cc)` }} /></div>
-          <small className="subtle">{nxt.xp === rank.xp ? "Max tier reached" : `${(nxt.xp - profile.xp).toLocaleString()} XP to ${nxt.name}`}</small>
-        </div>
-        {/* ── Rank Medallion ── */}
-        <div className={`phMedallion ${isMaxed ? "phMedallion--max" : ""}`}>
-          <div className="phMedHalo" />
-          <RankStar rank={rank} size={260} />
-          <span className="phMedTier">{rank.name.toUpperCase()}</span>
-          {isMaxed
-            ? <span className="phMedMax">MAX PRESTIGE</span>
-            : <span className="phMedXp">{(nxt.xp - profile.xp).toLocaleString()} to {nxt.name}</span>
-          }
+        <div className="gbHeroRight">
+          {gamertag && <div className="gbGamertag"><small>GAMERTAG</small><b>{gamertag}</b></div>}
+          <ProfileTrophyStrip userId={profile.id} />
         </div>
       </section>
 
-      {/* ── RANK PROGRESSION ── */}
-      <PlayerCard profile={profile} variant="full" />
+      {/* ── THREE-COLUMN BODY ── */}
+      <div className="gbBody">
+        <div className="gbCol gbColLeft">
+          <div className="gbRankPanel">
+            <div className={`gbMedallion ${isMaxed ? "max" : ""}`}>
+              <div className="phMedHalo" />
+              <RankStar rank={rank} size={180} />
+            </div>
+            <div className="gbRankTier" style={{ color: rank.glow }}>{rank.name.toUpperCase()}</div>
+            <div className="gbRankLabel">GLOBAL RANK</div>
+            <div className="gbRankNum">{myRank?.rank_pos ? ordinal(myRank.rank_pos) : "—"}</div>
+            <div className="gbRankPts">{(profile.xp || 0).toLocaleString()} XP</div>
+            {!isMaxed && (
+              <div className="gbRankProg">
+                <div className="xpBar"><div className="xpFill" style={{ width: `${progress}%`, background: rank.glow }} /></div>
+                <small className="subtle">{(nxt.xp - profile.xp).toLocaleString()} XP to {nxt.name}</small>
+              </div>
+            )}
+          </div>
+        </div>
 
-      {/* ── STAT CARD ── */}
-      <PlayerStatCard profile={profile} rank={rank} total={total} />
+        <div className="gbCol gbColCenter">
+          <TrophyShelf userId={profile.id} />
+          <ProfileTeamsPanel userId={profile.id} isMe={isMe} onNavigate={onNavigate} />
+          <RecentMatchesPanel userId={profile.id} onNavigate={onNavigate} />
+        </div>
 
-      {/* ── Gamertags + Socials ── */}
+        <div className="gbCol gbColRight">
+          <RecordsTable userId={profile.id} />
+          <AchievementsPanel userId={profile.id} />
+        </div>
+      </div>
+
+      {/* ── Settings (own profile) ── */}
       <GamertagsPanel profile={profile} isMe={isMe} onUpdate={() => { refreshProfile(); reload(); }} />
-
-      {/* ── Account Settings (own profile only) ── */}
       {isMe && <AccountSettingsPanel profile={profile} onUpdate={() => { refreshProfile(); reload(); }} />}
-
-      <ProfileTeamsPanel userId={profile.id} isMe={isMe} onNavigate={onNavigate} />
-      <AchievementsPanel userId={profile.id} />
-      <RecordsPanel userId={profile.id} />
-      <TrophiesPanel userId={profile.id} />
     </main>
+  );
+}
+
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"], v = n % 100;
+  return n.toLocaleString() + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function ProfileSocials({ profile }) {
+  const items = [
+    profile.twitch_username && { Icon: TwitchIcon, url: `https://twitch.tv/${profile.twitch_username}` },
+    profile.twitter && { Icon: TwitterIcon, url: `https://twitter.com/${profile.twitter}` },
+    profile.youtube && { Icon: YouTubeIcon, url: `https://youtube.com/${profile.youtube.startsWith("@") ? profile.youtube : "@" + profile.youtube}` },
+  ].filter(Boolean);
+  if (!items.length) return null;
+  return (
+    <div className="gbHeroSocials">
+      {items.map((s, i) => (
+        <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="gbSocial" aria-label="social link"><s.Icon size={14} /></a>
+      ))}
+    </div>
+  );
+}
+
+function ProfileTrophyStrip({ userId }) {
+  const { data: counts, reload } = useAsync(() => getTrophyCounts(userId), [userId]);
+  useEffect(() => subscribeToTrophies(userId, () => reload()), [userId, reload]);
+  const tc = counts || { wagr: 0, gold: 0, silver: 0, bronze: 0 };
+  return (
+    <div className="gbHeroTrophies">
+      {tc.wagr > 0 && <div className="gbHt"><TrophyIcon tone="wagr" size={30} /><b>{tc.wagr}</b></div>}
+      <div className="gbHt"><TrophyIcon tone="gold" size={30} /><b>{tc.gold}</b></div>
+      <div className="gbHt"><TrophyIcon tone="silver" size={30} /><b>{tc.silver}</b></div>
+      <div className="gbHt"><TrophyIcon tone="bronze" size={30} /><b>{tc.bronze}</b></div>
+    </div>
+  );
+}
+
+function TrophyShelf({ userId }) {
+  const { data: trophies, loading } = useAsync(() => getTrophies(userId), [userId]);
+  if (loading) return <section className="panel2"><h2><Trophy size={16} /> Trophies</h2><Skeleton h={70} /></section>;
+  const list = trophies || [];
+  const placeLbl = (p) => (p === 1 ? "1ST" : p === 2 ? "2ND" : p === 3 ? "3RD" : `${p}TH`);
+  return (
+    <section className="panel2 gbShelfPanel">
+      <h2><Trophy size={16} /> Trophies <span className="gbCount">{list.length}</span></h2>
+      {list.length === 0 ? (
+        <EmptyState>No trophies yet. Win tournaments to earn them.</EmptyState>
+      ) : (
+        <div className="gbShelf">
+          {list.map((t) => {
+            const tone = t.tone || (t.place === 1 ? "gold" : t.place === 2 ? "silver" : "bronze");
+            return (
+              <div className="gbShelfItem" key={t.id} title={`${t.title}${t.game ? " · " + t.game : ""}${t.prize ? " · " + money(t.prize) : ""}`}>
+                <TrophyIcon tone={tone} size={46} />
+                <span className="gbShelfLbl">{placeLbl(t.place)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RecentMatchesPanel({ userId, onNavigate }) {
+  const { data: recent, loading } = useAsync(() => getRecentMatches(userId, 6), [userId]);
+  if (loading) return <section className="panel2"><h2><Swords size={16} /> Recent Matches</h2><Skeleton h={80} /></section>;
+  const rows = recent || [];
+  return (
+    <section className="panel2">
+      <h2><Swords size={16} /> Recent Matches</h2>
+      {rows.length === 0 ? (
+        <EmptyState>No matches played yet. Records fill in as you play.</EmptyState>
+      ) : (
+        <div className="gbMatchList">
+          {rows.map((m, i) => (
+            <div className={`gbMatchRow ${m.won ? "w" : "l"}`} key={i} {...clickable(() => onNavigate?.("match", m.matchId))}>
+              <span className={`gbMatchResult ${m.won ? "w" : "l"}`}>{m.won ? "WIN" : "LOSS"}</span>
+              <div className="gbMatchInfo">
+                <b>{m.game ? shortForGame(m.game) : "Match"}{m.mode ? ` · ${m.mode}` : ""}</b>
+                {m.at && <small>{new Date(m.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</small>}
+              </div>
+              <span className={`gbMatchXp ${m.won ? "pos" : "neg"}`}>{m.xp > 0 ? `+${m.xp}` : m.xp} XP</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RecordsTable({ userId }) {
+  const { data: records, loading } = useAsync(() => getRecords(userId), [userId]);
+  if (loading) return <section className="panel2"><h2><Crosshair size={16} /> Records</h2><Skeleton h={200} /></section>;
+  const list = records || [];
+  const byGame = {};
+  for (const r of list) { if (!byGame[r.game]) byGame[r.game] = { w: 0, l: 0 }; byGame[r.game].w += r.w; byGame[r.game].l += r.l; }
+  const gameNames = GAMES.map((g) => g.name);
+  const sorted = Object.entries(byGame).sort((a, b) => {
+    const ia = gameNames.indexOf(a[0]), ib = gameNames.indexOf(b[0]);
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+  const totW = sorted.reduce((s, [, v]) => s + v.w, 0);
+  const totL = sorted.reduce((s, [, v]) => s + v.l, 0);
+  return (
+    <section className="panel2">
+      <h2><Crosshair size={16} /> Records</h2>
+      {sorted.length === 0 ? (
+        <EmptyState>No matches played yet.</EmptyState>
+      ) : (
+        <table className="gbRecords">
+          <thead><tr><th>Arena</th><th>W</th><th>L</th></tr></thead>
+          <tbody>
+            {sorted.map(([game, v]) => {
+              const short = GAMES.find((g) => g.name === game)?.short || game;
+              return (
+                <tr key={game}>
+                  <td className="gbRecGame"><span className="gbRecTag">{short}</span><span className="gbRecName">{game}</span></td>
+                  <td className="gbRecW">{v.w}</td>
+                  <td className="gbRecL">{v.l}</td>
+                </tr>
+              );
+            })}
+            <tr className="gbRecTotal"><td>Total</td><td>{totW}</td><td>{totL}</td></tr>
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 
