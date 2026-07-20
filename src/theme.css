@@ -3046,3 +3046,22 @@ body{letter-spacing:.1px}
   .gbProfileCard .gbColLeft,.gbProfileCard .gbColRight{border:0;border-top:1px solid var(--line)}
   .gbProfileCard .gbCardHead{padding:20px}
 }
+
+/* ═════════════════════════════════════════════════════════════════
+   Match room — polished game cards (accepted / live / settled matches)
+   ═════════════════════════════════════════════════════════════════ */
+.dbFaceoff,.dbTeamCard,.dbMapCard,.mrPlayerCard{
+  background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)
+}
+.dbFaceoff{border-top:2px solid rgba(34,197,251,.5)}
+/* VS marker — crisper */
+.dbFoVs{color:rgba(255,255,255,.4);letter-spacing:.24em}
+.dbFoStatRow span.hi{color:var(--neon);font-weight:800}
+/* Winner = gold, consistently */
+.dbFoSide.winner .dbFoAvatar{border-color:var(--gold);box-shadow:0 0 22px rgba(255,194,60,.28)}
+.dbFoBadge.w{background:rgba(255,194,60,.15);color:var(--gold);box-shadow:0 0 8px rgba(255,194,60,.15)}
+.dbTeamCard.winner{border-color:var(--gold);box-shadow:0 0 16px rgba(255,194,60,.12)}
+/* Team player rows — cyan hover, no violet, no shift */
+.dbTeamPlayer:hover{background:rgba(34,197,251,.05);transform:none}
+.dbTeamHead{background:#0a0d12}
+.dbTeamPlayerInfo small{font-weight:700}
