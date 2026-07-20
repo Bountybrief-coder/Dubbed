@@ -2878,3 +2878,14 @@ body{letter-spacing:.1px}
 .btn{transition:transform .06s ease,filter .15s ease,background .15s ease,border-color .15s ease}
 .btn:active{transform:translateY(1px)}
 .panel2{transition:border-color .15s ease}
+
+/* Roster chips on team cards — clean stacked rows (fixes cramped wrap) */
+.teamRoster{flex-direction:column;gap:6px}
+.playerCardCompact{width:100%;gap:10px;padding:7px 12px 7px 8px;align-items:center}
+.playerCardCompact .playerCardAvatar{width:32px;height:32px;flex:none}
+.pccInfo{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.pccName{display:flex;align-items:center;gap:5px;font-size:13px;font-weight:800;color:#fff;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pccName .countryFlag{width:15px;height:11px;flex:none}
+.pccMeta{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.pccMeta .rankStar{flex:none}
+.playerCardCompact .playerCardRole{margin-left:auto;flex:none}

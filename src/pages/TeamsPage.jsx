@@ -753,12 +753,14 @@ function PlayerCard({ member: m, compact, onClick }) {
         <div className="playerCardAvatar" style={{ borderColor: rank.glow }}>
           {p.avatar_url ? <img src={p.avatar_url} alt="" /> : <span>{initials}</span>}
         </div>
-        <span className="playerCardName">
-          {p.username}{p.wagr_member && <WagrBadge size={10} />}
-          {p.country && <img className="countryFlag" src={countryFlag(p.country)} alt={p.country} />}
-          {regionTag(p.country) && <span className="regionTag">{regionTag(p.country)}</span>}
-          <small style={{ display: "block", color: rank.glow, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em" }}>{rank.name} · {w}-{l}</small>
-        </span>
+        <div className="pccInfo">
+          <span className="pccName">
+            {p.username}
+            {p.wagr_member && <WagrBadge size={10} />}
+            {p.country && <img className="countryFlag" src={countryFlag(p.country)} alt={p.country} />}
+          </span>
+          <span className="pccMeta"><RankStar rank={rank} size={11} /><span style={{ color: rank.glow }}>{rank.name}</span> · {w}-{l}</span>
+        </div>
         {m.role === "owner" && <span className="playerCardRole">CAPT</span>}
       </div>
     );
