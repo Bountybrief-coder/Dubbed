@@ -175,12 +175,17 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
         </Button>
       </div>
 
-      <div className="segRow inline">
-        {["all", "cash", "xp"].map((k) => (
-          <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>
-            {k === "all" ? "All" : k === "cash" ? "Cash" : "XP"}
-          </button>
-        ))}
+      <div className="mfFilterRow">
+        <div className="segRow inline">
+          {["all", "cash", "xp"].map((k) => (
+            <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>
+              {k === "all" ? "All" : k === "cash" ? "Cash" : "XP"}
+            </button>
+          ))}
+        </div>
+        {!loading && data && data.length > 0 && (
+          <span className="mfCount"><span className="mfCountDot" />{data.length} open {data.length === 1 ? "lobby" : "lobbies"}</span>
+        )}
       </div>
 
       {loading ? (
@@ -199,7 +204,7 @@ export function MatchfinderPage({ onLogin, onOpenMatch, onNavigate }) {
             const isMine = profile && m.created_by === profile.id;
             const mElig = profile ? checkGameEligibility(m.game, profile, myTeams) : { eligible: true };
             return (
-            <div className="matchTile" key={m.id} role="button" tabIndex={0} onClick={() => isMine ? onOpenMatch?.(m.id) : mElig.eligible ? handleAccept(m) : toast.error(mElig.reason)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isMine ? onOpenMatch?.(m.id) : mElig.eligible ? handleAccept(m) : toast.error(mElig.reason); } }} style={{ cursor: "pointer" }}>
+            <div className={`matchTile mt-${m.kind}${isMine ? " mt-mine" : ""}`} key={m.id} role="button" tabIndex={0} onClick={() => isMine ? onOpenMatch?.(m.id) : mElig.eligible ? handleAccept(m) : toast.error(mElig.reason)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isMine ? onOpenMatch?.(m.id) : mElig.eligible ? handleAccept(m) : toast.error(mElig.reason); } }} style={{ cursor: "pointer" }}>
               <img className="matchCover" src={cover(m.game)} alt="" loading="lazy" />
               <div className="matchMeta">
                 <b>{m.game}</b>

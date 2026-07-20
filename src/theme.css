@@ -2889,3 +2889,51 @@ body{letter-spacing:.1px}
 .pccMeta{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
 .pccMeta .rankStar{flex:none}
 .playerCardCompact .playerCardRole{margin-left:auto;flex:none}
+
+/* ═════════════════════════════════════════════════════════════════
+   Matchfinder spruce — GameBattles flat charcoal + cash/XP accents
+   ═════════════════════════════════════════════════════════════════ */
+.matchList{gap:8px}
+.matchTile{
+  background:linear-gradient(180deg,#20262f,var(--panel) 60%);
+  border:1px solid var(--line);border-radius:0;padding:13px 18px 13px 20px;
+  transition:border-color .15s ease,background .15s ease;
+}
+/* left accent bar — always visible, keyed to stake type */
+.matchTile::before{
+  content:"";position:absolute;left:0;top:0;bottom:0;width:3px;
+  background:var(--line);opacity:1;transition:background .15s ease,width .15s ease;
+}
+.matchTile.mt-cash::before{background:var(--green)}
+.matchTile.mt-xp::before{background:var(--neon)}
+.matchTile.mt-mine::before{background:var(--gold)}
+.matchTile:hover{transform:none;box-shadow:none;background:linear-gradient(180deg,#232a34,var(--panel) 60%)}
+.matchTile.mt-cash:hover{border-color:rgba(62,207,110,.45)}
+.matchTile.mt-xp:hover{border-color:rgba(34,197,251,.45)}
+.matchTile:hover::before{width:4px}
+.matchCover{width:60px;height:68px;border:1px solid var(--line);box-shadow:none}
+.matchMeta b{font-size:14px;font-weight:800;color:#fff}
+.matchMeta small{font-size:12px}
+.matchTicket{color:var(--muted);opacity:.85;font-weight:600}
+.matchStakeLbl{color:var(--muted)}
+.matchStakeCol b{font-size:22px;font-weight:900;font-variant-numeric:tabular-nums}
+.matchStakeCol b.cash{text-shadow:none}
+
+/* GB badges */
+.matchBadges .badge{background:#0a0d12;border:1px solid var(--line);color:#cbd3de;font-weight:700;padding:3px 8px;font-size:11px}
+.matchBadges .badge.accent{color:var(--neon);border-color:rgba(34,197,251,.3);background:rgba(34,197,251,.06)}
+.matchBadges .badge.warn{color:#ffc23c;border-color:rgba(255,194,60,.3);background:rgba(255,194,60,.06)}
+
+/* Filter row + live open-lobby count */
+.mfFilterRow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.mfFilterRow .segRow.inline{margin-bottom:0}
+.mfCount{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--muted)}
+.mfCountDot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(62,207,110,.5);animation:mfPulse 1.8s ease-out infinite}
+@keyframes mfPulse{0%{box-shadow:0 0 0 0 rgba(62,207,110,.45)}70%{box-shadow:0 0 0 7px rgba(62,207,110,0)}100%{box-shadow:0 0 0 0 rgba(62,207,110,0)}}
+
+/* My matches — tighter GB rows */
+.myMatchSection .eyebrow{color:var(--muted);letter-spacing:.1em}
+.myMatchRow{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)}
+.myMatchRow:hover{transform:none;box-shadow:none;border-color:rgba(34,197,251,.35)}
+.myMatchInfo b{font-weight:800}
+.myMatchCode{color:var(--muted);opacity:.85}
