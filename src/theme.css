@@ -2612,3 +2612,17 @@ body{letter-spacing:.1px}
 .confettiPiece{position:absolute;top:50%;left:50%;animation:confettiBurst 1.7s cubic-bezier(.15,.6,.4,1) forwards}
 @keyframes confettiBurst{0%{transform:translate(-50%,-50%) rotate(0);opacity:1}100%{transform:translate(calc(-50% + var(--x)),calc(-50% + var(--y) + 260px)) rotate(var(--rot));opacity:0}}
 @media(prefers-reduced-motion:reduce){.confetti{display:none}.winCard,.winOverlay{animation:none}}
+
+/* ── Sent-challenge detail (expandable) ── */
+.challengeRow.sent{flex-wrap:wrap}
+.challengeInfoClick{cursor:pointer;flex:1;min-width:0}
+.challengeRow.sent .challengeActions{display:flex;align-items:center;gap:8px;flex:none}
+.challengeDetail{width:100%;margin-top:8px;padding-top:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.cdRow{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px}
+.cdRow span{color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700;font-size:10px}
+.cdRow b{color:#fff;font-weight:700}
+.cdRow b.cash{color:var(--green)}
+.cdMaps{margin-top:4px}
+.cdMapsLbl{display:block;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;font-weight:700;font-size:10px;margin-bottom:6px}
+.cdMapList{display:flex;flex-wrap:wrap;gap:6px}
+.cdMap{font-size:11px;font-weight:700;color:#fff;background:#0a0d12;border:1px solid var(--line);padding:3px 8px}

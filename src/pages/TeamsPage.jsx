@@ -8,7 +8,7 @@ import { clickable } from "../utils/a11y";
 import { inviteError } from "../utils/errors";
 import { useAsync } from "../hooks/useAsync";
 import { useVisibilityRefresh } from "../hooks/useVisibilityRefresh";
-import { getMyTeams, getMyInvites, createTeam, inviteToTeam, acceptInvite, declineInvite, leaveTeam, disbandTeam, getTeamActiveMatches, getTeamMatchHistory, subscribeToTeamMatches, subscribeToInvites, getTeamChallenges, respondChallenge, subscribeToChallenges, browseTeams, updateTeamCrest } from "../services/teamService";
+import { getMyTeams, getMyInvites, createTeam, inviteToTeam, acceptInvite, declineInvite, leaveTeam, disbandTeam, getTeamActiveMatches, getTeamMatchHistory, subscribeToTeamMatches, subscribeToInvites, getTeamChallenges, respondChallenge, cancelChallenge, subscribeToChallenges, browseTeams, updateTeamCrest } from "../services/teamService";
 import { uploadTeamCrest } from "../utils/storage";
 import { Modal } from "../components/Modal";
 import { ChallengeModal } from "../components/ChallengeModal";
@@ -18,7 +18,7 @@ import { SkeletonRows } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
 import { WagrBadge } from "../components/WagrBadge";
 import { RankStar } from "../components/RankStar";
-import { GAME_NAMES, isConsoleOnlyGame, WWII_PLATFORMS, platformsForGame, shortForGame, seriesLabel, countryFlag, regionTag, teamCategoryLabel, formatForSize } from "../utils/games";
+import { GAME_NAMES, isConsoleOnlyGame, WWII_PLATFORMS, platformsForGame, shortForGame, seriesLabel, countryFlag, regionTag, teamCategoryLabel, formatForSize, mapsForGameMode } from "../utils/games";
 import { money } from "../utils/format";
 import { rankForXp } from "../utils/ranks";
 import { supabase } from "../lib/supabase";
@@ -532,6 +532,46 @@ function TeamDetailPage({ team, onBack, onNavigate, onReload }) {
   );
 }
 
+// A challenge you sent: click to expand stake + match config + veto map pool; cancel while pending.
+function SentChallengeRow({ c, isOwner, busy, onCancel }) {
+  const [open, setOpen] = useState(false);
+  const maps = mapsForGameMode(c.game, c.mode) || [];
+  const stake = c.kind === "cash" ? money(c.entry) : "XP";
+  return (
+    <div className={`challengeRow outgoing sent ${open ? "open" : ""}`}>
+      <div className="challengeInfo challengeInfoClick" {...clickable(() => setOpen(o => !o))} title="Show details">
+        <span className="teamTag">{c.to_team?.tag}</span>
+        <b>{c.to_team?.name}</b>
+        <small>{c.to_team?.wins || 0}W - {c.to_team?.losses || 0}L</small>
+        <small>{shortForGame(c.game)} · {c.mode} · {c.format} · {seriesLabel(c.series)} · <span className={c.kind === "cash" ? "cash" : ""}>{stake}</span></small>
+        {c.message && <span className="challengeMsg">"{c.message}"</span>}
+        {open && (
+          <div className="challengeDetail">
+            <div className="cdRow"><span>Stake</span><b className={c.kind === "cash" ? "cash" : ""}>{c.kind === "cash" ? `${money(c.entry)} per team` : "XP match — no entry"}</b></div>
+            <div className="cdRow"><span>Series</span><b>{seriesLabel(c.series)}</b></div>
+            {c.region && <div className="cdRow"><span>Region</span><b>{c.region}</b></div>}
+            {c.platform && <div className="cdRow"><span>Platform</span><b>{c.platform}</b></div>}
+            {maps.length > 0 && (
+              <div className="cdMaps">
+                <span className="cdMapsLbl">Veto pool · {maps.length} map{maps.length !== 1 ? "s" : ""}</span>
+                <div className="cdMapList">{maps.map(m => <span key={m} className="cdMap">{m}</span>)}</div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="challengeActions">
+        <span className="badge pending">Waiting</span>
+        {isOwner && (
+          <button className="btn btn-ghost sm" disabled={busy} onClick={() => onCancel(c.id)}>
+            {busy ? "Cancelling…" : "Cancel"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ChallengesPanel({ challenges, teamId, isOwner, onReload, onNavigate }) {
   const toast = useToast();
   const [busy, setBusy] = useState(null);
@@ -551,6 +591,15 @@ function ChallengesPanel({ challenges, teamId, isOwner, onReload, onNavigate }) 
     } else {
       toast.success("Challenge declined.");
     }
+    onReload();
+  }
+
+  async function handleCancel(id) {
+    setBusy(id);
+    const { error } = await cancelChallenge(id);
+    setBusy(null);
+    if (error) return toast.error(error);
+    toast.success("Challenge cancelled.");
     onReload();
   }
 
@@ -588,14 +637,7 @@ function ChallengesPanel({ challenges, teamId, isOwner, onReload, onNavigate }) 
         <div style={{ marginBottom: 12 }}>
           <small className="eyebrow" style={{ marginBottom: 6, display: "block" }}>SENT</small>
           {outgoing.map(c => (
-            <div className="challengeRow outgoing" key={c.id}>
-              <div className="challengeInfo">
-                <span className="teamTag">{c.to_team?.tag}</span>
-                <b>{c.to_team?.name}</b>
-                {c.message && <span className="challengeMsg">"{c.message}"</span>}
-              </div>
-              <span className="badge pending">Waiting for response</span>
-            </div>
+            <SentChallengeRow key={c.id} c={c} isOwner={isOwner} busy={busy === c.id} onCancel={handleCancel} />
           ))}
         </div>
       )}
@@ -612,7 +654,7 @@ function ChallengesPanel({ challenges, teamId, isOwner, onReload, onNavigate }) 
                   <span className="teamTag">{other?.tag}</span>
                   <b>{other?.name}</b>
                 </div>
-                <span className={`badge ${c.status}`}>{c.status === "accepted" ? "Accepted" : "Declined"}</span>
+                <span className={`badge ${c.status}`}>{c.status === "accepted" ? "Accepted" : c.status === "cancelled" ? "Cancelled" : "Declined"}</span>
               </div>
             );
           })}

@@ -229,10 +229,17 @@ export async function respondChallenge(challengeId, accept) {
   return { data, error: null };
 }
 
+// Cancel a pending challenge you sent (SECURITY DEFINER RPC verifies you own the sending team).
+export async function cancelChallenge(challengeId) {
+  const { error } = await supabase.rpc("cancel_challenge", { p_challenge_id: challengeId });
+  return { error: error?.message };
+}
+
 export function subscribeToChallenges(teamId, onChange) {
   const channel = supabase
     .channel(`team-challenges:${teamId}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "team_challenges", filter: `to_team_id=eq.${teamId}` }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "team_challenges", filter: `from_team_id=eq.${teamId}` }, onChange)
     .subscribe();
   return () => supabase.removeChannel(channel);
 }
