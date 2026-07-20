@@ -3015,3 +3015,34 @@ body{letter-spacing:.1px}
 .chatLineTop b{color:var(--neon)}
 .chatDockInput button{background:linear-gradient(135deg,var(--neon),#0f8fbf)}
 .chatTabs button.on{color:var(--neon);border-color:rgba(34,197,251,.3)}
+
+/* ═════════════════════════════════════════════════════════════════
+   One-card GameBattles profile — everything inside a single frame
+   ═════════════════════════════════════════════════════════════════ */
+.gbProfile{max-width:1200px}
+.gbProfileCard{
+  background:linear-gradient(180deg,#1e242d,var(--panel) 55%);
+  border:1px solid var(--line);border-top:2px solid var(--rank-glow,var(--neon));
+  box-shadow:0 3px 14px rgba(0,0,0,.32);overflow:hidden;
+}
+/* Header flush at the top of the card */
+.gbProfileCard .gbCardHead{border:0;background:transparent;border-bottom:1px solid var(--line);padding:26px 30px;margin:0}
+.gbProfileCard .gbCardHead::after{display:none}
+/* Body: single frame, internal columns divided by lines */
+.gbProfileCard .gbCardBody{margin:0;padding:0;gap:0;grid-template-columns:252px 1fr 316px;align-items:stretch}
+.gbProfileCard .gbCol{gap:0;padding:26px}
+.gbProfileCard .gbColLeft{border-right:1px solid var(--line)}
+.gbProfileCard .gbColRight{border-left:1px solid var(--line)}
+/* Inner panels become flush sections (drop their own frame) */
+.gbProfileCard .panel2,.gbProfileCard .gbRankPanel{background:none;border:0;margin:0;padding:0;box-shadow:none}
+/* Divider + spacing between stacked sections within a column */
+.gbProfileCard .gbCol>*+*{margin-top:26px;padding-top:26px;border-top:1px solid var(--line)}
+/* Footer sections (gamertags / settings) inside the card */
+.gbCardFoot{padding:26px 30px;border-top:1px solid var(--line)}
+.gbCardFoot .panel2{background:none;border:0;margin:0;padding:0}
+.gbCardFoot .panel2+.panel2{margin-top:26px;padding-top:26px;border-top:1px solid var(--line)}
+@media(max-width:960px){
+  .gbProfileCard .gbCardBody{grid-template-columns:1fr}
+  .gbProfileCard .gbColLeft,.gbProfileCard .gbColRight{border:0;border-top:1px solid var(--line)}
+  .gbProfileCard .gbCardHead{padding:20px}
+}

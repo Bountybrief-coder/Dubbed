@@ -80,8 +80,9 @@ export function ProfilePage({ username, onNavigate }) {
 
   return (
     <main className="page gbProfile">
-      {/* ── HERO BANNER ── */}
-      <section className="gbHero" style={{ "--rank-glow": rank.glow }}>
+      <section className="gbProfileCard" style={{ "--rank-glow": rank.glow }}>
+      {/* ── HERO HEADER ── */}
+      <div className="gbHero gbCardHead">
         <div className="gbHeroLeft">
           <div className="gbHeroAvatarCol">
             <div className="gbHeroAvatar" style={{ borderColor: rank.glow }}>
@@ -104,10 +105,10 @@ export function ProfilePage({ username, onNavigate }) {
           {gamertag && <div className="gbGamertag"><small>GAMERTAG</small><b>{gamertag}</b></div>}
           <ProfileTrophyStrip userId={profile.id} />
         </div>
-      </section>
+      </div>
 
-      {/* ── THREE-COLUMN BODY ── */}
-      <div className="gbBody">
+      {/* ── BODY (inside the card) ── */}
+      <div className="gbBody gbCardBody">
         <div className="gbCol gbColLeft">
           <div className="gbRankPanel">
             <div className={`gbMedallion ${isMaxed ? "max" : ""}`}>
@@ -139,9 +140,12 @@ export function ProfilePage({ username, onNavigate }) {
         </div>
       </div>
 
-      {/* ── Settings (own profile) ── */}
-      <GamertagsPanel profile={profile} isMe={isMe} onUpdate={() => { refreshProfile(); reload(); }} />
-      {isMe && <AccountSettingsPanel profile={profile} onUpdate={() => { refreshProfile(); reload(); }} />}
+      {/* ── Gamertags & settings (inside the card) ── */}
+      <div className="gbCardFoot">
+        <GamertagsPanel profile={profile} isMe={isMe} onUpdate={() => { refreshProfile(); reload(); }} />
+        {isMe && <AccountSettingsPanel profile={profile} onUpdate={() => { refreshProfile(); reload(); }} />}
+      </div>
+      </section>
     </main>
   );
 }
