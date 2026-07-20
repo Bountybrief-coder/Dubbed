@@ -3085,3 +3085,23 @@ body{letter-spacing:.1px}
 .dbToolBtn.active{background:rgba(34,197,251,.08);color:var(--neon);border-color:rgba(34,197,251,.35)}
 /* Rules / setup bodies share the surface */
 .dbRulesBody{background:linear-gradient(180deg,#20262f,var(--panel) 60%);border-color:var(--line)}
+
+/* ═════════════════════════════════════════════════════════════════
+   Shared primitives polish — form fields, selects, modals
+   ═════════════════════════════════════════════════════════════════ */
+/* Inputs/selects/textareas: consistent surface + real cyan focus ring */
+.field{background:#0a0d12;transition:border-color .15s ease,box-shadow .15s ease}
+.field:hover:not(:disabled):not(:focus){border-color:#3d4757}
+.field:focus,.field:focus-visible{border-color:var(--neon);box-shadow:0 0 0 3px rgba(34,197,251,.12);outline:0}
+.field::placeholder{color:rgba(255,255,255,.3)}
+.field:disabled{opacity:.55;cursor:not-allowed}
+select.field{cursor:pointer}
+
+/* Modal card → top-lit charcoal like every other surface */
+.modalCard{background:linear-gradient(180deg,#20262f,var(--panel) 55%)}
+.modalClose{transition:border-color .15s ease,color .15s ease,background .15s ease}
+.modalClose:hover{border-color:rgba(34,197,251,.4);color:var(--neon);background:#0a0d12}
+.modalTitle{font-weight:900;letter-spacing:-.01em}
+
+/* Segmented control — subtle hover on inactive options */
+.segRow button:not(.on):hover{color:#cbd3de}
