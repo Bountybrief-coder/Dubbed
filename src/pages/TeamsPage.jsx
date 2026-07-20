@@ -427,100 +427,139 @@ function TeamDetailPage({ team, onBack, onNavigate, onReload }) {
   const recentForm = (history || []).slice(0, 5).map((h) => h.result === "win" ? "W" : "L");
 
   return (
-    <main className="page">
+    <main className="page gbProfile">
       <button className="backLink" onClick={onBack}><ChevronLeft size={16} /> Back to teams</button>
 
-      <div className="pageHead">
-        <TeamCrest team={team} size={56} />
-        <h1>{team.name}</h1>
-        <p className="sub">{shortForGame(team.game) || team.game} · {teamCategoryLabel(team.size)} · <span className={`teamTypeBadge ${team.type}`}>{team.type === "tournament" ? "TOURNEY" : team.type.toUpperCase()}</span>{team.platform ? ` · ${team.platform}` : ""}</p>
-      </div>
+      {/* ── Team hero banner ── */}
+      <section className="gbHero gbTeamHero" style={{ "--rank-glow": team.color || "var(--neon)" }}>
+        <div className="gbHeroLeft">
+          <div className="gbHeroAvatarCol"><TeamCrest team={team} size={92} /></div>
+          <div className="gbHeroId">
+            <h1>{team.name} <span className="gbTeamTag">[{team.tag}]</span></h1>
+            <p className="gbTeamSub">{shortForGame(team.game) || team.game} · {teamCategoryLabel(team.size)} · <span className={`teamTypeBadge ${team.type}`}>{team.type === "tournament" ? "TOURNEY" : team.type.toUpperCase()}</span>{team.platform ? ` · ${team.platform}` : ""}</p>
+            <div className="gbHeroStatline">
+              <div><small>RECORD</small><b>{totalW}-{totalL} <em>{winPct}%</em></b></div>
+              <div><small>LADDER</small><b>{ladderW}-{ladderL}</b></div>
+              <div><small>TOURNAMENT</small><b>{tourneyW}-{tourneyL}</b></div>
+              <div><small>EARNINGS</small><b className="cash">{money(team.earnings || 0)}</b></div>
+              <div><small>MEMBERS</small><b>{members.length}</b></div>
+            </div>
+          </div>
+        </div>
+        <div className="gbHeroRight">
+          {recentForm.length > 0 && (
+            <div className="gbTeamForm">
+              <small>RECENT FORM</small>
+              <div className="formStreak">{recentForm.map((r, i) => <span key={i} className={r === "W" ? "formW" : "formL"}>{r}</span>)}</div>
+            </div>
+          )}
+          {isOwner && <Button variant="ghost" className="sm" onClick={() => setInviteOpen(true)}><UserPlus size={14} /> Invite</Button>}
+        </div>
+      </section>
 
       {isOwner && <CrestEditor team={team} onSaved={onReload} />}
 
-      {/* Record slab */}
-      <section className="panel2 teamRecordSlab">
-        <h2><Trophy size={16} /> Team Record</h2>
-        <div className="teamStatGrid">
-          <RecordStat label="Overall" value={`${totalW}W - ${totalL}L`} sub={`${winPct}% win rate`} />
-          <RecordStat label="Ladder" value={`${ladderW}W - ${ladderL}L`} />
-          <RecordStat label="Tournament" value={`${tourneyW}W - ${tourneyL}L`} />
-          <RecordStat label="Earnings" value={money(team.earnings || 0)} accent />
-          <RecordStat label="Team XP" value={String(team.xp || 0)} />
-          {recentForm.length > 0 && (
-            <div className="statBox2">
-              <small>Recent</small>
-              <div className="formStreak">
-                {recentForm.map((r, i) => <span key={i} className={r === "W" ? "formW" : "formL"}>{r}</span>)}
-              </div>
+      {/* ── Three-column body ── */}
+      <div className="gbBody">
+        <div className="gbCol gbColLeft">
+          <div className="gbRankPanel gbTeamStats">
+            <div className="gbTeamWinBig" style={{ color: team.color || "var(--neon)" }}>{winPct}%</div>
+            <div className="gbRankLabel">WIN RATE</div>
+            <div className="gbTeamStatRows">
+              <div><span>Overall</span><b>{totalW}-{totalL}</b></div>
+              <div><span>Ladder</span><b>{ladderW}-{ladderL}</b></div>
+              <div><span>Tournament</span><b>{tourneyW}-{tourneyL}</b></div>
+              <div><span>Earnings</span><b className="cash">{money(team.earnings || 0)}</b></div>
+              <div><span>Team XP</span><b>{(team.xp || 0).toLocaleString()}</b></div>
             </div>
-          )}
-        </div>
-      </section>
-
-      {/* Active Matches — the never-lose-a-match panel */}
-      <section className="panel2">
-        <h2><Swords size={16} /> Active Matches</h2>
-        {!activeMatches || activeMatches.length === 0 ? (
-          <p className="sub" style={{ padding: "12px 0" }}>No active matches right now.</p>
-        ) : (
-          <div className="activeMatchList">
-            {activeMatches.map((m) => (
-              <ActiveMatchCard key={m.id} match={m} onGo={() => onNavigate?.("match", m.id)} />
-            ))}
           </div>
-        )}
-      </section>
+        </div>
 
-      {/* Challenges */}
-      <ChallengesPanel challenges={challenges || []} teamId={team.id} isOwner={isOwner} onReload={reloadChallenges} onNavigate={onNavigate} />
+        <div className="gbCol gbColCenter">
+          {/* Roster */}
+          <section className="panel2">
+            <div className="panelHead">
+              <h2><Users size={16} /> Roster <span className="gbCount">{members.length}</span></h2>
+              {isOwner && <Button variant="ghost" className="sm" onClick={() => setInviteOpen(true)}><UserPlus size={14} /> Invite</Button>}
+            </div>
+            <div className="teamRosterDetail">
+              {members.map((m) => <PlayerCard key={m.user_id} member={m} onClick={() => onNavigate?.("profile", m.profiles?.username)} />)}
+            </div>
+          </section>
 
-      {/* Match History */}
-      {history && history.length > 0 && (
-        <section className="panel2">
-          <h2><Target size={16} /> Recent Results</h2>
-          <div className="teamHistoryList">
-            {history.map((h) => (
-              <div key={h.id} className={`historyRow ${h.result}`}>
-                <span className={`historyResult ${h.result}`}>{h.result === "win" ? "W" : "L"}</span>
-                <span className="historyOpp">vs {h.opponent?.name || h.opponent?.tag || "-"}</span>
-                {h.earnings > 0 && <span className="cash">+{money(h.earnings)}</span>}
-                <span className="historyXp">+{h.xp_earned} XP</span>
-                {h.tournament_id && <span className="badge sm">Tourney</span>}
+          {/* Active Matches */}
+          <section className="panel2">
+            <h2><Swords size={16} /> Active Matches</h2>
+            {!activeMatches || activeMatches.length === 0 ? (
+              <p className="sub" style={{ padding: "10px 0 2px" }}>No active matches right now.</p>
+            ) : (
+              <div className="activeMatchList">
+                {activeMatches.map((m) => (
+                  <ActiveMatchCard key={m.id} match={m} onGo={() => onNavigate?.("match", m.id)} />
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
-      )}
+            )}
+          </section>
 
-      {/* Roster */}
-      <section className="panel2">
-        <div className="panelHead">
-          <h2><Users size={16} /> Roster ({members.length})</h2>
-          {isOwner && <Button variant="ghost" onClick={() => setInviteOpen(true)}><UserPlus size={14} /> Invite</Button>}
-        </div>
-        <div className="teamRosterDetail">
-          {members.map((m) => <PlayerCard key={m.user_id} member={m} onClick={() => onNavigate?.("profile", m.profiles?.username)} />)}
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          {isOwner ? (
-            <Button variant="danger" className="sm" onClick={async () => {
-              if (!await confirm({ title: "Disband team?", message: "This will permanently delete the team and remove all members. This cannot be undone.", confirmLabel: "Disband" })) return;
-              const res = await disbandTeam(team.id);
-              if (res.error) return toast.error(res.error);
-              toast.success("Team disbanded.");
-              onReload(); onBack();
-            }}><Trash2 size={14} /> Disband</Button>
-          ) : (
-            <Button variant="ghost" className="sm" onClick={async () => {
-              if (!await confirm({ title: "Leave team?", message: "You can rejoin later if the captain invites you back.", confirmLabel: "Leave", variant: "ghost" })) return;
-              const res = await leaveTeam(team.id, user.id);
-              if (res.error) return toast.error(res.error);
-              toast.success("Left team.");
-              onReload(); onBack();
-            }}><LogOut size={14} /> Leave</Button>
+          {/* Recent Results */}
+          {history && history.length > 0 && (
+            <section className="panel2">
+              <h2><Target size={16} /> Recent Results</h2>
+              <div className="teamHistoryList">
+                {history.map((h) => (
+                  <div key={h.id} className={`historyRow ${h.result}`}>
+                    <span className={`historyResult ${h.result}`}>{h.result === "win" ? "W" : "L"}</span>
+                    <span className="historyOpp">vs {h.opponent?.name || h.opponent?.tag || "-"}</span>
+                    {h.earnings > 0 && <span className="cash">+{money(h.earnings)}</span>}
+                    <span className="historyXp">+{h.xp_earned} XP</span>
+                    {h.tournament_id && <span className="badge sm">Tourney</span>}
+                  </div>
+                ))}
+              </div>
+            </section>
           )}
         </div>
+
+        <div className="gbCol gbColRight">
+          {/* Team info */}
+          <section className="panel2">
+            <h2><Shield size={16} /> Team Info</h2>
+            <table className="gbRecords gbInfoTable">
+              <tbody>
+                <tr><td>Game</td><td>{shortForGame(team.game) || team.game}</td></tr>
+                <tr><td>Size</td><td>{teamCategoryLabel(team.size)}</td></tr>
+                <tr><td>Type</td><td style={{ textTransform: "capitalize" }}>{team.type}</td></tr>
+                {team.platform && <tr><td>Platform</td><td>{team.platform}</td></tr>}
+                <tr><td>Tag</td><td>[{team.tag}]</td></tr>
+                <tr><td>Members</td><td>{members.length}</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          {/* Challenges */}
+          <ChallengesPanel challenges={challenges || []} teamId={team.id} isOwner={isOwner} onReload={reloadChallenges} onNavigate={onNavigate} />
+        </div>
+      </div>
+
+      {/* ── Team actions ── */}
+      <section className="panel2 gbTeamActions">
+        {isOwner ? (
+          <Button variant="danger" className="sm" onClick={async () => {
+            if (!await confirm({ title: "Disband team?", message: "This will permanently delete the team and remove all members. This cannot be undone.", confirmLabel: "Disband" })) return;
+            const res = await disbandTeam(team.id);
+            if (res.error) return toast.error(res.error);
+            toast.success("Team disbanded.");
+            onReload(); onBack();
+          }}><Trash2 size={14} /> Disband team</Button>
+        ) : (
+          <Button variant="ghost" className="sm" onClick={async () => {
+            if (!await confirm({ title: "Leave team?", message: "You can rejoin later if the captain invites you back.", confirmLabel: "Leave", variant: "ghost" })) return;
+            const res = await leaveTeam(team.id, user.id);
+            if (res.error) return toast.error(res.error);
+            toast.success("Left team.");
+            onReload(); onBack();
+          }}><LogOut size={14} /> Leave team</Button>
+        )}
       </section>
 
       {inviteOpen && (

@@ -2771,3 +2771,26 @@ body{letter-spacing:.1px}
   .gbHeroRight{align-items:flex-start;width:100%}
   .gbHeroTrophies{width:100%;justify-content:space-between}
 }
+
+/* ── GameBattles-style team detail ── */
+.gbTeamTag{font-size:.55em;font-weight:800;color:var(--rank-glow,var(--neon))}
+.gbTeamSub{margin:0 0 12px;color:var(--muted);font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.gbTeamForm{text-align:right}
+.gbTeamForm small{display:block;font-size:10px;font-weight:800;letter-spacing:.1em;color:var(--muted);margin-bottom:5px}
+.gbTeamStats{text-align:left}
+.gbTeamWinBig{font-size:46px;font-weight:900;letter-spacing:-.02em;line-height:1;text-align:center;font-variant-numeric:tabular-nums}
+.gbTeamStats .gbRankLabel{text-align:center;margin-top:3px}
+.gbTeamStatRows{display:flex;flex-direction:column;margin-top:16px;border-top:1px solid var(--line)}
+.gbTeamStatRows>div{display:flex;align-items:center;justify-content:space-between;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,.04);font-size:13px}
+.gbTeamStatRows>div:last-child{border-bottom:0}
+.gbTeamStatRows span{color:var(--muted);font-weight:700;font-size:12px}
+.gbTeamStatRows b{color:#fff;font-weight:800;font-variant-numeric:tabular-nums}
+.gbTeamStatRows b.cash{color:var(--green)}
+.gbInfoTable td:first-child{color:var(--muted);font-weight:700;text-transform:uppercase;font-size:10px;letter-spacing:.06em}
+.gbInfoTable td:last-child{text-align:right;color:#fff;font-weight:700;font-size:12px}
+.gbTeamActions{display:flex;justify-content:flex-end}
+.gbCount{font-size:11px;font-weight:800;color:var(--muted);background:#0a0d12;border:1px solid var(--line);padding:1px 7px;margin-left:2px}
+
+/* Header-rule fix: full-width divider when a panel header has an action button */
+.panelHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid var(--line)}
+.panelHead h2{border-bottom:0;padding-bottom:0;margin:0}
